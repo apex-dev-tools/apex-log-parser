@@ -1,0 +1,75 @@
+name: Scrape Debug Log Events
+
+on:
+  schedule:
+    # 1st of each month at 09:00 UTC
+    - cron: '0 9 1 * *'
+  workflow_dispatch:
+    inputs:
+      api_version:
+        description: 'Salesforce API version (e.g. 66)'
+        required: false
+        default: '66'
+
+# Least-privilege default; the scrape job is elevated to open a PR.
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    if: github.repository == 'apex-dev-tools/apex-debug-log-parser'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm scrape:install
+
+      - name: Run scraper
+        # Pass the dispatch input via env (not inline ${{ }}) to avoid shell injection.
+        env:
+          API_VERSION: ${{ github.event.inputs.api_version || '66' }}
+        run: pnpm scrape -- --api-version="$API_VERSION"
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet data/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(data): update debug log events'
+          branch: auto/scrape-debug-log-events
+          title: 'chore(data): update debug log events [auto]'
+          body: |
+            Automated update of `data/salesforce-debug-log-events.json` and `data/salesforce-debug-log-events.md` from official Salesforce documentation.
+
+            Sources scraped:
+            - S1: Salesforce Developer Docs (REST API)
+            - S2: Salesforce Help (Playwright)
+
+            Review the diff carefully before merging, especially any new or removed events.
+          labels: automated,data
+          delete-branch: true
