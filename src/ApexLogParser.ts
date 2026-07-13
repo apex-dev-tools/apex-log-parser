@@ -19,12 +19,9 @@ export function parse(logData: string): ApexLog {
 }
 
 /**
- * An Apex Log file can be parsed by passing the text.
- * You can either import the ApexLogParser class or import the parse method e.g.
- *
- * import ApexLogParser, { parse } from ./ApexLogParser.js
- * const apexLog = new ApexLogParser().parse(logText);
- * const apexLog = parse(logText);
+ * Internal stateful parsing engine. Consumers should use the exported `parse`
+ * function instead — it drives this class and returns an `ApexLog` that already
+ * carries the governor limits, log issues and namespaces accumulated here.
  */
 export class ApexLogParser {
   logIssues: LogIssue[] = [];

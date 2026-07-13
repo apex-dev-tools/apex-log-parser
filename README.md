@@ -105,20 +105,19 @@ import { parse } from '@apex-dev-tools/apex-log-parser';
 const log = parse(rawLogText);
 ```
 
-### `ApexLogParser`
+### The `ApexLog` Result
 
-Stateful parser that exposes governor limits, parsing issues, and namespace tracking.
+`parse()` returns an `ApexLog` that exposes governor limits, parsing issues, and detected namespaces directly — no separate parser object needed.
 
 ```typescript
-import { ApexLogParser } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apex-dev-tools/apex-log-parser';
 
-const parser = new ApexLogParser();
-const log = parser.parse(rawLogText);
+const log = parse(rawLogText);
 
-console.log(parser.governorLimits.cpuTime);    // { used: 1234, limit: 10000 }
-console.log(parser.governorLimits.soqlQueries); // { used: 5, limit: 100 }
-console.log(parser.logIssues);                  // any parsing warnings
-console.log(parser.namespaces);                 // Set of detected namespaces
+console.log(log.governorLimits.cpuTime);    // { used: 1234, limit: 10000 }
+console.log(log.governorLimits.soqlQueries); // { used: 5, limit: 100 }
+console.log(log.logIssues);                  // any parsing warnings
+console.log(log.namespaces);                 // array of detected namespaces
 ```
 
 ### Event Types
@@ -143,16 +142,6 @@ for (const event of log.children) {
     console.log('SOQL:', event.text, event.soqlRowCount.total, 'rows');
   }
 }
-```
-
-### `getLogEventClass(type: LogEventType)`
-
-Look up the class for any event type string:
-
-```typescript
-import { getLogEventClass } from '@apex-dev-tools/apex-log-parser';
-
-const cls = getLogEventClass('METHOD_ENTRY'); // MethodEntryLine
 ```
 
 ### Constants
@@ -212,12 +201,11 @@ console.log(`SOQL: ${soqlCount}, DML: ${dmlCount}`);
 ### Check Governor Limits
 
 ```typescript
-import { ApexLogParser } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apex-dev-tools/apex-log-parser';
 
-const parser = new ApexLogParser();
-parser.parse(rawLogText);
+const log = parse(rawLogText);
 
-const limits = parser.governorLimits;
+const limits = log.governorLimits;
 const usage = {
   cpu: `${limits.cpuTime.used}/${limits.cpuTime.limit}ms`,
   soql: `${limits.soqlQueries.used}/${limits.soqlQueries.limit}`,
@@ -278,11 +266,11 @@ The parser handles 200+ event types including `METHOD_ENTRY`/`EXIT`, `SOQL_EXECU
 
 ### How do I analyze Salesforce governor limits programmatically?
 
-Use the `ApexLogParser` class directly. After parsing, `parser.governorLimits` contains SOQL queries, DML statements, CPU time, heap size, and more — with used/limit values and per-namespace snapshots. See [Check Governor Limits](#check-governor-limits).
+Call `parse()` and read `log.governorLimits`. It contains SOQL queries, DML statements, CPU time, heap size, and more — with used/limit values and per-namespace snapshots. See [Check Governor Limits](#check-governor-limits).
 
 ### Does it handle managed package namespaces?
 
-Yes. Each `LogEvent` has a `.namespace` property. The `ApexLogParser` tracks all detected namespaces, and governor limit snapshots are available per namespace via `parser.governorLimits.byNamespace`.
+Yes. Each `LogEvent` has a `.namespace` property. The returned `ApexLog` lists all detected namespaces in `log.namespaces`, and governor limit snapshots are available per namespace via `log.governorLimits.byNamespace`.
 
 ### Does it work in the browser?
 

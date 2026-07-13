@@ -3,7 +3,7 @@
  */
 
 // Parser
-export { ApexLogParser, DebugLevel, parse } from './ApexLogParser.js';
+export { DebugLevel, parse } from './ApexLogParser.js';
 
 // Types
 export type {
@@ -18,7 +18,6 @@ export type {
   LogEventType,
   LogIssue,
   LogLevel,
-  LogLineConstructor,
   LogSubCategory,
   SelfTotal,
 } from './types.js';
@@ -26,7 +25,7 @@ export type {
 // Constants
 export { ALL_LOG_CATEGORIES, DEBUG_CATEGORY, LOG_CATEGORY, LOG_LEVEL } from './types.js';
 
-// Events - classes and utilities used by consumers
+// Events - classes used by consumers for instanceof narrowing and typing the tree
 export {
   ApexLog,
   CodeUnitStartedLine,
@@ -38,13 +37,7 @@ export {
   MethodEntryLine,
   SOQLExecuteBeginLine,
   SOQLExecuteExplainLine,
-  parseObjectNamespace,
-  parseRows,
-  parseVfNamespace,
 } from './LogEvents.js';
 
 // Governor-limit observation types (the .limitUsage field type crosses into the log-viewer).
 export type { LimitMetricKey, LimitObservation } from './limits.js';
-
-// Mapping
-export { getLogEventClass, lineTypeMap } from './LogLineMapping.js';

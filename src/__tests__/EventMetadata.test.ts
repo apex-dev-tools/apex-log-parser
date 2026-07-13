@@ -1,7 +1,8 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { getLogEventClass, parse } from '../index.js';
+import { getLogEventClass } from '../LogLineMapping.js';
+import { parse } from '../index.js';
 
 describe('Event debugLevel and debugCategory', () => {
   describe('new events are parsed (not null from getLogEventClass)', () => {
