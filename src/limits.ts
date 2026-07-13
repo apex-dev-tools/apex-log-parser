@@ -77,7 +77,7 @@ const LIMIT_USAGE_CODES = new Map<string, LimitMetricKey>([
 const USED_OF_RE = /(\d+)\s*(?:out of|\/)\s*(\d+)/;
 
 function toInt(value: string): number {
-  return parseInt(value, 10);
+  return Number.parseInt(value, 10);
 }
 
 function used(metric: LimitMetricKey | undefined, text: string): LimitObservation | null {

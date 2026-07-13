@@ -33,7 +33,7 @@ export class ApexLogParser {
   reasons: Set<string> = new Set<string>();
   lastTimestamp = 0;
   discontinuity = false;
-  namespaces = new Set<string>();
+  namespaces: Set<string> = new Set<string>();
   /** Every event created during this parse, indexed by `LogEvent.eventIndex`. */
   eventsById: LogEvent[] = [];
   /** Every exception event (EXCEPTION_THROWN, FATAL_ERROR) in log order. */
@@ -530,7 +530,7 @@ export class ApexLogParser {
     summary: string,
     description: string,
     type: IssueType,
-  ) {
+  ): void {
     if (!this.reasons.has(summary)) {
       this.reasons.add(summary);
       this.logIssues.push({

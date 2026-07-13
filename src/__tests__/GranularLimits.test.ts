@@ -1,9 +1,8 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { describe, expect, it } from '@jest/globals';
-import { parse } from '../src/index.js';
-import type { HeapAllocateLine, LimitUsageLine, LogEvent } from '../src/index.js';
+import { parse } from '../index.js';
+import type { HeapAllocateLine, LimitUsageLine, LogEvent } from '../index.js';
 
 /** Depth-first flatten of the parsed tree into a flat event list. */
 function flatten(root: LogEvent): LogEvent[] {

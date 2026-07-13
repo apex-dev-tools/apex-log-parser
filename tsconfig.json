@@ -1,43 +1,25 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
     "lib": ["ES2022"],
-
-    "outDir": "dist",
-    "rootDir": "src",
-
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "target": "es2022",
-    "verbatimModuleSyntax": true,
-    "allowJs": true,
-    "resolveJsonModule": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "moduleDetection": "force",
-
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "isolatedDeclarations": true,
+    "noEmit": true,
+    "declaration": true,
+    "declarationMap": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "erasableSyntaxOnly": true,
-
-    "moduleResolution": "Bundler",
-    "module": "ESNext",
-    "composite": true,
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "declarationMap": true,
-
-    "strictFunctionTypes": true,
-
-    "allowSyntheticDefaultImports": true,
-    "experimentalDecorators": true,
-    "useDefineForClassFields": false,
     "forceConsistentCasingInFileNames": true,
-    "importHelpers": true,
-    "isolatedModules": true,
-    "noEmitOnError": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "removeComments": true,
-    "sourceMap": false
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["vitest/globals"]
   },
-  "include": ["./src/**/*.ts"],
-  "exclude": ["**/node_modules", "**/.*/"]
+  "include": ["src/**/*.ts"]
 }

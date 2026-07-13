@@ -1,8 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { describe, expect } from '@jest/globals';
-import { getLogEventClass, parse } from '../src/index.js';
+import { getLogEventClass, parse } from '../index.js';
 
 describe('Event debugLevel and debugCategory', () => {
   describe('new events are parsed (not null from getLogEventClass)', () => {

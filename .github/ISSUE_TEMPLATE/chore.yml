@@ -1,0 +1,13 @@
+name: 🔧 Chore
+description: Maintenance task — tooling, CI, deps, or docs
+title: '🔧 chore: <title>'
+type: 'Task'
+labels: ['chore']
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Task
+      description: What needs to be done, and why?
+    validations:
+      required: true

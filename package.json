@@ -1,10 +1,77 @@
 {
-  "name": "apex-log-parser",
+  "name": "@apex-dev-tools/apex-log-parser",
   "version": "0.1.0",
-  "private": true,
-  "description": "Apex debug log parser for Salesforce",
+  "description": "Parse Salesforce Apex debug logs into structured, typed event trees with governor limit tracking",
   "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./data/events.json": "./data/salesforce-debug-log-events.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "data"],
+  "scripts": {
+    "build": "tsdown && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "ci": "biome check . && tsc --noEmit && vitest run",
+    "prepublishOnly": "pnpm run build",
+    "scrape": "tsx scripts/scrape.ts",
+    "scrape:install": "playwright install chromium --with-deps"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.27.0",
+    "node-html-parser": "^7.0.0",
+    "playwright": "^1.50.0",
+    "tsdown": "^0.12.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.8.0",
+  "license": "BSD-3-Clause",
+  "author": "Certinia Inc.",
+  "homepage": "https://github.com/apex-dev-tools/apex-debug-log-parser#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apex-dev-tools/apex-debug-log-parser"
+  },
+  "bugs": {
+    "url": "https://github.com/apex-dev-tools/apex-debug-log-parser/issues"
+  },
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
+  },
+  "keywords": [
+    "salesforce",
+    "apex",
+    "sfdc",
+    "debug-log",
+    "parser",
+    "soql",
+    "dml",
+    "governor-limits",
+    "log-analysis",
+    "call-tree",
+    "performance",
+    "developer-tools",
+    "typescript"
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
   }
 }
