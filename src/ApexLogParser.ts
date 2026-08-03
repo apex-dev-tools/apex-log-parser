@@ -569,8 +569,11 @@ export class ApexLogParser {
     description: string,
     type: IssueType,
   ): void {
-    if (!this.reasons.has(summary)) {
-      this.reasons.add(summary);
+    // Key on type + summary so a FATAL_ERROR and an EXCEPTION_THROWN with the
+    // same first line both survive.
+    const reason = type + ':' + summary;
+    if (!this.reasons.has(reason)) {
+      this.reasons.add(reason);
       this.logIssues.push({
         startTime: startTime,
         eventIndex: eventIndex,
@@ -591,12 +594,12 @@ export class ApexLogParser {
     type: IssueType,
   ) {
     const elem = this.logIssues.findIndex((item) => {
-      return item.summary === summary;
+      return item.summary === summary && item.type === type;
     });
     if (elem > -1) {
       this.logIssues.splice(elem, 1);
     }
-    this.reasons.delete(summary);
+    this.reasons.delete(type + ':' + summary);
 
     this.addLogIssue(startTime, eventIndex, summary, description, type);
   }
