@@ -1,9 +1,5 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-This changelog is maintained by [Changesets](https://github.com/changesets/changesets). Each release is generated from changeset files added during development.
-
 ## 0.1.0
 
 Initial release as a standalone npm package.
