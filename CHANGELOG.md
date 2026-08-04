@@ -1,5 +1,9 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+Entries are written by hand. [Changesets](https://github.com/changesets/changesets) bumps the version and never edits this file.
+
 ## 0.1.0
 
 Initial release as a standalone npm package.
