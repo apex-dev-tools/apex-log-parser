@@ -21,6 +21,9 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # ci.yml gates the pull request; this re-checks the merge commit itself,
+      # because a publish cannot be taken back.
+      - run: pnpm run ci
       - run: pnpm run build
       - uses: changesets/action@v1
         with:
