@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { getLogEventClass } from '../LogLineMapping.js';
-import { parse } from '../index.js';
+import { DMLBeginLine, parse } from '../index.js';
 
 describe('Event debugLevel and debugCategory', () => {
   describe('new events are parsed (not null from getLogEventClass)', () => {
@@ -87,6 +87,20 @@ describe('Event debugLevel and debugCategory', () => {
       const line = log.children[0];
       expect(line).toBeDefined();
       expect(line!.debugLevel).toBe(expectedLevel);
+    });
+  });
+
+  describe('DMLBeginLine.sObjectType', () => {
+    it.each([
+      ['15:20:52.222 (100)|DML_BEGIN|[1]|Op:Insert|Type:Account|Rows:1', 'Account'],
+      [
+        '15:20:52.222 (100)|DML_BEGIN|[1]|Op:Update|Type:ns2__MyObject__c|Rows:1',
+        'ns2__MyObject__c',
+      ],
+    ])('parses the target object from %s', (logLine, expected) => {
+      const line = parse(logLine).children[0];
+      expect(line).toBeInstanceOf(DMLBeginLine);
+      expect((line as DMLBeginLine).sObjectType).toBe(expected);
     });
   });
 });
