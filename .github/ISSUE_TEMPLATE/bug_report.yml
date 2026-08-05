@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Thanks for helping improve the parser! Please search
-        [existing issues](https://github.com/apex-dev-tools/apex-debug-log-parser/issues)
+        [existing issues](https://github.com/apex-dev-tools/apex-log-parser/issues)
         first to avoid duplicates.
   - type: textarea
     id: description

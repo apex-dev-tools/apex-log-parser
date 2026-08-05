@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    if: github.repository == 'apex-dev-tools/apex-debug-log-parser'
+    if: github.repository == 'apex-dev-tools/apex-log-parser'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

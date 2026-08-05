@@ -8,9 +8,9 @@ body:
     attributes:
       value: |
         Have an early idea or open question? Consider starting a
-        [discussion](https://github.com/apex-dev-tools/apex-debug-log-parser/discussions)
+        [discussion](https://github.com/apex-dev-tools/apex-log-parser/discussions)
         first. Otherwise, search
-        [existing issues](https://github.com/apex-dev-tools/apex-debug-log-parser/issues)
+        [existing issues](https://github.com/apex-dev-tools/apex-log-parser/issues)
         to avoid duplicates.
   - type: textarea
     id: problem

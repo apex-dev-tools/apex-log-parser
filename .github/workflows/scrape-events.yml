@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   scrape:
-    if: github.repository == 'apex-dev-tools/apex-debug-log-parser'
+    if: github.repository == 'apex-dev-tools/apex-log-parser'
     runs-on: ubuntu-latest
     permissions:
       contents: write
