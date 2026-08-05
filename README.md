@@ -1,9 +1,9 @@
-# @apex-dev-tools/apex-log-parser
+# @apexdevtools/apex-log-parser
 
-[![npm version](https://img.shields.io/npm/v/@apex-dev-tools/apex-log-parser)](https://www.npmjs.com/package/@apex-dev-tools/apex-log-parser)
-[![npm downloads](https://img.shields.io/npm/dm/@apex-dev-tools/apex-log-parser)](https://www.npmjs.com/package/@apex-dev-tools/apex-log-parser)
-[![minzipped size](https://img.shields.io/bundlephobia/minzip/@apex-dev-tools/apex-log-parser)](https://bundlephobia.com/package/@apex-dev-tools/apex-log-parser)
-[![CI](https://github.com/apex-dev-tools/apex-debug-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-debug-log-parser/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
+[![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
+[![minzipped size](https://img.shields.io/bundlephobia/minzip/@apexdevtools/apex-log-parser)](https://bundlephobia.com/package/@apexdevtools/apex-log-parser)
+[![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
@@ -43,19 +43,19 @@ Turn raw debug log text into a typed tree of 200+ event types, with computed exe
 
 ```bash
 # pnpm
-pnpm add @apex-dev-tools/apex-log-parser
+pnpm add @apexdevtools/apex-log-parser
 
 # npm
-npm install @apex-dev-tools/apex-log-parser
+npm install @apexdevtools/apex-log-parser
 
 # yarn
-yarn add @apex-dev-tools/apex-log-parser
+yarn add @apexdevtools/apex-log-parser
 ```
 
 ## Quick Start
 
 ```typescript
-import { parse } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apexdevtools/apex-log-parser';
 
 // Parse a raw Apex debug log string
 const log = parse(debugLogText);
@@ -100,7 +100,7 @@ ApexLog (root)
 One-liner parse. Takes raw debug log text, returns the event tree.
 
 ```typescript
-import { parse } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apexdevtools/apex-log-parser';
 
 const log = parse(rawLogText);
 ```
@@ -110,7 +110,7 @@ const log = parse(rawLogText);
 `parse()` returns an `ApexLog` that exposes governor limits, parsing issues, and detected namespaces directly — no separate parser object needed.
 
 ```typescript
-import { parse } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apexdevtools/apex-log-parser';
 
 const log = parse(rawLogText);
 
@@ -130,7 +130,7 @@ import {
   MethodEntryLine,
   SOQLExecuteBeginLine,
   DMLBeginLine,
-} from '@apex-dev-tools/apex-log-parser';
+} from '@apexdevtools/apex-log-parser';
 
 const log = parse(rawLogText);
 
@@ -151,7 +151,7 @@ import {
   DEBUG_CATEGORY,  // { Database, Workflow, ApexCode, ... }
   LOG_CATEGORY,    // { Apex, System, DML, SOQL, Automation, ... }
   LOG_LEVEL,       // { Error, Warn, Info, Debug, Fine, Finer, Finest }
-} from '@apex-dev-tools/apex-log-parser';
+} from '@apexdevtools/apex-log-parser';
 ```
 
 ## Examples
@@ -159,7 +159,7 @@ import {
 ### Find the Slowest Methods
 
 ```typescript
-import { parse, MethodEntryLine } from '@apex-dev-tools/apex-log-parser';
+import { parse, MethodEntryLine } from '@apexdevtools/apex-log-parser';
 
 function findSlowest(log, count = 10) {
   const methods = [];
@@ -181,7 +181,7 @@ console.table(findSlowest(log));
 ### Count SOQL Queries and DML Statements
 
 ```typescript
-import { parse, SOQLExecuteBeginLine, DMLBeginLine } from '@apex-dev-tools/apex-log-parser';
+import { parse, SOQLExecuteBeginLine, DMLBeginLine } from '@apexdevtools/apex-log-parser';
 
 const log = parse(rawLogText);
 const stack = [...log.children];
@@ -201,7 +201,7 @@ console.log(`SOQL: ${soqlCount}, DML: ${dmlCount}`);
 ### Check Governor Limits
 
 ```typescript
-import { parse } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apexdevtools/apex-log-parser';
 
 const log = parse(rawLogText);
 
@@ -219,7 +219,7 @@ console.table(usage);
 ### Walk the Call Tree
 
 ```typescript
-import { parse } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apexdevtools/apex-log-parser';
 
 function printTree(node, depth = 0) {
   const indent = '  '.repeat(depth);
@@ -239,7 +239,7 @@ printTree(log);
 This package includes a comprehensive database of 299 Salesforce debug log event types, sourced from official documentation and community research. Access it as a JSON import:
 
 ```typescript
-import events from '@apex-dev-tools/apex-log-parser/data/events.json' with { type: 'json' };
+import events from '@apexdevtools/apex-log-parser/data/events.json' with { type: 'json' };
 
 // Each event has: name, category, level, fields, description, sources
 for (const event of events.events) {
@@ -258,7 +258,7 @@ The database tracks:
 
 ### How do I parse a Salesforce Apex debug log in JavaScript/TypeScript?
 
-Install `@apex-dev-tools/apex-log-parser` and call `parse()` with the raw log text. It returns a typed tree you can walk, filter, and analyze. See [Quick Start](#quick-start).
+Install `@apexdevtools/apex-log-parser` and call `parse()` with the raw log text. It returns a typed tree you can walk, filter, and analyze. See [Quick Start](#quick-start).
 
 ### What Apex debug log event types does this support?
 
@@ -282,7 +282,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, coding standards
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) or the [GitHub Releases](https://github.com/apex-dev-tools/apex-debug-log-parser/releases) for version history.
+See [CHANGELOG.md](./CHANGELOG.md) or the [GitHub Releases](https://github.com/apex-dev-tools/apex-log-parser/releases) for version history.
 
 ## License
 
