@@ -34,4 +34,7 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run typecheck
       - run: pnpm run test
-      - run: pnpm run build
+      # tsdown 0.22 needs Node ^22.18 || >=24.11, but the library itself still supports 20.
+      # Lint, typecheck and test cover every version; the bundle only needs building once.
+      - if: matrix.node-version == 24
+        run: pnpm run build
