@@ -17,7 +17,9 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # tsdown 0.22 needs Node ^22.18 || >=24.11, and both `build` here and
+          # `prepublishOnly` in the publish step run it.
+          node-version: 24
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
