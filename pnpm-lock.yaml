@@ -22,13 +22,16 @@ importers:
         version: 1.62.1
       tsdown:
         specifier: ^0.22.14
-        version: 0.22.14(tsx@4.23.2)(typescript@5.9.3)
+        version: 0.22.14(tsx@4.23.2)(typescript@5.9.3)(unrun@0.3.1)
       tsx:
         specifier: ^4.23.2
         version: 4.23.2
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
+      unrun:
+        specifier: ^0.3.1
+        version: 0.3.1
       vitest:
         specifier: ^3.1.0
         version: 3.2.4(jiti@2.6.1)(tsx@4.23.2)
@@ -1474,6 +1477,16 @@ packages:
     resolution: {integrity: sha512-rBJeI5CXAlmy1pV+617WB9J63U6XcazHHF2f2dbJix4XzpUF0RS3Zbj0FGIOCAva5P/d/GBOYaACQ1w+0azUkg==}
     engines: {node: '>= 4.0.0'}
 
+  unrun@0.3.1:
+    resolution: {integrity: sha512-onIck/oNnCaytwths1ZVp1LK2Gq2hPoyFhiHebObuUXqR3S0uHuLLaBK8K6mRRgV7Ptip8AnNvaUsgzwWwBZuA==}
+    engines: {node: ^22.13.0 || >=24.0.0}
+    hasBin: true
+    peerDependencies:
+      synckit: ^0.11.11
+    peerDependenciesMeta:
+      synckit:
+        optional: true
+
   verkit@0.3.2:
     resolution: {integrity: sha512-zj/ob3UsvJGN0whEAKFp53REA5X66hvffVqoCtVQAakJKnKlH+/PcOfMoFwIG/o4rElqLv/ycAFlx8ZlXUorCg==}
     engines: {node: '>=18.12.0'}
@@ -2731,7 +2744,7 @@ snapshots:
 
   tree-kill@1.2.2: {}
 
-  tsdown@0.22.14(tsx@4.23.2)(typescript@5.9.3):
+  tsdown@0.22.14(tsx@4.23.2)(typescript@5.9.3)(unrun@0.3.1):
     dependencies:
       ansis: 4.3.1
       cac: 7.0.0
@@ -2751,6 +2764,7 @@ snapshots:
     optionalDependencies:
       tsx: 4.23.2
       typescript: 5.9.3
+      unrun: 0.3.1
     transitivePeerDependencies:
       - '@typescript/native-preview'
       - '@volar/typescript'
@@ -2771,6 +2785,10 @@ snapshots:
       quansync: 1.0.0
 
   universalify@0.1.2: {}
+
+  unrun@0.3.1:
+    dependencies:
+      rolldown: 1.2.3
 
   verkit@0.3.2: {}
 
