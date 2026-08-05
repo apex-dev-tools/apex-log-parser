@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
-  "changelog": ["@changesets/changelog-github", { "repo": "apex-dev-tools/apex-debug-log-parser" }],
+  "changelog": false,
   "commit": false,
   "fixed": [],
   "linked": [],
