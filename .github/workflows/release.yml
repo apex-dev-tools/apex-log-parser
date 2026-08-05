@@ -15,15 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # ci.yml gates the pull request; this re-checks the merge commit itself,
+      # because a publish cannot be taken back.
+      - run: pnpm run ci
       - run: pnpm run build
       - uses: changesets/action@v1
         with:
+          # Not plain `changeset version`: it rewrites package.json with 2-space JSON,
+          # which expands the short arrays Biome keeps inline. The script reformats after.
+          version: pnpm run version:packages
           publish: pnpm changeset publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
