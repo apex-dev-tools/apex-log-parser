@@ -2,6 +2,9 @@ name: Release
 on:
   push:
     branches: [main]
+  # A startup_failure run cannot be re-run, and push-only recovery needs a new commit
+  # on main. Dispatch retries the same commit after a setting or secret is fixed.
+  workflow_dispatch:
 
 permissions:
   contents: write
