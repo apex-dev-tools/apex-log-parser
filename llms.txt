@@ -1,4 +1,4 @@
-# @apex-dev-tools/apex-log-parser
+# @apexdevtools/apex-log-parser
 
 > TypeScript library for parsing Salesforce Apex debug logs into structured, navigable event trees. Zero dependencies, ESM-only.
 
@@ -7,7 +7,7 @@ This library takes raw Salesforce Apex debug log text and produces a typed tree 
 ## Quick Start
 
 ```typescript
-import { parse } from '@apex-dev-tools/apex-log-parser';
+import { parse } from '@apexdevtools/apex-log-parser';
 
 const log = parse(debugLogText);
 
@@ -40,12 +40,12 @@ parser.governorLimits.dmlStatements; // { used, limit }
 A bundled JSON database of 299 Salesforce debug log event types is available:
 
 ```typescript
-import events from '@apex-dev-tools/apex-log-parser/data/events.json' with { type: 'json' };
+import events from '@apexdevtools/apex-log-parser/data/events.json' with { type: 'json' };
 ```
 
 ## Links
 
 - [README](https://github.com/apex-dev-tools/apex-debug-log-parser#readme)
-- [npm](https://www.npmjs.com/package/@apex-dev-tools/apex-log-parser)
+- [npm](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 - [Source](https://github.com/apex-dev-tools/apex-debug-log-parser)
 - [Contributing](https://github.com/apex-dev-tools/apex-debug-log-parser/blob/main/CONTRIBUTING.md)

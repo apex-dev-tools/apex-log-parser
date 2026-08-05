@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to `@apex-dev-tools/apex-log-parser`. This guide covers everything you need to get started.
+Thanks for your interest in contributing to `@apexdevtools/apex-log-parser`. This guide covers everything you need to get started.
 
 By participating, you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.md).
 

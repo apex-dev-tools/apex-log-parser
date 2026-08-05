@@ -1,5 +1,5 @@
 {
-  "name": "@apex-dev-tools/apex-log-parser",
+  "name": "@apexdevtools/apex-log-parser",
   "version": "0.0.0",
   "description": "Parse Salesforce Apex debug logs into structured, typed event trees with governor limit tracking",
   "type": "module",
