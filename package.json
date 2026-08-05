@@ -23,6 +23,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "ci": "biome check . && tsc --noEmit && vitest run",
+    "version:packages": "changeset version && biome check --write package.json",
     "prepublishOnly": "pnpm run build",
     "scrape": "tsx scripts/scrape.ts",
     "scrape:install": "playwright install chromium --with-deps"
