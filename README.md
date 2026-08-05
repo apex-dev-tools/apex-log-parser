@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![minzipped size](https://img.shields.io/bundlephobia/minzip/@apexdevtools/apex-log-parser)](https://bundlephobia.com/package/@apexdevtools/apex-log-parser)
-[![CI](https://github.com/apex-dev-tools/apex-debug-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-debug-log-parser/actions/workflows/ci.yml)
+[![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
@@ -282,7 +282,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, coding standards
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) or the [GitHub Releases](https://github.com/apex-dev-tools/apex-debug-log-parser/releases) for version history.
+See [CHANGELOG.md](./CHANGELOG.md) or the [GitHub Releases](https://github.com/apex-dev-tools/apex-log-parser/releases) for version history.
 
 ## License
 

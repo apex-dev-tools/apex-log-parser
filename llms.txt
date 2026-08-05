@@ -45,7 +45,7 @@ import events from '@apexdevtools/apex-log-parser/data/events.json' with { type:
 
 ## Links
 
-- [README](https://github.com/apex-dev-tools/apex-debug-log-parser#readme)
+- [README](https://github.com/apex-dev-tools/apex-log-parser#readme)
 - [npm](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
-- [Source](https://github.com/apex-dev-tools/apex-debug-log-parser)
-- [Contributing](https://github.com/apex-dev-tools/apex-debug-log-parser/blob/main/CONTRIBUTING.md)
+- [Source](https://github.com/apex-dev-tools/apex-log-parser)
+- [Contributing](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CONTRIBUTING.md)
