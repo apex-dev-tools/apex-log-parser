@@ -1,5 +1,5 @@
 {
-  "name": "@apex-dev-tools/apex-log-parser",
+  "name": "@apexdevtools/apex-log-parser",
   "version": "0.0.0",
   "description": "Parse Salesforce Apex debug logs into structured, typed event trees with governor limit tracking",
   "type": "module",
@@ -44,13 +44,13 @@
   "packageManager": "pnpm@10.8.0",
   "license": "BSD-3-Clause",
   "author": "Certinia Inc.",
-  "homepage": "https://github.com/apex-dev-tools/apex-debug-log-parser#readme",
+  "homepage": "https://github.com/apex-dev-tools/apex-log-parser#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/apex-dev-tools/apex-debug-log-parser"
+    "url": "https://github.com/apex-dev-tools/apex-log-parser"
   },
   "bugs": {
-    "url": "https://github.com/apex-dev-tools/apex-debug-log-parser/issues"
+    "url": "https://github.com/apex-dev-tools/apex-log-parser/issues"
   },
   "publishConfig": {
     "provenance": true,
@@ -58,10 +58,15 @@
   },
   "keywords": [
     "salesforce",
+    "salesforce-apex",
     "apex",
     "sfdc",
     "debug-log",
+    "debug-logs",
+    "apex-log",
+    "apex-logs",
     "parser",
+    "log-parser",
     "soql",
     "dml",
     "governor-limits",

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to `@apex-dev-tools/apex-log-parser`. This guide covers everything you need to get started.
+Thanks for your interest in contributing to `@apexdevtools/apex-log-parser`. This guide covers everything you need to get started.
 
 By participating, you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.md).
 
@@ -12,8 +12,8 @@ By participating, you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.
 ## Setup
 
 ```bash
-git clone https://github.com/apex-dev-tools/apex-debug-log-parser.git
-cd apex-debug-log-parser
+git clone https://github.com/apex-dev-tools/apex-log-parser.git
+cd apex-log-parser
 pnpm install
 ```
 
@@ -98,4 +98,4 @@ Releases are automated with [Changesets](https://github.com/changesets/changeset
 
 ## Questions?
 
-Open an [issue](https://github.com/apex-dev-tools/apex-debug-log-parser/issues) or start a [discussion](https://github.com/apex-dev-tools/apex-debug-log-parser/discussions).
+Open an [issue](https://github.com/apex-dev-tools/apex-log-parser/issues) or start a [discussion](https://github.com/apex-dev-tools/apex-log-parser/discussions).
