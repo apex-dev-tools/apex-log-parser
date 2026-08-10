@@ -29,7 +29,7 @@
     "scrape:install": "playwright install chromium --with-deps"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
+    "@biomejs/biome": "^2.5.7",
     "@changesets/cli": "^2.31.1",
     "node-html-parser": "^7.0.0",
     "playwright": "^1.62.1",
