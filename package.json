@@ -9,7 +9,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./data/events.json": "./data/salesforce-debug-log-events.json"
+    "./data/events.json": "./data/salesforce-debug-log-events.json",
+    "./package.json": "./package.json"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
