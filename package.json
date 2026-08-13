@@ -1,7 +1,7 @@
 {
   "name": "@apexdevtools/apex-log-parser",
   "version": "0.0.0",
-  "description": "Parse Salesforce Apex debug logs into structured, typed event trees with governor limit tracking",
+  "description": "Turn a Salesforce Apex debug log into a typed event tree — execution timings, governor limits, SOQL/DML counts. Zero dependencies.",
   "type": "module",
   "sideEffects": false,
   "exports": {
