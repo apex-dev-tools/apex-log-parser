@@ -40,4 +40,4 @@ export {
 } from './LogEvents.js';
 
 // Governor-limit observation types (the .limitUsage field type crosses into the log-viewer).
-export type { LimitMetricKey, LimitObservation } from './limits.js';
+export type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
