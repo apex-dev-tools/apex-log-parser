@@ -1733,66 +1733,69 @@ export function applyFlowDbResiduals(elements: LogEvent[]): void {
   let i = elements.length;
   while (i--) {
     const element = elements[i]!;
-    let reports: Map<LimitMetricKey, FlowDbReport> | null = null;
+    let reports: Map<FlowDbCounter, FlowDbReport> | null = null;
     for (const child of element.children) {
       if (!(child instanceof FlowRunningTotalLimitUsageLine) || !child.limitUsage) {
         continue;
       }
       const { metric, used, delta } = child.limitUsage;
+      const counter = FLOW_DB_COUNTERS.get(metric);
+      if (!counter) {
+        continue;
+      }
       reports ??= new Map();
-      const report = reports.get(metric);
+      const report = reports.get(counter);
       if (report) {
         report.summed += delta;
         report.after = used;
       } else {
-        reports.set(metric, { summed: delta, before: used - delta, after: used });
+        reports.set(counter, { summed: delta, before: used - delta, after: used });
       }
     }
     if (!reports) {
       continue;
     }
-    for (const [metric, report] of reports) {
-      const counter = flowDbCounter(element, metric);
+
+    let residuals: Array<[FlowDbCounter, number]> | null = null;
+    for (const [counter, report] of reports) {
       // A repeated or cumulative line would over-attribute, so the reported rise is the ceiling.
-      const delta = Math.min(report.summed, report.after - report.before);
-      const residual = counter ? delta - counter.total : 0;
-      if (!counter || residual <= 0) {
+      const reported = Math.min(report.summed, report.after - report.before);
+      const residual = reported - element[counter].total;
+      if (residual <= 0) {
         continue;
       }
-      counter.self += residual;
-      counter.total += residual;
-      for (let ancestor = element.parent; ancestor; ancestor = ancestor.parent) {
-        const ancestorCounter = flowDbCounter(ancestor, metric);
-        if (ancestorCounter) {
-          ancestorCounter.total += residual;
-        }
+      element[counter].self += residual;
+      element[counter].total += residual;
+      (residuals ??= []).push([counter, residual]);
+    }
+    if (!residuals) {
+      continue;
+    }
+    for (let ancestor = element.parent; ancestor; ancestor = ancestor.parent) {
+      for (const [counter, residual] of residuals) {
+        ancestor[counter].total += residual;
       }
     }
   }
 }
 
-/** The running totals a flow element's limit-usage children report for one metric. */
+/** The `LogEvent` counter a governor-limit metric is attributed to. */
+type FlowDbCounter = 'soqlCount' | 'soqlRowCount' | 'soslCount' | 'dmlCount' | 'dmlRowCount';
+
+/** Only these metrics are counters. CPU and heap are measures, so they are not attributed. */
+const FLOW_DB_COUNTERS = new Map<LimitMetricKey, FlowDbCounter>([
+  ['soqlQueries', 'soqlCount'],
+  ['queryRows', 'soqlRowCount'],
+  ['soslQueries', 'soslCount'],
+  ['dmlStatements', 'dmlCount'],
+  ['dmlRows', 'dmlRowCount'],
+]);
+
+/** The running totals a flow element's limit-usage children report for one counter. */
 interface FlowDbReport {
   summed: number;
   before: number;
   after: number;
-}
-
-function flowDbCounter(target: LogEvent, metric: LimitMetricKey): SelfTotal | null {
-  switch (metric) {
-    case 'soqlQueries':
-      return target.soqlCount;
-    case 'queryRows':
-      return target.soqlRowCount;
-    case 'soslQueries':
-      return target.soslCount;
-    case 'dmlStatements':
-      return target.dmlCount;
-    case 'dmlRows':
-      return target.dmlRowCount;
-    default:
-      return null;
-  }
 }
 
 export class FlowElementBeginLine extends DurationLogEvent {

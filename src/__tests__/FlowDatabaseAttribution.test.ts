@@ -2,22 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { parse } from '../index.js';
-import type { LogEvent } from '../index.js';
-
-/** Depth-first flatten of the parsed tree into a flat event list. */
-function flatten(root: LogEvent): LogEvent[] {
-  const out: LogEvent[] = [];
-  const walk = (event: LogEvent): void => {
-    out.push(event);
-    for (const child of event.children ?? []) {
-      walk(child);
-    }
-  };
-  for (const child of root.children ?? []) {
-    walk(child);
-  }
-  return out;
-}
+import { flatten } from './helpers.js';
 
 const CUMULATIVE_BLOCK =
   '09:18:22.6 (500)|CUMULATIVE_LIMIT_USAGE\n' +
@@ -216,11 +201,8 @@ describe('flow database attribution (via parse)', () => {
       '09:18:22.6 (260)|FLOW_BULK_ELEMENT_END|FlowRecordUpdate|Update_Account|1|60\n' +
       '09:19:13.82 (51595120059)|EXECUTION_FINISHED\n';
 
-    expect(() => parse(log)).not.toThrow();
-
     const apexLog = parse(log);
-    const events = flatten(apexLog);
-    const bulkElement = events.find((e) => e.type === 'FLOW_BULK_ELEMENT_BEGIN');
+    const bulkElement = flatten(apexLog).find((e) => e.type === 'FLOW_BULK_ELEMENT_BEGIN');
 
     expect(bulkElement?.soqlCount.self).toBe(0);
     expect(bulkElement?.dmlCount.self).toBe(0);
