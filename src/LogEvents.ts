@@ -3,7 +3,7 @@
  */
 
 import type { ApexLogParser, DebugLevel } from './ApexLogParser.js';
-import type { LimitObservation } from './limits.js';
+import type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
 import { parseCodedLimit, parseLabelledLimit, parseTotalLimit } from './limits.js';
 import type {
   CPUType,
@@ -1710,12 +1710,101 @@ export class FlowCreateInterviewErrorLine extends LogEvent {
   }
 }
 
+/**
+ * Attribute the database usage a flow element's FLOW_*_LIMIT_USAGE children report (SOQL/DML/rows
+ * only - CPU and heap are not counters) onto the element that ran it. The log emits no
+ * SOQL_EXECUTE_BEGIN or DML_BEGIN for a flow element's own database work, so the reported count is
+ * the only record of it.
+ *
+ * That count is the rise in the transaction's governor counter across the element, so it also
+ * covers any statement the element's subtree logged for itself. Only the residual - the part no
+ * logged statement accounts for - is attributed, which keeps the totals at or below what the log
+ * reports. Where a subtree statement did not consume the limit (custom metadata SOQL, for example)
+ * the residual understates it, because the log never says which statements were free.
+ *
+ * `self` sits on the element rather than the reporting child, unlike the statement lines, so the
+ * element is credited for the work it did itself.
+ *
+ * Runs after `aggregateTotals`, so each element's `total` already covers its subtree and the
+ * residual has to be added to every ancestor here. Elements are visited innermost first, so a
+ * nested element's residual is part of its parent's total before the parent is measured.
+ */
+export function applyFlowDbResiduals(elements: LogEvent[]): void {
+  let i = elements.length;
+  while (i--) {
+    const element = elements[i]!;
+    let reports: Map<FlowDbCounter, FlowDbReport> | null = null;
+    for (const child of element.children) {
+      if (!(child instanceof FlowRunningTotalLimitUsageLine) || !child.limitUsage) {
+        continue;
+      }
+      const { metric, used, delta } = child.limitUsage;
+      const counter = FLOW_DB_COUNTERS.get(metric);
+      if (!counter) {
+        continue;
+      }
+      reports ??= new Map();
+      const report = reports.get(counter);
+      if (report) {
+        report.summed += delta;
+        report.after = used;
+      } else {
+        reports.set(counter, { summed: delta, before: used - delta, after: used });
+      }
+    }
+    if (!reports) {
+      continue;
+    }
+
+    let residuals: Array<[FlowDbCounter, number]> | null = null;
+    for (const [counter, report] of reports) {
+      // A repeated or cumulative line would over-attribute, so the reported rise is the ceiling.
+      const reported = Math.min(report.summed, report.after - report.before);
+      const residual = reported - element[counter].total;
+      if (residual <= 0) {
+        continue;
+      }
+      element[counter].self += residual;
+      element[counter].total += residual;
+      (residuals ??= []).push([counter, residual]);
+    }
+    if (!residuals) {
+      continue;
+    }
+    for (let ancestor = element.parent; ancestor; ancestor = ancestor.parent) {
+      for (const [counter, residual] of residuals) {
+        ancestor[counter].total += residual;
+      }
+    }
+  }
+}
+
+/** The `LogEvent` counter a governor-limit metric is attributed to. */
+type FlowDbCounter = 'soqlCount' | 'soqlRowCount' | 'soslCount' | 'dmlCount' | 'dmlRowCount';
+
+/** Only these metrics are counters. CPU and heap are measures, so they are not attributed. */
+const FLOW_DB_COUNTERS = new Map<LimitMetricKey, FlowDbCounter>([
+  ['soqlQueries', 'soqlCount'],
+  ['queryRows', 'soqlRowCount'],
+  ['soslQueries', 'soslCount'],
+  ['dmlStatements', 'dmlCount'],
+  ['dmlRows', 'dmlRowCount'],
+]);
+
+/** The running totals a flow element's limit-usage children report for one counter. */
+interface FlowDbReport {
+  summed: number;
+  before: number;
+  after: number;
+}
+
 export class FlowElementBeginLine extends DurationLogEvent {
   debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['FLOW_ELEMENT_END'], LOG_CATEGORY.Automation, 'custom');
     this.text = parts[3] + ' ' + parts[4];
+    parser.flowDbElements.push(this);
   }
 }
 
@@ -1821,17 +1910,23 @@ export class FlowElementFaultLine extends LogEvent {
   }
 }
 
-export class FlowElementLimitUsageLine extends LogEvent {
+/**
+ * A flow limit-usage line reporting a running total, e.g. "1 SOQL queries, total 1 out of 100".
+ * The enclosing flow element reads the delta from these children - see `applyFlowDbResiduals`.
+ */
+class FlowRunningTotalLimitUsageLine extends LogEvent {
   debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   /** Governor-limit observation. Example: "2 ms CPU time, total 10 out of 15000". */
-  limitUsage: LimitObservation | null = null;
+  limitUsage: RunningTotalObservation | null;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = `${parts[2]}`;
+    this.text = parts[2] ?? '';
     this.limitUsage = parseTotalLimit(this.text);
   }
 }
+
+export class FlowElementLimitUsageLine extends FlowRunningTotalLimitUsageLine {}
 
 export class FlowInterviewFinishedLimitUsageLine extends LogEvent {
   debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
@@ -1896,6 +1991,7 @@ export class FlowBulkElementBeginLine extends DurationLogEvent {
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['FLOW_BULK_ELEMENT_END'], LOG_CATEGORY.Automation, 'custom');
     this.text = `${parts[2]} - ${parts[3]}`;
+    parser.flowDbElements.push(this);
   }
 }
 
@@ -1917,17 +2013,7 @@ export class FlowBulkElementNotSupportedLine extends LogEvent {
   }
 }
 
-export class FlowBulkElementLimitUsageLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
-  debugLevel: LogLevel = LOG_LEVEL.Finer;
-  /** Governor-limit observation. Example: "1 SOQL queries, total 1 out of 100". */
-  limitUsage: LimitObservation | null = null;
-  constructor(parser: ApexLogParser, parts: string[]) {
-    super(parser, parts);
-    this.text = parts[2] || '';
-    this.limitUsage = parseTotalLimit(this.text);
-  }
-}
+export class FlowBulkElementLimitUsageLine extends FlowRunningTotalLimitUsageLine {}
 
 export class PNInvalidAppLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
