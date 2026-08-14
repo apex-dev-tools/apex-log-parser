@@ -1,8 +1,8 @@
 # @apexdevtools/apex-log-parser
 
-> TypeScript library for parsing Salesforce Apex debug logs into structured, navigable event trees. Zero dependencies, ESM-only.
+> Turn a Salesforce Apex debug log into a typed event tree — execution timings, governor limits, SOQL/DML counts. Zero dependencies, ESM-only.
 
-This library takes raw Salesforce Apex debug log text and produces a typed tree of parsed events. It supports 200+ event types, computes execution timing (self and total duration in nanoseconds), tracks governor limits with per-namespace snapshots, and counts SOQL/DML/SOSL rows aggregated up the call tree.
+This library takes raw Salesforce Apex debug log text and produces a typed tree of parsed events. It has a dedicated class for 171 event types and a bundled database of 299 documented events. It computes execution timing (self and total duration in nanoseconds), tracks governor limits with per-namespace snapshots, and counts SOQL/DML/SOSL rows aggregated up the call tree.
 
 ## Quick Start
 
@@ -18,22 +18,28 @@ for (const event of log.children) {
 
 ## Key APIs
 
-- `parse(logData: string): ApexLog` — Parse raw log text into an event tree
-- `ApexLogParser` class — Stateful parser exposing `governorLimits`, `logIssues`, `namespaces`
-- `LogEvent` — Base class for all events with `type`, `text`, `timestamp`, `duration`, `children`, `parent`, `namespace`, `debugCategory`, `debugLevel`
-- Event subclasses: `MethodEntryLine`, `SOQLExecuteBeginLine`, `DMLBeginLine`, `CodeUnitStartedLine`, `FlowStartInterviewsBeginLine`, `CalloutRequestLine`, `ExceptionThrownLine`, etc.
-- `getLogEventClass(type)` — Look up event class by type string
-- Constants: `DEBUG_CATEGORY`, `LOG_CATEGORY`, `LOG_LEVEL`
+- `parse(logData: string): ApexLog` — the only entry point. There is no parser object to construct
+- `ApexLog` — the root node. A `LogEvent` plus `governorLimits`, `namespaces`, `debugLevels`, `logIssues`, `parsingErrors`, `exceptions`, `eventsById`, `startTime`, `size`
+- `LogEvent` — base class for all events with `type`, `text`, `timestamp`, `exitStamp`, `duration`, `children`, `parent`, `namespace`, `lineNumber`, `eventIndex`, `category`, `debugCategory`, `debugLevel`, `cpuType`, and `SelfTotal` counters (`soqlCount`, `soqlRowCount`, `dmlCount`, `dmlRowCount`, `soslCount`, `soslRowCount`, `thrownCount`, `heapAllocated`, `heapGross`)
+- Exported event subclasses, for `instanceof` narrowing: `ApexLog`, `CodeUnitStartedLine`, `DMLBeginLine`, `ExecutionStartedLine`, `HeapAllocateLine`, `LimitUsageLine`, `LogEvent`, `MethodEntryLine`, `SOQLExecuteBeginLine`, `SOQLExecuteExplainLine`. For any other event type compare `event.type` as a string — it is typed as `LogEventType`
+- `DebugLevel` class — `{ logCategory, logLevel }`
+- Constants: `ALL_LOG_CATEGORIES`, `DEBUG_CATEGORY`, `LOG_CATEGORY`, `LOG_LEVEL`
+- Types: `CPUType`, `DebugCategory`, `GovernorLimits`, `GovernorSnapshot`, `IssueType`, `Limits`, `LineNumber`, `LogCategory`, `LogEventType`, `LogIssue`, `LogLevel`, `SelfTotal`, `LimitMetricKey`, `LimitObservation`
 
 ## Governor Limits
 
 ```typescript
-const parser = new ApexLogParser();
-parser.parse(logText);
-parser.governorLimits.cpuTime;      // { used, limit }
-parser.governorLimits.soqlQueries;  // { used, limit }
-parser.governorLimits.dmlStatements; // { used, limit }
+import { parse } from '@apexdevtools/apex-log-parser';
+
+const log = parse(debugLogText);
+log.governorLimits.cpuTime;       // { used, limit }
+log.governorLimits.soqlQueries;   // { used, limit }
+log.governorLimits.dmlStatements; // { used, limit }
+log.governorLimits.byNamespace;   // Map<string, Limits>
+log.governorLimits.snapshots;     // GovernorSnapshot[]
 ```
+
+The log must contain a `CUMULATIVE_LIMIT_USAGE` block, which needs `APEX_PROFILING` at `FINE` or above. Without it every metric stays at `{ used: 0, limit: 0 }`.
 
 ## Event Database
 
