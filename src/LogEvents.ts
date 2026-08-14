@@ -75,7 +75,7 @@ export abstract class LogEvent {
   nextLineIsExit = false;
 
   /**
-   * The line number within the containing class
+   * The line in the caller that this was called from.
    */
   lineNumber: LineNumber = null;
 
