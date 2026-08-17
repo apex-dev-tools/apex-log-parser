@@ -30,7 +30,7 @@ jobs:
       # because a publish cannot be taken back.
       - run: pnpm run ci
       - run: pnpm run build
-      - uses: changesets/action@v1
+      - uses: changesets/action@v2
         with:
           # Not plain `changeset version`: it rewrites package.json with 2-space JSON,
           # which expands the short arrays Biome keeps inline. The script reformats after.
