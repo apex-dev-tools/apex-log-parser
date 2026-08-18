@@ -104,8 +104,9 @@ export interface GovernorLimits extends Limits {
  */
 export interface LogCoverage {
   /**
-   * The log holds per-namespace limit snapshots (`LIMIT_USAGE_FOR_NS`), which need `APEX_PROFILING`
-   * at `FINEST`. Derived from `governorLimits.snapshots`.
+   * The log stated per-namespace limit snapshots, so `governorLimits` reports what the log recorded
+   * rather than nothing. Snapshots need `APEX_PROFILING` at `FINEST`, so read `debugLevels` to tell
+   * "the header switched them off" from "none were recorded".
    */
   hasCumulativeLimits: boolean;
   /** The log holds `HEAP_ALLOCATE` events, which need `APEX_CODE` at `FINER`. */

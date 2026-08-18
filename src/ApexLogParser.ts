@@ -90,9 +90,10 @@ const debugCategoryByToken = new Map<string, DebugCategory>(
   ]),
 );
 
-// Only a timestamped header line, so a USER_DEBUG message that quotes `|USER_INFO|` is not read as
-// the header. `[^\r\n]` because a CRLF log would otherwise keep the `\r` in the last field.
-const userInfoPattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|USER_INFO\|[^\r\n]*/m;
+// Read from the whole log, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
+// the header line never reaches `UserInfoLine`. Only a timestamped line matches, so a USER_DEBUG
+// message that quotes `|USER_INFO|` is not read as the header.
+const userInfoPattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|USER_INFO\|.*/m;
 // Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
 // localised, label with either part missing. Read the two parts apart, so one absent part does not
 // leave the other in the label.
@@ -136,7 +137,7 @@ function parseUserInfo(log: string): UserInfo | null {
     id: parts[3] ?? '',
     userName: parts[4] ?? '',
     timezone: {
-      label: (named ? timezone.slice(0, named.index) : timezone).trim(),
+      label: timezone.replace(ianaNamePattern, '').trim(),
       name: named?.[1] ?? null,
       offsetMinutes: parseGmtOffset(parts[6] ?? ''),
     },
