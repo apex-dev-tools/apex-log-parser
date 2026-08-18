@@ -2,30 +2,13 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
-// Parser
-export { DebugLevel, parse } from './ApexLogParser.js';
+// Runtime only. Types and the const companions live in '@apexdevtools/apex-log-parser/types'.
 
-// Types
-export type {
-  CPUType,
-  DebugCategory,
-  GovernorLimits,
-  GovernorSnapshot,
-  IssueType,
-  Limits,
-  LineNumber,
-  LogCategory,
-  LogEventType,
-  LogIssue,
-  LogLevel,
-  LogSubCategory,
-  SelfTotal,
-} from './types.js';
+// ApexLogParser is public because every event constructor takes one, so a consumer that builds
+// events needs it.
+export { ApexLogParser, DebugLevel, parse } from './ApexLogParser.js';
 
-// Constants
-export { ALL_LOG_CATEGORIES, DEBUG_CATEGORY, LOG_CATEGORY, LOG_LEVEL } from './types.js';
-
-// Events - classes used by consumers for instanceof narrowing and typing the tree
+// Event classes, for instanceof narrowing. For any other event type compare event.type as a string.
 export {
   ApexLog,
   CodeUnitStartedLine,
@@ -37,7 +20,5 @@ export {
   MethodEntryLine,
   SOQLExecuteBeginLine,
   SOQLExecuteExplainLine,
+  SOSLExecuteBeginLine,
 } from './LogEvents.js';
-
-// Governor-limit observation types (the .limitUsage field type crosses into the log-viewer).
-export type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';

@@ -27,9 +27,10 @@ export function parse(logData: string): ApexLog {
 }
 
 /**
- * Internal stateful parsing engine. Consumers should use the exported `parse`
- * function instead — it drives this class and returns an `ApexLog` that already
- * carries the governor limits, log issues and namespaces accumulated here.
+ * Stateful parsing engine. Prefer the `parse` function — it drives this class and returns an
+ * `ApexLog` that already carries the governor limits, log issues and namespaces accumulated here.
+ * The class is public because every event constructor takes one, so code that builds events needs
+ * it. Its fields are parser state, not API.
  */
 export class ApexLogParser {
   logIssues: LogIssue[] = [];

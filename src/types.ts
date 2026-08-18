@@ -62,9 +62,6 @@ export type LogCategory = (typeof LOG_CATEGORY)[keyof typeof LOG_CATEGORY] | '';
 /** Readonly array of all category values (for building Sets, iterating, etc.) */
 export const ALL_LOG_CATEGORIES: readonly LogCategory[] = Object.values(LOG_CATEGORY);
 
-/** @deprecated Use LogCategory instead */
-export type LogSubCategory = LogCategory;
-
 export interface Limits {
   soqlQueries: { used: number; limit: number };
   soslQueries: { used: number; limit: number };
