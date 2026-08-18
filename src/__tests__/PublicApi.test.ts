@@ -15,6 +15,7 @@ import type {
   Limits,
   LineNumber,
   LogCategory,
+  LogCoverage,
   LogEventType,
   LogIssue,
   LogLevel,
@@ -59,6 +60,7 @@ interface PublicTypeSurface {
   limits: Limits;
   lineNumber: LineNumber;
   logCategory: LogCategory;
+  logCoverage: LogCoverage;
   logEventType: LogEventType;
   logIssue: LogIssue;
   logLevel: LogLevel;

@@ -13,6 +13,7 @@ import type {
   Limits,
   LineNumber,
   LogCategory,
+  LogCoverage,
   LogEventType,
   LogIssue,
   LogLevel,
@@ -418,6 +419,9 @@ export class ApexLog extends LogEvent {
    * Any issues that occurred during the parsing of the log, such as an unrecognized log event type.
    */
   public parsingErrors: string[] = [];
+
+  /** What the log recorded, so a caller can caveat a figure the log could not state. */
+  public coverage: LogCoverage = { hasCumulativeLimits: false, hasHeapEvents: false };
 
   /** Who ran the transaction, from the `USER_INFO` header line. Null when it states no user. */
   public userInfo: UserInfo | null = null;

@@ -17,6 +17,7 @@ export type {
   Limits,
   LineNumber,
   LogCategory,
+  LogCoverage,
   LogEventType,
   LogIssue,
   LogLevel,
