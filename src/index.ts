@@ -6,7 +6,7 @@
 
 // ApexLogParser is public because every event constructor takes one, so a consumer that builds
 // events needs it.
-export { ApexLogParser, DebugLevel, parse } from './ApexLogParser.js';
+export { ApexLogParser, parse } from './ApexLogParser.js';
 
 // Event classes, for instanceof narrowing. For any other event type compare event.type as a string.
 export {

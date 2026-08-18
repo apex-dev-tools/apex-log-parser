@@ -1002,22 +1002,24 @@ describe('Log Settings tests', () => {
 
   const apexLog = parse(log);
 
-  it('The settings should be found', () => {
-    expect(apexLog.debugLevels).not.toBe(null);
-  });
   it('The settings should be as expected', () => {
-    expect(apexLog.debugLevels).toEqual([
-      { logCategory: 'APEX_CODE', logLevel: 'FINE' },
-      { logCategory: 'APEX_PROFILING', logLevel: 'NONE' },
-      { logCategory: 'CALLOUT', logLevel: 'NONE' },
-      { logCategory: 'DB', logLevel: 'INFO' },
-      { logCategory: 'NBA', logLevel: 'NONE' },
-      { logCategory: 'SYSTEM', logLevel: 'NONE' },
-      { logCategory: 'VALIDATION', logLevel: 'INFO' },
-      { logCategory: 'VISUALFORCE', logLevel: 'NONE' },
-      { logCategory: 'WAVE', logLevel: 'NONE' },
-      { logCategory: 'WORKFLOW', logLevel: 'INFO' },
-    ]);
+    expect(apexLog.debugLevels).toEqual({
+      'Apex Code': 'FINE',
+      'Apex Profiling': 'NONE',
+      Callout: 'NONE',
+      Database: 'INFO',
+      NBA: 'NONE',
+      System: 'NONE',
+      Validation: 'INFO',
+      Visualforce: 'NONE',
+      Wave: 'NONE',
+      Workflow: 'INFO',
+    });
+  });
+
+  it('leaves out a category the header did not declare', () => {
+    expect(apexLog.debugLevels['Data Access']).toBeUndefined();
+    expect(apexLog.parsingErrors).toEqual([]);
   });
 });
 

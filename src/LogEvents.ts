@@ -2,12 +2,13 @@
  * Copyright (c) 2020 Certinia Inc. All rights reserved.
  */
 
-import type { ApexLogParser, DebugLevel } from './ApexLogParser.js';
+import type { ApexLogParser } from './ApexLogParser.js';
 import type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
 import { parseCodedLimit, parseLabelledLimit, parseTotalLimit } from './limits.js';
 import type {
   CPUType,
   DebugCategory,
+  DebugLevels,
   GovernorLimits,
   Limits,
   LineNumber,
@@ -401,7 +402,7 @@ export class ApexLog extends LogEvent {
   /**
    * The Apex Debug Logging Levels for the current log
    */
-  public debugLevels: DebugLevel[] = [];
+  public debugLevels: DebugLevels = {};
 
   /**
    * All the namespaces that appear in this log.

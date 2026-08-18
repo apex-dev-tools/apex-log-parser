@@ -4,12 +4,16 @@
 
 import { ApexLog, type LogEvent, applyFlowDbResiduals } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
+import { DEBUG_CATEGORY } from './types.js';
 import type {
+  DebugCategory,
+  DebugLevels,
   GovernorLimits,
   IssueType,
   Limits,
   LogEventType,
   LogIssue,
+  LogLevel,
   Truncation,
   TruncationRegion,
   UserInfo,
@@ -37,6 +41,21 @@ const truncationKinds: Record<string, TruncationRegion['kind']> = {
 function issueKey(type: IssueType, summary: string): string {
   return type + ':' + summary;
 }
+
+/** The settings line names each category with a log token, not the display name. */
+const debugCategoryByToken: Record<string, DebugCategory> = {
+  APEX_CODE: DEBUG_CATEGORY.ApexCode,
+  APEX_PROFILING: DEBUG_CATEGORY.ApexProfiling,
+  CALLOUT: DEBUG_CATEGORY.Callout,
+  DATA_ACCESS: DEBUG_CATEGORY.DataAccess,
+  DB: DEBUG_CATEGORY.Database,
+  NBA: DEBUG_CATEGORY.NBA,
+  SYSTEM: DEBUG_CATEGORY.System,
+  VALIDATION: DEBUG_CATEGORY.Validation,
+  VISUALFORCE: DEBUG_CATEGORY.Visualforce,
+  WAVE: DEBUG_CATEGORY.Wave,
+  WORKFLOW: DEBUG_CATEGORY.Workflow,
+};
 
 const userInfoPattern = /^[^\n]*\|USER_INFO\|[^\n]*$/m;
 // Either '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)' or a bare, sometimes localised,
@@ -727,29 +746,24 @@ export class ApexLogParser {
     this.addLogIssue(startTime, eventIndex, summary, description, type);
   }
 
-  private getDebugLevels(log: string): DebugLevel[] {
+  private getDebugLevels(log: string): DebugLevels {
     const match = log.match(settingsPattern);
     if (!match) {
-      return [];
+      return {};
     }
 
-    const settings = match[0],
-      settingList = settings.substring(settings.indexOf(' ') + 1).split(';');
-
-    return settingList.map((entry) => {
-      const parts = entry.split(',');
-      return new DebugLevel(parts[0] || '', parts[1] || '');
-    });
-  }
-}
-
-export class DebugLevel {
-  logCategory: string;
-  logLevel: string;
-
-  constructor(category: string, level: string) {
-    this.logCategory = category;
-    this.logLevel = level;
+    const settings = match[0];
+    const levels: DebugLevels = {};
+    for (const entry of settings.substring(settings.indexOf(' ') + 1).split(';')) {
+      const [token, level] = entry.split(',');
+      const category = token ? debugCategoryByToken[token] : undefined;
+      if (category && level) {
+        levels[category] = level as LogLevel;
+      } else {
+        this.parsingErrors.push(`Unsupported debug level: ${entry}`);
+      }
+    }
+    return levels;
   }
 }
 

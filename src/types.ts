@@ -5,6 +5,8 @@
 export type CPUType = 'loading' | 'custom' | 'method' | 'free' | 'system' | 'pkg' | '';
 
 export const LOG_LEVEL = {
+  /** Only the log header states this - a category the header switched off. */
+  None: 'NONE',
   Error: 'ERROR',
   Warn: 'WARN',
   Info: 'INFO',
@@ -95,6 +97,12 @@ export interface GovernorLimits extends Limits {
   /** Point-in-time snapshots of governor limit usage, ordered by timestamp ascending. */
   snapshots: GovernorSnapshot[];
 }
+
+/**
+ * The log level the header declared per category. An absent key means the header declared no level
+ * for that category, which is not the same as nothing of that category having run.
+ */
+export type DebugLevels = Partial<Record<DebugCategory, LogLevel>>;
 
 /** The user timezone as the log header stated it. */
 export interface LogTimezone {

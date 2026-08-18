@@ -6,6 +6,7 @@ import * as publicTypes from '../publicTypes.js';
 import type {
   CPUType,
   DebugCategory,
+  DebugLevels,
   GovernorLimits,
   GovernorSnapshot,
   IssueType,
@@ -31,7 +32,6 @@ const ROOT_EXPORTS = [
   'ApexLog',
   'ApexLogParser',
   'CodeUnitStartedLine',
-  'DebugLevel',
   'DMLBeginLine',
   'ExecutionStartedLine',
   'HeapAllocateLine',
@@ -50,6 +50,7 @@ const TYPES_RUNTIME_EXPORTS = ['ALL_LOG_CATEGORIES', 'DEBUG_CATEGORY', 'LOG_CATE
 interface PublicTypeSurface {
   cpuType: CPUType;
   debugCategory: DebugCategory;
+  debugLevels: DebugLevels;
   governorLimits: GovernorLimits;
   governorSnapshot: GovernorSnapshot;
   issueType: IssueType;
