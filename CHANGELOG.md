@@ -19,7 +19,7 @@
 - Zero runtime dependencies.
 - ESM-only, strict TypeScript.
 - Split the public API: the root entry point exports runtime values only — `parse`,
-  `ApexLogParser`, `DebugLevel` and the event classes — and a new
+  `ApexLogParser` and the event classes — and a new
   `@apexdevtools/apex-log-parser/types` subpath exports every public type and the const companions
   (`LOG_LEVEL`, `DEBUG_CATEGORY`, `LOG_CATEGORY`, `ALL_LOG_CATEGORIES`). Adds the missing
   `SOSLExecuteBeginLine`, and drops the deprecated `LogSubCategory` alias — use `LogCategory`.
@@ -40,7 +40,8 @@
 
 - Add `ApexLog.coverage` — `hasCumulativeLimits` and `hasHeapEvents`, so a caller can caveat a figure
   the log could not state instead of reading a zero as a fact. Both depend on the debug levels the
-  header declared: cumulative limits need `APEX_PROFILING` at `FINE`, heap events need `FINEST`.
+  header declared: limit snapshots need `APEX_PROFILING` at `FINEST`, heap events need `APEX_CODE` at
+  `FINER`.
 - Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
   found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
   log states no code unit.

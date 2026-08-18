@@ -1021,6 +1021,20 @@ describe('Log Settings tests', () => {
     expect(apexLog.debugLevels['Data Access']).toBeUndefined();
     expect(apexLog.parsingErrors).toEqual([]);
   });
+
+  it('reports an unknown category and an unknown level, and ignores an empty entry', () => {
+    const parsed = parse(
+      '61.0 APEX_CODE,FINE;APEX_PROFILING,WIBBLE;FUTURE_CATEGORY,FINE;\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|EXECUTION_FINISHED\n',
+    );
+
+    expect(parsed.debugLevels).toEqual({ 'Apex Code': 'FINE' });
+    expect(parsed.parsingErrors).toEqual([
+      'Unsupported debug level: APEX_PROFILING,WIBBLE',
+      'Unsupported debug log category: FUTURE_CATEGORY',
+    ]);
+  });
 });
 
 describe('namespace tests', () => {

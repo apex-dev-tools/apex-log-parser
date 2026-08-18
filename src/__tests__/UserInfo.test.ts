@@ -74,4 +74,53 @@ describe('userInfo', () => {
 
     expect(apexLog.userInfo).toBeNull();
   });
+
+  it('reads a CRLF log', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00\r',
+      ).replaceAll('\n', '\r\n'),
+    );
+
+    expect(apexLog.userInfo?.timezone).toEqual({
+      label: 'Pacific Standard Time',
+      name: 'America/Los_Angeles',
+      offsetMinutes: -480,
+    });
+  });
+
+  it('reads a GMT-prefixed label that states no IANA name', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT+05:30) India Standard Time|GMT+05:30',
+      ),
+    );
+
+    expect(apexLog.userInfo?.timezone).toEqual({
+      label: 'India Standard Time',
+      name: null,
+      offsetMinutes: 330,
+    });
+  });
+
+  it('reports no offset when the header states none it can read', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|Pacific Standard Time',
+      ),
+    );
+
+    expect(apexLog.userInfo?.timezone.offsetMinutes).toBeNull();
+  });
+
+  it('ignores a USER_DEBUG message that quotes the USER_INFO marker', () => {
+    const apexLog = parse(
+      '61.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[9]|DEBUG|USER_INFO|[EXTERNAL]|x|y|z\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.userInfo).toBeNull();
+  });
 });

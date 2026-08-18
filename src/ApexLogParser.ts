@@ -10,7 +10,7 @@ import {
   applyFlowDbResiduals,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
-import { DEBUG_CATEGORY } from './types.js';
+import { DEBUG_CATEGORY, LOG_LEVEL } from './types.js';
 import type {
   DebugCategory,
   DebugLevels,
@@ -90,17 +90,29 @@ const debugCategoryByToken = new Map<string, DebugCategory>(
   ]),
 );
 
-const userInfoPattern = /^[^\n]*\|USER_INFO\|[^\n]*$/m;
-// Either '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)' or a bare, sometimes localised,
-// label with no IANA name. The name is the last group, because it can hold slashes.
-const timezonePattern = /^\(GMT[^)]*\)\s*(.*)\s\(([^)]*)\)$/;
+// Only a timestamped header line, so a USER_DEBUG message that quotes `|USER_INFO|` is not read as
+// the header. `[^\r\n]` because a CRLF log would otherwise keep the `\r` in the last field.
+const userInfoPattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|USER_INFO\|[^\r\n]*/m;
+// Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
+// localised, label with either part missing. Read the two parts apart, so one absent part does not
+// leave the other in the label.
+const gmtPrefixPattern = /^\(GMT[^)]*\)\s*/;
+// Last group, because an IANA name can hold slashes.
+const ianaNamePattern = /\s\(([^)]*)\)$/;
 const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
 
-/** Minutes east of UTC. The header states `GMTZ` rather than `GMT+00:00` for UTC. */
-function parseGmtOffset(offset: string): number {
+/**
+ * Minutes east of UTC. The header states `GMTZ` rather than `GMT+00:00` for UTC.
+ * @returns null when the header stated no offset this can read.
+ */
+function parseGmtOffset(offset: string): number | null {
+  if (offset === 'GMTZ') {
+    return 0;
+  }
+
   const match = offset.match(gmtOffsetPattern);
   if (!match) {
-    return 0;
+    return null;
   }
 
   const minutes = Number.parseInt(match[2] ?? '0', 10) * 60 + Number.parseInt(match[3] ?? '0', 10);
@@ -118,18 +130,20 @@ function parseUserInfo(log: string): UserInfo | null {
   }
 
   const parts = line.split('|');
-  const timezone = parts[5] ?? '';
-  const named = timezone.match(timezonePattern);
+  const timezone = (parts[5] ?? '').replace(gmtPrefixPattern, '');
+  const named = timezone.match(ianaNamePattern);
   return {
     id: parts[3] ?? '',
     userName: parts[4] ?? '',
     timezone: {
-      label: named?.[1] ?? timezone,
-      name: named?.[2] ?? null,
+      label: (named ? timezone.slice(0, named.index) : timezone).trim(),
+      name: named?.[1] ?? null,
       offsetMinutes: parseGmtOffset(parts[6] ?? ''),
     },
   };
 }
+
+const logLevels = new Set<string>(Object.values(LOG_LEVEL));
 
 const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
 
@@ -796,12 +810,18 @@ export class ApexLogParser {
     const settings = match[0];
     const levels: DebugLevels = {};
     for (const entry of settings.substring(settings.indexOf(' ') + 1).split(';')) {
+      if (!entry) {
+        continue;
+      }
+
       const [token, level] = entry.split(',');
       const category = token ? debugCategoryByToken.get(token) : undefined;
-      if (category && level) {
-        levels[category] = level as LogLevel;
-      } else {
+      if (!category) {
+        this.parsingErrors.push(`Unsupported debug log category: ${token}`);
+      } else if (!level || !logLevels.has(level)) {
         this.parsingErrors.push(`Unsupported debug level: ${entry}`);
+      } else {
+        levels[category] = level as LogLevel;
       }
     }
     return levels;

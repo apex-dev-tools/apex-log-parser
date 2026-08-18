@@ -104,11 +104,11 @@ export interface GovernorLimits extends Limits {
  */
 export interface LogCoverage {
   /**
-   * The log holds a `CUMULATIVE_LIMIT_USAGE` block, which needs `APEX_PROFILING` at `FINE`.
-   * Derived from `governorLimits.snapshots`.
+   * The log holds per-namespace limit snapshots (`LIMIT_USAGE_FOR_NS`), which need `APEX_PROFILING`
+   * at `FINEST`. Derived from `governorLimits.snapshots`.
    */
   hasCumulativeLimits: boolean;
-  /** The log holds `HEAP_ALLOCATE` events, which need `APEX_PROFILING` at `FINEST`. */
+  /** The log holds `HEAP_ALLOCATE` events, which need `APEX_CODE` at `FINER`. */
   hasHeapEvents: boolean;
 }
 
@@ -116,7 +116,7 @@ export interface LogCoverage {
  * The log level the header declared per category. An absent key means the header declared no level
  * for that category, which is not the same as nothing of that category having run.
  */
-export type DebugLevels = Partial<Record<DebugCategory, LogLevel>>;
+export type DebugLevels = Partial<Record<Exclude<DebugCategory, ''>, LogLevel>>;
 
 /** The user timezone as the log header stated it. */
 export interface LogTimezone {
@@ -124,8 +124,8 @@ export interface LogTimezone {
   label: string;
   /** IANA name, e.g. `America/Los_Angeles`. Null when the header stated no name. */
   name: string | null;
-  /** Minutes east of UTC, e.g. -480 for `GMT-08:00`. */
-  offsetMinutes: number;
+  /** Minutes east of UTC, e.g. -480 for `GMT-08:00`. Null when the header stated no offset. */
+  offsetMinutes: number | null;
 }
 
 /** Who ran the transaction, from the `USER_INFO` header line. */
