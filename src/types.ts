@@ -23,28 +23,6 @@ export type IssueType = 'unexpected' | 'error' | 'skip' | 'fatal';
 export type LineNumber = number | 'EXTERNAL' | null; // an actual line-number or 'EXTERNAL'
 
 /**
- * Original Salesforce debug log categories as defined in SF Setup > Debug Log Levels.
- * These are the categories users configure in the Salesforce UI.
- * See: https://help.salesforce.com/s/articleView?id=platform.code_setting_debug_log_levels.htm
- */
-export const DEBUG_CATEGORY = {
-  Database: 'Database',
-  Workflow: 'Workflow',
-  NBA: 'NBA',
-  Validation: 'Validation',
-  Callout: 'Callout',
-  ApexCode: 'Apex Code',
-  ApexProfiling: 'Apex Profiling',
-  Visualforce: 'Visualforce',
-  System: 'System',
-  DataAccess: 'Data Access',
-  Wave: 'Wave',
-} as const;
-
-/** Original Salesforce debug log category (from Debug Log Levels UI). */
-export type DebugCategory = (typeof DEBUG_CATEGORY)[keyof typeof DEBUG_CATEGORY] | '';
-
-/**
  * Timeline display categories - our simplified/enhanced view of SF categories.
  * Split Database → DML + SOQL, merge Flow + Workflow → Automation.
  */
@@ -64,6 +42,10 @@ export type LogCategory = (typeof LOG_CATEGORY)[keyof typeof LOG_CATEGORY] | '';
 /** Readonly array of all category values (for building Sets, iterating, etc.) */
 export const ALL_LOG_CATEGORIES: readonly LogCategory[] = Object.values(LOG_CATEGORY);
 
+/**
+ * Governor limit usage. `cpuTime` is milliseconds, `heapSize` is bytes, every other metric is a
+ * count. `limit` is 0 when the log stated no ceiling.
+ */
 export interface Limits {
   soqlQueries: { used: number; limit: number };
   soslQueries: { used: number; limit: number };
@@ -116,6 +98,15 @@ export interface DebugLevels {
   wave?: LogLevel;
   workflow?: LogLevel;
 }
+
+/**
+ * Original Salesforce debug log category, as SF Setup > Debug Log Levels defines it, or '' when an
+ * event states none. Each value is a `DebugLevels` property, so `debugLevels[event.debugCategory]`
+ * states the level the log header declared for it once you rule out ''. It is a plain literal, not a
+ * const, because the property name is the value - there is no second spelling to look up.
+ * See: https://help.salesforce.com/s/articleView?id=platform.code_setting_debug_log_levels.htm
+ */
+export type DebugCategory = keyof DebugLevels | '';
 
 /** The user timezone as the log header stated it. */
 export interface LogTimezone {

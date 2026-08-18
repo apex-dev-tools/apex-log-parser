@@ -21,7 +21,7 @@
 - Split the public API: the root entry point exports runtime values only — `parse`,
   `ApexLogParser` and the event classes — and a new
   `@apexdevtools/apex-log-parser/types` subpath exports every public type and the const companions
-  (`LOG_LEVEL`, `DEBUG_CATEGORY`, `LOG_CATEGORY`, `ALL_LOG_CATEGORIES`). Adds the missing
+  (`LOG_LEVEL`, `LOG_CATEGORY`, `ALL_LOG_CATEGORIES`). Adds the missing
   `SOSLExecuteBeginLine`, and drops the deprecated `LogSubCategory` alias — use `LogCategory`.
   Requires `moduleResolution` `node16`, `nodenext` or `bundler` to resolve the subpath.
 - Report truncation as data: `ApexLog.truncation` holds one `TruncationRegion` per region the
@@ -38,6 +38,11 @@
   level for that category, which a caller can now tell apart from a category that ran nothing. A
   category or level the parser does not know is reported in `parsingErrors`. The `DebugLevel` class
   and its root export are gone, and `LOG_LEVEL` gains `None` for a category the header switched off.
+- `LogEvent.debugCategory` now states the `DebugLevels` property name (`'apexCode'`, not
+  `'Apex Code'`), so `apexLog.debugLevels[event.debugCategory]` states the level the header declared
+  for that event once you rule out `''`. `DebugCategory` is `keyof DebugLevels | ''`, and the
+  `DEBUG_CATEGORY` const is gone — a category is a plain string literal, so
+  `event.debugCategory === 'apexCode'` needs no import, and display text stays the caller's.
 - Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
   found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
   log states no code unit.

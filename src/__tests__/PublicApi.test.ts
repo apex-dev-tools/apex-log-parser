@@ -44,7 +44,7 @@ const ROOT_EXPORTS = [
   'SOSLExecuteBeginLine',
 ];
 
-const TYPES_RUNTIME_EXPORTS = ['ALL_LOG_CATEGORIES', 'DEBUG_CATEGORY', 'LOG_CATEGORY', 'LOG_LEVEL'];
+const TYPES_RUNTIME_EXPORTS = ['ALL_LOG_CATEGORIES', 'LOG_CATEGORY', 'LOG_LEVEL'];
 
 // Fails the typecheck, not the test run, if a public type is removed or renamed.
 interface PublicTypeSurface {

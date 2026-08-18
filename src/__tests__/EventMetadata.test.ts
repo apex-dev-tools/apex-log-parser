@@ -90,6 +90,18 @@ describe('Event debugLevel and debugCategory', () => {
     });
   });
 
+  it('debugCategory indexes debugLevels', () => {
+    const apexLog = parse(
+      '61.0 APEX_CODE,FINE;APEX_PROFILING,INFO\n' +
+        '15:20:52.222 (100)|METHOD_ENTRY|[1]|01p000000000000|MyClass.myMethod()\n',
+    );
+    const line = apexLog.children[0];
+    expect(line).toBeDefined();
+    const category = line!.debugCategory;
+    expect(category).toBe('apexCode');
+    expect(category && apexLog.debugLevels[category]).toBe('FINE');
+  });
+
   describe('DMLBeginLine.sObjectType', () => {
     it.each([
       ['15:20:52.222 (100)|DML_BEGIN|[1]|Op:Insert|Type:Account|Rows:1', 'Account'],
