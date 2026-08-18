@@ -16,6 +16,7 @@ import type {
   LogIssue,
   LogLevel,
   SelfTotal,
+  Truncation,
 } from './types.js';
 import { DEBUG_CATEGORY, LOG_CATEGORY, LOG_LEVEL } from './types.js';
 
@@ -415,6 +416,19 @@ export class ApexLog extends LogEvent {
    * Any issues that occurred during the parsing of the log, such as an unrecognized log event type.
    */
   public parsingErrors: string[] = [];
+
+  /**
+   * Every region the platform did not write in full, and the byte total it reported.
+   * `isTruncated` on this root is true when there is at least one region.
+   */
+  public truncation: Truncation = { regions: [], totalSkippedBytes: 0 };
+
+  /**
+   * Events the parser could not terminate because the log stopped inside them, innermost frame
+   * first. Populated whenever the log ends mid-frame, which is not on its own evidence that the
+   * platform dropped content, so it can be non-empty while `isTruncated` is false.
+   */
+  public truncatedEvents: LogEvent[] = [];
 
   public governorLimits: GovernorLimits = {
     soqlQueries: { used: 0, limit: 0 },

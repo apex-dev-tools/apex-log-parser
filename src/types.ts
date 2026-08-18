@@ -62,9 +62,6 @@ export type LogCategory = (typeof LOG_CATEGORY)[keyof typeof LOG_CATEGORY] | '';
 /** Readonly array of all category values (for building Sets, iterating, etc.) */
 export const ALL_LOG_CATEGORIES: readonly LogCategory[] = Object.values(LOG_CATEGORY);
 
-/** @deprecated Use LogCategory instead */
-export type LogSubCategory = LogCategory;
-
 export interface Limits {
   soqlQueries: { used: number; limit: number };
   soslQueries: { used: number; limit: number };
@@ -97,6 +94,31 @@ export interface GovernorLimits extends Limits {
   byNamespace: Map<string, Limits>;
   /** Point-in-time snapshots of governor limit usage, ordered by timestamp ascending. */
   snapshots: GovernorSnapshot[];
+}
+
+/**
+ * A region of the log the platform did not write in full.
+ *
+ * - `skipped-lines`: the platform dropped a block of lines mid-log (`*** Skipped N bytes`).
+ * - `max-size`: the log hit the maximum size, so everything after it is missing.
+ */
+export interface TruncationRegion {
+  kind: 'skipped-lines' | 'max-size';
+  /** Timestamp in nanoseconds of the last event before the region. */
+  startTime: number;
+  /** Timestamp in nanoseconds where the log can be trusted again, when that can be bounded. */
+  endTime?: number;
+  /** `eventIndex` of the last event before the region. */
+  eventIndex?: number;
+  /** Bytes the platform reported as skipped. Only a `skipped-lines` region states this. */
+  skippedBytes?: number;
+}
+
+export interface Truncation {
+  /** In log order. */
+  regions: TruncationRegion[];
+  /** Sum of `skippedBytes` over the regions that stated one. Zero when none did. */
+  totalSkippedBytes: number;
 }
 
 export interface LogIssue {

@@ -4,10 +4,30 @@
 
 import { ApexLog, type LogEvent, applyFlowDbResiduals } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
-import type { GovernorLimits, IssueType, Limits, LogEventType, LogIssue } from './types.js';
+import type {
+  GovernorLimits,
+  IssueType,
+  Limits,
+  LogEventType,
+  LogIssue,
+  Truncation,
+  TruncationRegion,
+} from './types.js';
 
 const typePattern = /^[A-Z_]*$/,
   settingsPattern = /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+$/m;
+
+/**
+ * Summaries that are a constant text describing a distinct occurrence, so every one is reported.
+ * Deduping them by summary would report only the first region of a log with several.
+ */
+const alwaysReportedSummaries = new Set(['Skipped-Lines']);
+
+/** The truncation kind each `skip` issue describes. */
+const truncationKinds: Record<string, TruncationRegion['kind']> = {
+  'Skipped-Lines': 'skipped-lines',
+  'Max-Size-reached': 'max-size',
+};
 
 /**
  * Identity of a log issue for dedupe. Keyed on type + summary so a FATAL_ERROR and an
@@ -15,6 +35,14 @@ const typePattern = /^[A-Z_]*$/,
  */
 function issueKey(type: IssueType, summary: string): string {
   return type + ':' + summary;
+}
+
+const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
+
+/** The platform states the dropped size on the skip line itself, with thousands separators. */
+function parseSkippedBytes(line: string): number | undefined {
+  const match = line.match(skippedBytesPattern);
+  return match?.[1] ? Number.parseInt(match[1].replaceAll(',', ''), 10) : undefined;
 }
 
 /**
@@ -27,14 +55,19 @@ export function parse(logData: string): ApexLog {
 }
 
 /**
- * Internal stateful parsing engine. Consumers should use the exported `parse`
- * function instead — it drives this class and returns an `ApexLog` that already
- * carries the governor limits, log issues and namespaces accumulated here.
+ * Stateful parsing engine. Prefer the `parse` function — it drives this class and returns an
+ * `ApexLog` that already carries the governor limits, log issues and namespaces accumulated here.
+ * The class is public because every event constructor takes one, so code that builds events needs
+ * it. Its fields are parser state, not API.
  */
 export class ApexLogParser {
   logIssues: LogIssue[] = [];
   parsingErrors: string[] = [];
   maxSizeTimestamp: number | null = null;
+  /** Bytes the platform reported skipped, by the issue that reports the skip. */
+  private readonly skippedBytesByIssue = new Map<LogIssue, number>();
+  /** Events the parser could not terminate because the log stopped inside them. */
+  private readonly truncatedEvents: LogEvent[] = [];
   reasons: Set<string> = new Set<string>();
   lastTimestamp = 0;
   discontinuity = false;
@@ -89,6 +122,12 @@ export class ApexLogParser {
     this.addGovernorLimits(apexLog);
     this.resolveIssueEndTimes(apexLog);
 
+    apexLog.truncation = this.buildTruncation();
+    apexLog.truncatedEvents = this.truncatedEvents;
+    // A region is the only evidence the platform dropped log content; an unterminated event is not,
+    // because a log can simply stop mid-frame.
+    apexLog.isTruncated = apexLog.truncation.regions.length > 0;
+
     return apexLog;
   }
 
@@ -134,6 +173,26 @@ export class ApexLogParser {
         issue.endTime = endTime;
       }
     }
+  }
+
+  /**
+   * Projects the truncation issues into regions, so a boundary is stated once. Runs after
+   * `resolveIssueEndTimes`, and inherits the issue order, which is log order.
+   */
+  private buildTruncation(): Truncation {
+    const regions = this.logIssues
+      .filter((issue) => truncationKinds[issue.summary])
+      .map((issue) => ({
+        kind: truncationKinds[issue.summary] as TruncationRegion['kind'],
+        startTime: issue.startTime ?? 0,
+        endTime: issue.endTime,
+        eventIndex: issue.eventIndex,
+        skippedBytes: this.skippedBytesByIssue.get(issue),
+      }));
+    return {
+      regions,
+      totalSkippedBytes: regions.reduce((total, region) => total + (region.skippedBytes ?? 0), 0),
+    };
   }
 
   /**
@@ -205,13 +264,17 @@ export class ApexLogParser {
         this.parsingErrors.push(message);
       }
     } else if (lastEntry && line.startsWith('*** Skipped')) {
-      this.addLogIssue(
+      const issue = this.addLogIssue(
         lastEntry.timestamp,
         lastEntry.eventIndex,
         'Skipped-Lines',
         `${line}. A section of the log has been skipped and the log has been truncated. Full details of this section of log can not be provided.`,
         'skip',
       );
+      const skippedBytes = parseSkippedBytes(line);
+      if (issue && skippedBytes !== undefined) {
+        this.skippedBytesByIssue.set(issue, skippedBytes);
+      }
     } else if (lastEntry && line.indexOf('MAXIMUM DEBUG LOG SIZE REACHED') !== -1) {
       this.addLogIssue(
         lastEntry.timestamp,
@@ -374,6 +437,7 @@ export class ApexLogParser {
           this.maxSizeTimestamp = currentLine.exitStamp;
         }
         currentLine.isTruncated = true;
+        this.truncatedEvents.push(currentLine);
       }
 
       stack.pop();
@@ -577,26 +641,30 @@ export class ApexLogParser {
     }
   }
 
+  /** @returns the issue as stored, or undefined when an issue with the same identity is held. */
   public addLogIssue(
     startTime: number,
     eventIndex: number | undefined,
     summary: string,
     description: string,
     type: IssueType,
-  ): void {
+  ): LogIssue | undefined {
     const key = issueKey(type, summary);
-    if (!this.reasons.has(key)) {
-      this.reasons.add(key);
-      this.logIssues.push({
-        startTime: startTime,
-        eventIndex: eventIndex,
-        summary: summary,
-        description: description,
-        type: type,
-      });
-
-      this.logIssues.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+    if (this.reasons.has(key) && !alwaysReportedSummaries.has(summary)) {
+      return undefined;
     }
+
+    this.reasons.add(key);
+    const issue: LogIssue = {
+      startTime: startTime,
+      eventIndex: eventIndex,
+      summary: summary,
+      description: description,
+      type: type,
+    };
+    this.logIssues.push(issue);
+    this.logIssues.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+    return issue;
   }
 
   private updateLogIssue(

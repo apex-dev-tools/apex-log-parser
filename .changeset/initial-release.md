@@ -2,5 +2,4 @@
 '@apexdevtools/apex-log-parser': minor
 ---
 
-Initial release as a standalone npm package. Release notes are maintained by hand in
-CHANGELOG.md, so this changeset only carries the bump.
+Initial release as a standalone npm package. See CHANGELOG.md for the 0.1.0 notes.
