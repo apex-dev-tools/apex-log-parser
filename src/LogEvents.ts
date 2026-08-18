@@ -13,7 +13,6 @@ import type {
   Limits,
   LineNumber,
   LogCategory,
-  LogCoverage,
   LogEventType,
   LogIssue,
   LogLevel,
@@ -425,9 +424,6 @@ export class ApexLog extends LogEvent {
    * no code unit at all.
    */
   public entryPoint: CodeUnitStartedLine | null = null;
-
-  /** What the log recorded, so a caller can caveat a figure the log could not state. */
-  public coverage: LogCoverage = { hasCumulativeLimits: false, hasHeapEvents: false };
 
   /** Who ran the transaction, from the `USER_INFO` header line. Null when it states no user. */
   public userInfo: UserInfo | null = null;

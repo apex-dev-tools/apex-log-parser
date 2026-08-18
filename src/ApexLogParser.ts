@@ -171,8 +171,6 @@ export class ApexLogParser {
   logIssues: LogIssue[] = [];
   parsingErrors: string[] = [];
   maxSizeTimestamp: number | null = null;
-  /** Whether any HEAP_ALLOCATE event was seen, so heap figures can be caveated. */
-  private hasHeapEvents = false;
   /** Bytes the platform reported skipped, by the issue that reports the skip. */
   private readonly skippedBytesByIssue = new Map<LogIssue, number>();
   /** Events the parser could not terminate because the log stopped inside them. */
@@ -231,10 +229,6 @@ export class ApexLogParser {
     apexLog.exceptions = this.exceptions;
 
     this.addGovernorLimits(apexLog);
-    apexLog.coverage = {
-      hasCumulativeLimits: apexLog.governorLimits.snapshots.length > 0,
-      hasHeapEvents: this.hasHeapEvents,
-    };
     this.resolveIssueEndTimes(apexLog);
 
     apexLog.truncation = this.buildTruncation();
@@ -317,7 +311,6 @@ export class ApexLogParser {
    * then rolled up (by max) to the enclosing methods in {@link aggregateTotals}.
    */
   trackHeapAllocation(bytes: number): number {
-    this.hasHeapEvents = true;
     this.runningHeap += bytes;
     return Math.max(0, this.runningHeap);
   }

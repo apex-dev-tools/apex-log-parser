@@ -38,11 +38,6 @@
   level for that category, which a caller can now tell apart from a category that ran nothing. A
   category or level the parser does not know is reported in `parsingErrors`. The `DebugLevel` class
   and its root export are gone, and `LOG_LEVEL` gains `None` for a category the header switched off.
-
-- Add `ApexLog.coverage` — `hasCumulativeLimits` and `hasHeapEvents`, so a caller can caveat a figure
-  the log could not state instead of reading a zero as a fact. Both depend on the debug levels the
-  header declared: limit snapshots need `APEX_PROFILING` at `FINEST`, heap events need `APEX_CODE` at
-  `FINER`.
 - Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
   found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
   log states no code unit.

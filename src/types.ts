@@ -99,21 +99,6 @@ export interface GovernorLimits extends Limits {
 }
 
 /**
- * What the log actually recorded, so a caller can caveat a figure instead of inferring from a zero.
- * Limits are estimated when `hasCumulativeLimits` is false - the log stated no ceilings.
- */
-export interface LogCoverage {
-  /**
-   * The log stated per-namespace limit snapshots, so `governorLimits` reports what the log recorded
-   * rather than nothing. Snapshots need `APEX_PROFILING` at `FINEST`, so read `debugLevels` to tell
-   * "the header switched them off" from "none were recorded".
-   */
-  hasCumulativeLimits: boolean;
-  /** The log holds `HEAP_ALLOCATE` events, which need `APEX_CODE` at `FINER`. */
-  hasHeapEvents: boolean;
-}
-
-/**
  * The log level the header declared per category. An absent property means the header declared no
  * level for that category, which is not the same as nothing of that category having run. A category
  * the platform adds later appears here as a new optional property.

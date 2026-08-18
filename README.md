@@ -144,7 +144,7 @@ console.table(findSlowest(parse(logData)));
 
 `parse(logData: string): ApexLog` — that is the whole entry point. There is no state to reset
 between calls. `ApexLog` is the root `LogEvent`, and adds `governorLimits`, `namespaces`,
-`debugLevels`, `userInfo`, `entryPoint`, `coverage`, `truncation`, `logIssues`, `parsingErrors`,
+`debugLevels`, `userInfo`, `entryPoint`, `truncation`, `logIssues`, `parsingErrors`,
 `exceptions` and `eventsById`.
 
 There are two entry points. The root exports runtime values only: `parse`, the `ApexLogParser`
