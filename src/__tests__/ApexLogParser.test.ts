@@ -1004,21 +1004,21 @@ describe('Log Settings tests', () => {
 
   it('The settings should be as expected', () => {
     expect(apexLog.debugLevels).toEqual({
-      'Apex Code': 'FINE',
-      'Apex Profiling': 'NONE',
-      Callout: 'NONE',
-      Database: 'INFO',
-      NBA: 'NONE',
-      System: 'NONE',
-      Validation: 'INFO',
-      Visualforce: 'NONE',
-      Wave: 'NONE',
-      Workflow: 'INFO',
+      apexCode: 'FINE',
+      apexProfiling: 'NONE',
+      callout: 'NONE',
+      database: 'INFO',
+      nba: 'NONE',
+      system: 'NONE',
+      validation: 'INFO',
+      visualforce: 'NONE',
+      wave: 'NONE',
+      workflow: 'INFO',
     });
   });
 
   it('leaves out a category the header did not declare', () => {
-    expect(apexLog.debugLevels['Data Access']).toBeUndefined();
+    expect(apexLog.debugLevels.dataAccess).toBeUndefined();
     expect(apexLog.parsingErrors).toEqual([]);
   });
 
@@ -1029,7 +1029,7 @@ describe('Log Settings tests', () => {
         '09:18:22.6 (200)|EXECUTION_FINISHED\n',
     );
 
-    expect(parsed.debugLevels).toEqual({ 'Apex Code': 'FINE' });
+    expect(parsed.debugLevels).toEqual({ apexCode: 'FINE' });
     expect(parsed.parsingErrors).toEqual([
       'Unsupported debug level: APEX_PROFILING,WIBBLE',
       'Unsupported debug log category: FUTURE_CATEGORY',

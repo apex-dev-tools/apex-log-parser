@@ -10,9 +10,8 @@ import {
   applyFlowDbResiduals,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
-import { DEBUG_CATEGORY, LOG_LEVEL } from './types.js';
+import { LOG_LEVEL } from './types.js';
 import type {
-  DebugCategory,
   DebugLevels,
   GovernorLimits,
   IssueType,
@@ -68,27 +67,20 @@ function findEntryPoint(root: ApexLog): CodeUnitStartedLine | null {
   return null;
 }
 
-/** The settings line names each category with a log token, not the display name. */
-const tokenByDebugCategory: Record<Exclude<DebugCategory, ''>, string> = {
-  [DEBUG_CATEGORY.ApexCode]: 'APEX_CODE',
-  [DEBUG_CATEGORY.ApexProfiling]: 'APEX_PROFILING',
-  [DEBUG_CATEGORY.Callout]: 'CALLOUT',
-  [DEBUG_CATEGORY.DataAccess]: 'DATA_ACCESS',
-  [DEBUG_CATEGORY.Database]: 'DB',
-  [DEBUG_CATEGORY.NBA]: 'NBA',
-  [DEBUG_CATEGORY.System]: 'SYSTEM',
-  [DEBUG_CATEGORY.Validation]: 'VALIDATION',
-  [DEBUG_CATEGORY.Visualforce]: 'VISUALFORCE',
-  [DEBUG_CATEGORY.Wave]: 'WAVE',
-  [DEBUG_CATEGORY.Workflow]: 'WORKFLOW',
+/** The settings line names each category with a log token, which is not the `DebugLevels` property. */
+const debugLevelKeyByToken: Record<string, keyof DebugLevels> = {
+  APEX_CODE: 'apexCode',
+  APEX_PROFILING: 'apexProfiling',
+  CALLOUT: 'callout',
+  DATA_ACCESS: 'dataAccess',
+  DB: 'database',
+  NBA: 'nba',
+  SYSTEM: 'system',
+  VALIDATION: 'validation',
+  VISUALFORCE: 'visualforce',
+  WAVE: 'wave',
+  WORKFLOW: 'workflow',
 };
-
-const debugCategoryByToken = new Map<string, DebugCategory>(
-  Object.entries(tokenByDebugCategory).map(([category, token]) => [
-    token,
-    category as DebugCategory,
-  ]),
-);
 
 // Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
 // the header line never reaches `UserInfoLine`. Only a timestamped line matches.
@@ -822,13 +814,13 @@ export class ApexLogParser {
       }
 
       const [token, level] = entry.split(',');
-      const category = token ? debugCategoryByToken.get(token) : undefined;
-      if (!category) {
+      const key = token ? debugLevelKeyByToken[token] : undefined;
+      if (!key) {
         this.parsingErrors.push(`Unsupported debug log category: ${token}`);
       } else if (!level || !logLevels.has(level)) {
         this.parsingErrors.push(`Unsupported debug level: ${entry}`);
       } else {
-        levels[category] = level as LogLevel;
+        levels[key] = level as LogLevel;
       }
     }
     return levels;

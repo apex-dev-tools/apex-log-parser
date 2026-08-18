@@ -33,11 +33,11 @@
   parser previously discarded. `timezone` states the label, the IANA `name` when the header gave one,
   and `offsetMinutes` east of UTC - null when the header stated no offset the parser can read.
   `userInfo` itself is null when the log states no user.
-- `ApexLog.debugLevels` is now `DebugLevels`, a `Partial<Record<DebugCategory, LogLevel>>` keyed by
-  the display category the rest of the API uses. An absent key means the header declared no level for
-  that category, which a caller can now tell apart from a category that ran nothing. A category or
-  level the parser does not know is reported in `parsingErrors`. The `DebugLevel` class and its root
-  export are gone, and `LOG_LEVEL` gains `None` for a category the header switched off.
+- `ApexLog.debugLevels` is now `DebugLevels`, an interface with one optional property per category
+  (`apexCode`, `apexProfiling`, `database`, ...). An absent property means the header declared no
+  level for that category, which a caller can now tell apart from a category that ran nothing. A
+  category or level the parser does not know is reported in `parsingErrors`. The `DebugLevel` class
+  and its root export are gone, and `LOG_LEVEL` gains `None` for a category the header switched off.
 
 - Add `ApexLog.coverage` — `hasCumulativeLimits` and `hasHeapEvents`, so a caller can caveat a figure
   the log could not state instead of reading a zero as a fact. Both depend on the debug levels the

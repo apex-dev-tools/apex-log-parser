@@ -114,10 +114,23 @@ export interface LogCoverage {
 }
 
 /**
- * The log level the header declared per category. An absent key means the header declared no level
- * for that category, which is not the same as nothing of that category having run.
+ * The log level the header declared per category. An absent property means the header declared no
+ * level for that category, which is not the same as nothing of that category having run. A category
+ * the platform adds later appears here as a new optional property.
  */
-export type DebugLevels = Partial<Record<Exclude<DebugCategory, ''>, LogLevel>>;
+export interface DebugLevels {
+  apexCode?: LogLevel;
+  apexProfiling?: LogLevel;
+  callout?: LogLevel;
+  dataAccess?: LogLevel;
+  database?: LogLevel;
+  nba?: LogLevel;
+  system?: LogLevel;
+  validation?: LogLevel;
+  visualforce?: LogLevel;
+  wave?: LogLevel;
+  workflow?: LogLevel;
+}
 
 /** The user timezone as the log header stated it. */
 export interface LogTimezone {
