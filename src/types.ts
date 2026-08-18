@@ -96,6 +96,24 @@ export interface GovernorLimits extends Limits {
   snapshots: GovernorSnapshot[];
 }
 
+/** The user timezone as the log header stated it. */
+export interface LogTimezone {
+  /** The display label, e.g. `Pacific Standard Time`. Localised in some logs. */
+  label: string;
+  /** IANA name, e.g. `America/Los_Angeles`. Null when the header stated no name. */
+  name: string | null;
+  /** Minutes east of UTC, e.g. -480 for `GMT-08:00`. */
+  offsetMinutes: number;
+}
+
+/** Who ran the transaction, from the `USER_INFO` header line. */
+export interface UserInfo {
+  /** The 15 or 18 character user id. */
+  id: string;
+  userName: string;
+  timezone: LogTimezone;
+}
+
 /**
  * A region of the log the platform did not write in full.
  *

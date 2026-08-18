@@ -19,7 +19,9 @@ export type {
   LogEventType,
   LogIssue,
   LogLevel,
+  LogTimezone,
   SelfTotal,
   Truncation,
   TruncationRegion,
+  UserInfo,
 } from './types.js';

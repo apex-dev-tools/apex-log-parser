@@ -17,6 +17,7 @@ import type {
   LogLevel,
   SelfTotal,
   Truncation,
+  UserInfo,
 } from './types.js';
 import { DEBUG_CATEGORY, LOG_CATEGORY, LOG_LEVEL } from './types.js';
 
@@ -416,6 +417,9 @@ export class ApexLog extends LogEvent {
    * Any issues that occurred during the parsing of the log, such as an unrecognized log event type.
    */
   public parsingErrors: string[] = [];
+
+  /** Who ran the transaction, from the `USER_INFO` header line. Null when it states no user. */
+  public userInfo: UserInfo | null = null;
 
   /**
    * Every region the platform did not write in full, and the byte total it reported.

@@ -17,10 +17,12 @@ import type {
   LogEventType,
   LogIssue,
   LogLevel,
+  LogTimezone,
   RunningTotalObservation,
   SelfTotal,
   Truncation,
   TruncationRegion,
+  UserInfo,
 } from '../publicTypes.js';
 
 // The published surface is a contract with the log-viewer and the MCP server, so a change to it must
@@ -59,10 +61,12 @@ interface PublicTypeSurface {
   logEventType: LogEventType;
   logIssue: LogIssue;
   logLevel: LogLevel;
+  logTimezone: LogTimezone;
   runningTotalObservation: RunningTotalObservation;
   selfTotal: SelfTotal;
   truncation: Truncation;
   truncationRegion: TruncationRegion;
+  userInfo: UserInfo;
 }
 
 describe('public API', () => {

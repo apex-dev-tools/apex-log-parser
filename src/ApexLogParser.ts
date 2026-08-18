@@ -12,6 +12,7 @@ import type {
   LogIssue,
   Truncation,
   TruncationRegion,
+  UserInfo,
 } from './types.js';
 
 const typePattern = /^[A-Z_]*$/,
@@ -35,6 +36,47 @@ const truncationKinds: Record<string, TruncationRegion['kind']> = {
  */
 function issueKey(type: IssueType, summary: string): string {
   return type + ':' + summary;
+}
+
+const userInfoPattern = /^[^\n]*\|USER_INFO\|[^\n]*$/m;
+// Either '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)' or a bare, sometimes localised,
+// label with no IANA name. The name is the last group, because it can hold slashes.
+const timezonePattern = /^\(GMT[^)]*\)\s*(.*)\s\(([^)]*)\)$/;
+const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
+
+/** Minutes east of UTC. The header states `GMTZ` rather than `GMT+00:00` for UTC. */
+function parseGmtOffset(offset: string): number {
+  const match = offset.match(gmtOffsetPattern);
+  if (!match) {
+    return 0;
+  }
+
+  const minutes = Number.parseInt(match[2] ?? '0', 10) * 60 + Number.parseInt(match[3] ?? '0', 10);
+  return match[1] === '-' ? -minutes : minutes;
+}
+
+/**
+ * Reads the `USER_INFO` header line: id, user name, timezone label and offset.
+ * @returns null when the log states no user.
+ */
+function parseUserInfo(log: string): UserInfo | null {
+  const line = log.match(userInfoPattern)?.[0];
+  if (!line) {
+    return null;
+  }
+
+  const parts = line.split('|');
+  const timezone = parts[5] ?? '';
+  const named = timezone.match(timezonePattern);
+  return {
+    id: parts[3] ?? '',
+    userName: parts[4] ?? '',
+    timezone: {
+      label: named?.[1] ?? timezone,
+      name: named?.[2] ?? null,
+      offsetMinutes: parseGmtOffset(parts[6] ?? ''),
+    },
+  };
 }
 
 const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
@@ -112,6 +154,7 @@ export class ApexLogParser {
     const apexLog = this.toLogTree(lineGenerator);
     apexLog.size = debugLog.length;
     apexLog.debugLevels = this.getDebugLevels(debugLog);
+    apexLog.userInfo = parseUserInfo(debugLog);
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
     apexLog.namespaces = Array.from(this.namespaces);

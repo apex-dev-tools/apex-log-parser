@@ -29,3 +29,6 @@
   `totalSkippedBytes`. `ApexLog.isTruncated` is now set on the root, and `ApexLog.truncatedEvents`
   lists the events the log stopped inside. Fixes a bug that dropped every skipped region after the
   first, because all of them share one issue summary.
+- Add `ApexLog.userInfo` — the id, user name and timezone from the `USER_INFO` header line, which the
+  parser previously discarded. `timezone` states the label, the IANA `name` when the header gave one,
+  and `offsetMinutes` east of UTC. Null when the log states no user.
