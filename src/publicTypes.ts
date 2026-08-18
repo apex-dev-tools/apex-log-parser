@@ -20,4 +20,6 @@ export type {
   LogIssue,
   LogLevel,
   SelfTotal,
+  Truncation,
+  TruncationRegion,
 } from './types.js';

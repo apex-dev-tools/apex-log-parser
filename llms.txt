@@ -29,12 +29,12 @@ import { LOG_LEVEL, type GovernorLimits } from '@apexdevtools/apex-log-parser/ty
 
 - `parse(logData: string): ApexLog` — the usual entry point. There is no state to reset between calls
 - `ApexLogParser` — the parser class. Public because every event constructor takes one, so code that builds events needs it
-- `ApexLog` — the root node. A `LogEvent` plus `governorLimits`, `namespaces`, `debugLevels`, `logIssues`, `parsingErrors`, `exceptions`, `eventsById`, `startTime`, `size`
+- `ApexLog` — the root node. A `LogEvent` plus `governorLimits`, `namespaces`, `debugLevels`, `logIssues`, `parsingErrors`, `exceptions`, `eventsById`, `startTime`, `size`, `truncation`, `truncatedEvents`
 - `LogEvent` — base class for all events with `type`, `text`, `timestamp`, `exitStamp`, `duration`, `children`, `parent`, `namespace`, `lineNumber`, `eventIndex`, `category`, `debugCategory`, `debugLevel`, `cpuType`, and `SelfTotal` counters (`soqlCount`, `soqlRowCount`, `dmlCount`, `dmlRowCount`, `soslCount`, `soslRowCount`, `thrownCount`, `heapAllocated`, `heapGross`)
 - Exported event subclasses, for `instanceof` narrowing: `ApexLog`, `CodeUnitStartedLine`, `DMLBeginLine`, `ExecutionStartedLine`, `HeapAllocateLine`, `LimitUsageLine`, `LogEvent`, `MethodEntryLine`, `SOQLExecuteBeginLine`, `SOQLExecuteExplainLine`, `SOSLExecuteBeginLine`. For any other event type compare `event.type` as a string — it is typed as `LogEventType`
 - `DebugLevel` class — `{ logCategory, logLevel }`
 - From `/types`, constants: `ALL_LOG_CATEGORIES`, `DEBUG_CATEGORY`, `LOG_CATEGORY`, `LOG_LEVEL`
-- From `/types`, types: `CPUType`, `DebugCategory`, `GovernorLimits`, `GovernorSnapshot`, `IssueType`, `LimitMetricKey`, `LimitObservation`, `Limits`, `LineNumber`, `LogCategory`, `LogEventType`, `LogIssue`, `LogLevel`, `RunningTotalObservation`, `SelfTotal`
+- From `/types`, types: `CPUType`, `DebugCategory`, `GovernorLimits`, `GovernorSnapshot`, `IssueType`, `LimitMetricKey`, `LimitObservation`, `Limits`, `LineNumber`, `LogCategory`, `LogEventType`, `LogIssue`, `LogLevel`, `RunningTotalObservation`, `SelfTotal`, `Truncation`, `TruncationRegion`
 
 ## Governor Limits
 

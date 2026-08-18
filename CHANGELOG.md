@@ -24,3 +24,8 @@
   (`LOG_LEVEL`, `DEBUG_CATEGORY`, `LOG_CATEGORY`, `ALL_LOG_CATEGORIES`). Adds the missing
   `SOSLExecuteBeginLine`, and drops the deprecated `LogSubCategory` alias — use `LogCategory`.
   Requires `moduleResolution` `node16`, `nodenext` or `bundler` to resolve the subpath.
+- Report truncation as data: `ApexLog.truncation` holds one `TruncationRegion` per region the
+  platform did not write in full, with the byte figure it stated and the time trust resumes, plus
+  `totalSkippedBytes`. `ApexLog.isTruncated` is now set on the root, and `ApexLog.truncatedEvents`
+  lists the events the log stopped inside. Fixes a bug that dropped every skipped region after the
+  first, because all of them share one issue summary.

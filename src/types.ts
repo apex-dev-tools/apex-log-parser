@@ -96,6 +96,31 @@ export interface GovernorLimits extends Limits {
   snapshots: GovernorSnapshot[];
 }
 
+/**
+ * A region of the log the platform did not write in full.
+ *
+ * - `skipped-lines`: the platform dropped a block of lines mid-log (`*** Skipped N bytes`).
+ * - `max-size`: the log hit the maximum size, so everything after it is missing.
+ */
+export interface TruncationRegion {
+  kind: 'skipped-lines' | 'max-size';
+  /** Timestamp in nanoseconds of the last event before the region. */
+  startTime: number;
+  /** Timestamp in nanoseconds where the log can be trusted again, when that can be bounded. */
+  endTime?: number;
+  /** `eventIndex` of the last event before the region. */
+  eventIndex?: number;
+  /** Bytes the platform reported as skipped. Only a `skipped-lines` region states this. */
+  skippedBytes?: number;
+}
+
+export interface Truncation {
+  /** In log order. */
+  regions: TruncationRegion[];
+  /** Sum of `skippedBytes` over the regions that stated one. Zero when none did. */
+  totalSkippedBytes: number;
+}
+
 export interface LogIssue {
   startTime?: number;
   /**
