@@ -90,14 +90,13 @@ const debugCategoryByToken = new Map<string, DebugCategory>(
   ]),
 );
 
-// Read from the whole log, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
-// the header line never reaches `UserInfoLine`. Only a timestamped line matches, so a USER_DEBUG
-// message that quotes `|USER_INFO|` is not read as the header.
+// Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
+// the header line never reaches `UserInfoLine`. Only a timestamped line matches.
 const userInfoPattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|USER_INFO\|.*/m;
 // Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
 // localised, label with either part missing. Read the two parts apart, so one absent part does not
 // leave the other in the label.
-const gmtPrefixPattern = /^\(GMT[^)]*\)\s*/;
+const gmtPrefixPattern = /^\((GMT[^)]*)\)\s*/;
 // Last group, because an IANA name can hold slashes.
 const ianaNamePattern = /\s\(([^)]*)\)$/;
 const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
@@ -125,13 +124,19 @@ function parseGmtOffset(offset: string): number | null {
  * @returns null when the log states no user.
  */
 function parseUserInfo(log: string): UserInfo | null {
-  const line = log.match(userInfoPattern)?.[0];
+  // Header region only, so a USER_DEBUG message that quotes a whole log, timestamped lines
+  // included, cannot stand in for a header the log never stated.
+  const executionStarted = log.indexOf('|EXECUTION_STARTED');
+  const header = executionStarted < 0 ? log : log.slice(0, executionStarted);
+  const line = header.match(userInfoPattern)?.[0];
   if (!line) {
     return null;
   }
 
   const parts = line.split('|');
-  const timezone = (parts[5] ?? '').replace(gmtPrefixPattern, '');
+  const field = parts[5] ?? '';
+  const gmtPrefix = field.match(gmtPrefixPattern);
+  const timezone = field.slice(gmtPrefix?.[0]?.length ?? 0);
   const named = timezone.match(ianaNamePattern);
   return {
     id: parts[3] ?? '',
@@ -139,7 +144,8 @@ function parseUserInfo(log: string): UserInfo | null {
     timezone: {
       label: timezone.replace(ianaNamePattern, '').trim(),
       name: named?.[1] ?? null,
-      offsetMinutes: parseGmtOffset(parts[6] ?? ''),
+      // The label states the offset too, so a log with no offset column is still readable.
+      offsetMinutes: parseGmtOffset(parts[6] ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? ''),
     },
   };
 }

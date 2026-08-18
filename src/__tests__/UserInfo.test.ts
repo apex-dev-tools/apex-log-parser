@@ -113,6 +113,28 @@ describe('userInfo', () => {
     expect(apexLog.userInfo?.timezone.offsetMinutes).toBeNull();
   });
 
+  it('reads the offset from the label when the header states no offset column', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT+05:30) India Standard Time',
+      ),
+    );
+
+    expect(apexLog.userInfo?.timezone.offsetMinutes).toBe(330);
+  });
+
+  it('ignores a timestamped USER_INFO line a USER_DEBUG message quotes', () => {
+    const apexLog = parse(
+      '61.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[9]|DEBUG|a nested log follows\n' +
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005OTHERUSER|other@example.com|(GMT+01:00) Central European Time|GMT+01:00\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.userInfo).toBeNull();
+  });
+
   it('ignores a USER_DEBUG message that quotes the USER_INFO marker', () => {
     const apexLog = parse(
       '61.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
