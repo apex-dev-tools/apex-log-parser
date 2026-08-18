@@ -44,40 +44,51 @@ const truncationKinds: Record<string, TruncationRegion['kind']> = {
  * Identity of a log issue for dedupe. Keyed on type + summary so a FATAL_ERROR and an
  * EXCEPTION_THROWN with the same first line both survive.
  */
+function issueKey(type: IssueType, summary: string): string {
+  return type + ':' + summary;
+}
+
 /**
  * The first code unit, which is what the transaction ran. It sits under `EXECUTION_STARTED` in most
  * logs, but directly on the root in a log that holds no `EXECUTION_STARTED`. One level deep only.
  */
 function findEntryPoint(root: ApexLog): CodeUnitStartedLine | null {
   for (const child of root.children) {
-    const candidates = child instanceof ExecutionStartedLine ? child.children : [child];
-    for (const event of candidates) {
-      if (event instanceof CodeUnitStartedLine) {
-        return event;
+    if (child instanceof CodeUnitStartedLine) {
+      return child;
+    }
+    if (child instanceof ExecutionStartedLine) {
+      for (const event of child.children) {
+        if (event instanceof CodeUnitStartedLine) {
+          return event;
+        }
       }
     }
   }
   return null;
 }
 
-function issueKey(type: IssueType, summary: string): string {
-  return type + ':' + summary;
-}
-
 /** The settings line names each category with a log token, not the display name. */
-const debugCategoryByToken: Record<string, DebugCategory> = {
-  APEX_CODE: DEBUG_CATEGORY.ApexCode,
-  APEX_PROFILING: DEBUG_CATEGORY.ApexProfiling,
-  CALLOUT: DEBUG_CATEGORY.Callout,
-  DATA_ACCESS: DEBUG_CATEGORY.DataAccess,
-  DB: DEBUG_CATEGORY.Database,
-  NBA: DEBUG_CATEGORY.NBA,
-  SYSTEM: DEBUG_CATEGORY.System,
-  VALIDATION: DEBUG_CATEGORY.Validation,
-  VISUALFORCE: DEBUG_CATEGORY.Visualforce,
-  WAVE: DEBUG_CATEGORY.Wave,
-  WORKFLOW: DEBUG_CATEGORY.Workflow,
+const tokenByDebugCategory: Record<Exclude<DebugCategory, ''>, string> = {
+  [DEBUG_CATEGORY.ApexCode]: 'APEX_CODE',
+  [DEBUG_CATEGORY.ApexProfiling]: 'APEX_PROFILING',
+  [DEBUG_CATEGORY.Callout]: 'CALLOUT',
+  [DEBUG_CATEGORY.DataAccess]: 'DATA_ACCESS',
+  [DEBUG_CATEGORY.Database]: 'DB',
+  [DEBUG_CATEGORY.NBA]: 'NBA',
+  [DEBUG_CATEGORY.System]: 'SYSTEM',
+  [DEBUG_CATEGORY.Validation]: 'VALIDATION',
+  [DEBUG_CATEGORY.Visualforce]: 'VISUALFORCE',
+  [DEBUG_CATEGORY.Wave]: 'WAVE',
+  [DEBUG_CATEGORY.Workflow]: 'WORKFLOW',
 };
+
+const debugCategoryByToken = new Map<string, DebugCategory>(
+  Object.entries(tokenByDebugCategory).map(([category, token]) => [
+    token,
+    category as DebugCategory,
+  ]),
+);
 
 const userInfoPattern = /^[^\n]*\|USER_INFO\|[^\n]*$/m;
 // Either '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)' or a bare, sometimes localised,
@@ -208,7 +219,7 @@ export class ApexLogParser {
 
     this.addGovernorLimits(apexLog);
     apexLog.coverage = {
-      hasCumulativeLimits: this.governorLimits.snapshots.length > 0,
+      hasCumulativeLimits: apexLog.governorLimits.snapshots.length > 0,
       hasHeapEvents: this.hasHeapEvents,
     };
     this.resolveIssueEndTimes(apexLog);
@@ -786,7 +797,7 @@ export class ApexLogParser {
     const levels: DebugLevels = {};
     for (const entry of settings.substring(settings.indexOf(' ') + 1).split(';')) {
       const [token, level] = entry.split(',');
-      const category = token ? debugCategoryByToken[token] : undefined;
+      const category = token ? debugCategoryByToken.get(token) : undefined;
       if (category && level) {
         levels[category] = level as LogLevel;
       } else {

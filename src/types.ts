@@ -103,7 +103,10 @@ export interface GovernorLimits extends Limits {
  * Limits are estimated when `hasCumulativeLimits` is false - the log stated no ceilings.
  */
 export interface LogCoverage {
-  /** The log holds a `CUMULATIVE_LIMIT_USAGE` block, which needs `APEX_PROFILING` at `FINE`. */
+  /**
+   * The log holds a `CUMULATIVE_LIMIT_USAGE` block, which needs `APEX_PROFILING` at `FINE`.
+   * Derived from `governorLimits.snapshots`.
+   */
   hasCumulativeLimits: boolean;
   /** The log holds `HEAP_ALLOCATE` events, which need `APEX_PROFILING` at `FINEST`. */
   hasHeapEvents: boolean;
