@@ -41,3 +41,6 @@
 - Add `ApexLog.coverage` — `hasCumulativeLimits` and `hasHeapEvents`, so a caller can caveat a figure
   the log could not state instead of reading a zero as a fact. Both depend on the debug levels the
   header declared: cumulative limits need `APEX_PROFILING` at `FINE`, heap events need `FINEST`.
+- Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
+  found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
+  log states no code unit.

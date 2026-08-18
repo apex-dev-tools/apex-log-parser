@@ -420,6 +420,12 @@ export class ApexLog extends LogEvent {
    */
   public parsingErrors: string[] = [];
 
+  /**
+   * The first code unit the log states, which is what the transaction ran. Null when the log states
+   * no code unit at all.
+   */
+  public entryPoint: CodeUnitStartedLine | null = null;
+
   /** What the log recorded, so a caller can caveat a figure the log could not state. */
   public coverage: LogCoverage = { hasCumulativeLimits: false, hasHeapEvents: false };
 

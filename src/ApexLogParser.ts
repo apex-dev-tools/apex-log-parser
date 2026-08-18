@@ -2,7 +2,13 @@
  * Copyright (c) 2020 Certinia Inc. All rights reserved.
  */
 
-import { ApexLog, type LogEvent, applyFlowDbResiduals } from './LogEvents.js';
+import {
+  ApexLog,
+  CodeUnitStartedLine,
+  ExecutionStartedLine,
+  type LogEvent,
+  applyFlowDbResiduals,
+} from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
 import { DEBUG_CATEGORY } from './types.js';
 import type {
@@ -38,6 +44,22 @@ const truncationKinds: Record<string, TruncationRegion['kind']> = {
  * Identity of a log issue for dedupe. Keyed on type + summary so a FATAL_ERROR and an
  * EXCEPTION_THROWN with the same first line both survive.
  */
+/**
+ * The first code unit, which is what the transaction ran. It sits under `EXECUTION_STARTED` in most
+ * logs, but directly on the root in a log that holds no `EXECUTION_STARTED`. One level deep only.
+ */
+function findEntryPoint(root: ApexLog): CodeUnitStartedLine | null {
+  for (const child of root.children) {
+    const candidates = child instanceof ExecutionStartedLine ? child.children : [child];
+    for (const event of candidates) {
+      if (event instanceof CodeUnitStartedLine) {
+        return event;
+      }
+    }
+  }
+  return null;
+}
+
 function issueKey(type: IssueType, summary: string): string {
   return type + ':' + summary;
 }
@@ -176,6 +198,7 @@ export class ApexLogParser {
     apexLog.size = debugLog.length;
     apexLog.debugLevels = this.getDebugLevels(debugLog);
     apexLog.userInfo = parseUserInfo(debugLog);
+    apexLog.entryPoint = findEntryPoint(apexLog);
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
     apexLog.namespaces = Array.from(this.namespaces);
