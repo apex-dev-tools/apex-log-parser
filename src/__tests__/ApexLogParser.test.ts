@@ -534,7 +534,7 @@ describe('parseLog tests', () => {
     expect(root.heapPeak).toBe(5000000);
 
     // No "Maximum heap size" line in this log, so used falls back to the computed peak.
-    expect(apexLog.governorLimits.heapSize.used).toBe(5000000);
+    expect(apexLog.governorLimits.peak.heapSize.used).toBe(5000000);
   });
 
   it('net, gross and peak are distinct for an allocate-then-free method', async () => {
@@ -568,7 +568,7 @@ describe('parseLog tests', () => {
     expect(method.heapPeak).toBe(1000);
   });
 
-  it('governorLimits.heapSize.used is the max of the reported peak and the computed peak', () => {
+  it('governorLimits.peak.heapSize.used is the max of the reported peak and the computed peak', () => {
     const withReported = (reportedPeak: number, allocBytes: number) =>
       [
         '09:18:22.6 (100)|EXECUTION_STARTED',
@@ -581,12 +581,12 @@ describe('parseLog tests', () => {
       ].join('\n');
 
     // Reported (100) below the computed peak (5,000,000) → computed wins.
-    expect(parse(withReported(100, 5000000)).governorLimits.heapSize.used).toBe(5000000);
+    expect(parse(withReported(100, 5000000)).governorLimits.peak.heapSize.used).toBe(5000000);
     // Reported (5000) above the computed peak (100) → reported wins.
-    expect(parse(withReported(5000, 100)).governorLimits.heapSize.used).toBe(5000);
+    expect(parse(withReported(5000, 100)).governorLimits.peak.heapSize.used).toBe(5000);
   });
 
-  it('governorLimits.heapSize.used is the peak across snapshots, not the last block', () => {
+  it('governorLimits.peak.heapSize.used is the peak across snapshots, not the last block', () => {
     // Heap falls as memory is freed, so a later LIMIT_USAGE_FOR_NS block can report a lower
     // (even 0) heap than an earlier one. `used` must be the peak (500000), not the last (0).
     const log = [
@@ -598,7 +598,7 @@ describe('parseLog tests', () => {
       '09:19:13.82 (2000)|EXECUTION_FINISHED',
     ].join('\n');
 
-    expect(parse(log).governorLimits.heapSize.used).toBe(500000);
+    expect(parse(log).governorLimits.peak.heapSize.used).toBe(500000);
   });
 
   it('Methods should have line-numbers', async () => {
@@ -1484,7 +1484,7 @@ describe('Governor Limits Parsing', () => {
     expect(apexLog.governorLimits).toBeDefined();
     expect([...apexLog.governorLimits.byNamespace.keys()]).toEqual(['default', 'myNS']);
 
-    expect(apexLog.governorLimits.byNamespace.get('default')).toMatchObject({
+    expect(apexLog.governorLimits.byNamespace.get('default')?.final).toMatchObject({
       soqlQueries: { used: 17, limit: 100 },
       queryRows: { used: 121, limit: 50000 },
       soslQueries: { used: 3, limit: 20 },
@@ -1500,7 +1500,7 @@ describe('Governor Limits Parsing', () => {
       mobileApexPushCalls: { used: 1, limit: 10 },
     });
 
-    expect(apexLog.governorLimits.byNamespace.get('myNS')).toMatchObject({
+    expect(apexLog.governorLimits.byNamespace.get('myNS')?.final).toMatchObject({
       soqlQueries: { used: 2, limit: 100 },
       queryRows: { used: 10, limit: 50000 },
       soslQueries: { used: 1, limit: 20 },
@@ -1516,7 +1516,7 @@ describe('Governor Limits Parsing', () => {
       mobileApexPushCalls: { used: 0, limit: 10 },
     });
 
-    expect(apexLog.governorLimits).toMatchObject({
+    expect(apexLog.governorLimits.final).toMatchObject({
       soqlQueries: { used: 19, limit: 100 },
       queryRows: { used: 131, limit: 50000 },
       soslQueries: { used: 4, limit: 20 },
@@ -1524,7 +1524,7 @@ describe('Governor Limits Parsing', () => {
       publishImmediateDml: { used: 5, limit: 150 },
       dmlRows: { used: 118, limit: 10000 },
       cpuTime: { used: 17008, limit: 10000 },
-      // Heap is the transaction PEAK (max across namespace snapshots: max(300, 100)), not the
+      // Heap is shared across namespaces, so it is the highest figure (max(300, 100)), never the
       // sum (400) — global limits aren't summed (#862).
       heapSize: { used: 300, limit: 6000000 },
       callouts: { used: 3, limit: 100 },
@@ -1563,8 +1563,8 @@ describe('Governor Limits Parsing', () => {
       queueableJobsAddedToQueue: { used: 0, limit: 0 },
       mobileApexPushCalls: { used: 0, limit: 0 },
     };
-    expect(apexLog.governorLimits.byNamespace.get('default')).toMatchObject(expected);
-    expect(apexLog.governorLimits).toMatchObject(expected);
+    expect(apexLog.governorLimits.byNamespace.get('default')?.final).toMatchObject(expected);
+    expect(apexLog.governorLimits.final).toMatchObject(expected);
   });
 });
 

@@ -43,6 +43,15 @@
   for that event once you rule out `''`. `DebugCategory` is `keyof DebugLevels | ''`, and the
   `DEBUG_CATEGORY` const is gone — a category is a plain string literal, so
   `event.debugCategory === 'apexCode'` needs no import, and display text stays the caller's.
+- Every governor limit value gains `percentUsed` — `used`/`limit` as a percentage, unrounded, and
+  `null` when the log stated no ceiling. The parser never substitutes a default ceiling, because a
+  guessed denominator would be reported as fact. The value shape is now the named `LimitValue` type.
+- `ApexLog.governorLimits` no longer extends `Limits`. It now states `snapshots` (unchanged), `final` -
+  what the transaction had used when the log ended - `peak` - the highest each metric reached at any
+  timepoint - and `byNamespace`, which holds a `final` and a `peak` per namespace. `peak` matters
+  because counters fall mid-log, so `final` under-reports a breach. `peak.heapSize` also folds
+  `ApexLog.heapPeak`, the only heap figure most logs give. Metric iteration over `final` or `peak` is
+  now total: no `byNamespace` or `snapshots` key to filter out.
 - Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
   found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
   log states no code unit.

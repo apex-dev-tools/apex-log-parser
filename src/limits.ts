@@ -11,10 +11,41 @@
  * - single `LIMIT_USAGE`                      — code "SOQL", used "1", limit "100"
  */
 
-import type { Limits } from './types.js';
+import type {
+  GovernorLimits,
+  GovernorSnapshot,
+  LimitValue,
+  Limits,
+  NamespaceLimits,
+} from './types.js';
 
 /** Metric key of a governor limit that can be tracked granularly. */
 export type LimitMetricKey = keyof Limits;
+
+/** A limit value with `percentUsed` derived, null when the log stated no ceiling. */
+export function toLimitValue(used: number, limit: number): LimitValue {
+  return { used, limit, percentUsed: limit > 0 ? (used / limit) * 100 : null };
+}
+
+/** Every metric at zero, with no ceiling. The one place a `Limits` is built from nothing. */
+export function emptyLimits(): Limits {
+  const zero = (): LimitValue => toLimitValue(0, 0);
+  return {
+    soqlQueries: zero(),
+    soslQueries: zero(),
+    queryRows: zero(),
+    dmlStatements: zero(),
+    publishImmediateDml: zero(),
+    dmlRows: zero(),
+    cpuTime: zero(),
+    heapSize: zero(),
+    callouts: zero(),
+    emailInvocations: zero(),
+    futureCalls: zero(),
+    queueableJobsAddedToQueue: zero(),
+    mobileApexPushCalls: zero(),
+  };
+}
 
 /**
  * A single governor-limit observation parsed from a limit-usage log line. `used`/`limit` are the
@@ -32,6 +63,93 @@ export interface LimitObservation {
  */
 export interface RunningTotalObservation extends LimitObservation {
   delta: number;
+}
+
+/** An empty limit set: no snapshots, so nothing derived from them either. */
+export function emptyGovernorLimits(): GovernorLimits {
+  return { snapshots: [], final: emptyLimits(), peak: emptyLimits(), byNamespace: new Map() };
+}
+
+// Exhaustive by construction: the keys of a total `Limits`, so no metric can be missed.
+const LIMIT_METRIC_KEYS = Object.keys(emptyLimits()) as LimitMetricKey[];
+
+/**
+ * Limits the platform shares across namespaces, so the per-namespace figures are not additive:
+ * combining them takes the highest, not the sum.
+ */
+const SHARED_METRICS: ReadonlySet<LimitMetricKey> = new Set<LimitMetricKey>(['heapSize']);
+
+/**
+ * Fold `used` per metric across sources. `limit` takes the highest stated ceiling, because 0 means
+ * the source stated none and no log states two different ceilings for one metric.
+ */
+function foldLimits(
+  sources: Iterable<Limits>,
+  foldUsed: (metric: LimitMetricKey, running: number, next: number) => number,
+): Limits {
+  const folded = emptyLimits();
+  for (const source of sources) {
+    for (const metric of LIMIT_METRIC_KEYS) {
+      const running = folded[metric];
+      const next = source[metric];
+      folded[metric] = toLimitValue(
+        foldUsed(metric, running.used, next.used),
+        Math.max(running.limit, next.limit),
+      );
+    }
+  }
+  return folded;
+}
+
+/** Combine per-namespace limits into one figure: summed, except the shared limits. */
+function combineLimits(sources: Iterable<Limits>): Limits {
+  return foldLimits(sources, (metric, running, next) =>
+    SHARED_METRICS.has(metric) ? Math.max(running, next) : running + next,
+  );
+}
+
+/** The highest `used` each metric reached across the sources. */
+function maxLimits(sources: Iterable<Limits>): Limits {
+  return foldLimits(sources, (_metric, running, next) => Math.max(running, next));
+}
+
+/** A detached copy, so a caller cannot reach back into the snapshot it came from. */
+function copyLimits(limits: Limits): Limits {
+  return maxLimits([limits]);
+}
+
+/** A source that states heap alone, so a heap figure from elsewhere folds in like any other. */
+function heapOnly(used: number): Limits {
+  return { ...emptyLimits(), heapSize: toLimitValue(used, 0) };
+}
+
+/**
+ * Derives the whole-log and per-namespace figures from the snapshots, which are in log order. A
+ * namespace states a cumulative total each time, so its last snapshot is its final figure, and the
+ * combined figure at any timepoint carries every other namespace forward.
+ *
+ * `heapPeak` is folded into the combined peak because it comes from the `HEAP_ALLOCATE` events, not
+ * from a snapshot: an observed block states heap as 0, so it is the only heap figure most logs give.
+ */
+export function deriveGovernorLimits(
+  snapshots: GovernorSnapshot[],
+  heapPeak: number,
+): GovernorLimits {
+  const byNamespace = new Map<string, NamespaceLimits>();
+  let final = emptyLimits();
+  let peak = emptyLimits();
+
+  for (const { namespace, limits } of snapshots) {
+    const previous = byNamespace.get(namespace);
+    byNamespace.set(namespace, {
+      final: copyLimits(limits),
+      peak: previous ? maxLimits([previous.peak, limits]) : copyLimits(limits),
+    });
+    final = combineLimits(Array.from(byNamespace.values(), (nsLimits) => nsLimits.final));
+    peak = maxLimits([peak, final]);
+  }
+
+  return { snapshots, final, peak: maxLimits([peak, heapOnly(heapPeak)]), byNamespace };
 }
 
 /**

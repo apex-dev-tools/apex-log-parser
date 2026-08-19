@@ -12,6 +12,7 @@ import type {
   IssueType,
   LimitMetricKey,
   LimitObservation,
+  LimitValue,
   Limits,
   LineNumber,
   LogCategory,
@@ -19,6 +20,7 @@ import type {
   LogIssue,
   LogLevel,
   LogTimezone,
+  NamespaceLimits,
   RunningTotalObservation,
   SelfTotal,
   Truncation,
@@ -56,6 +58,7 @@ interface PublicTypeSurface {
   issueType: IssueType;
   limitMetricKey: LimitMetricKey;
   limitObservation: LimitObservation;
+  limitValue: LimitValue;
   limits: Limits;
   lineNumber: LineNumber;
   logCategory: LogCategory;
@@ -63,6 +66,7 @@ interface PublicTypeSurface {
   logIssue: LogIssue;
   logLevel: LogLevel;
   logTimezone: LogTimezone;
+  namespaceLimits: NamespaceLimits;
   runningTotalObservation: RunningTotalObservation;
   selfTotal: SelfTotal;
   truncation: Truncation;
