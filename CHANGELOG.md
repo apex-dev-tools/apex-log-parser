@@ -56,10 +56,6 @@
   call parsed the new log on top of the first: it inherited the earlier governor limit snapshots, log
   issues, namespaces and event index. `parse` now parses on a fresh instance every call, which also
   means the fields of the instance you call it on stay empty - they were never API.
-- Add `LogEvent.callerNamespace` — the namespace of the immediate parent event, so a caller can tell
-  who invoked an event. It states the caller as the log records it, so it does not skip past a
-  platform or glue frame, and it is `'default'` for a root child and for an event with no namespaced
-  caller.
 - Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
   found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
   log states no code unit.
