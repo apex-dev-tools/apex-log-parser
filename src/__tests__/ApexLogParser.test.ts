@@ -1883,6 +1883,19 @@ describe('parser state per parse call', () => {
     expect(facts(parser.parse(logA))).toEqual(facts(parser.parse(logA)));
   });
 
+  it('parses with the overrides of a subclass', () => {
+    let allocations = 0;
+    class CountingParser extends ApexLogParser {
+      override trackHeapAllocation(bytes: number): number {
+        allocations++;
+        return super.trackHeapAllocation(bytes);
+      }
+    }
+    const log = new CountingParser().parse(logA);
+    expect(allocations).toBe(1);
+    expect(log.heapPeak).toBe(152);
+  });
+
   it('leaves the instance it was called on empty', () => {
     const parser = new ApexLogParser();
     parser.parse(logA);
