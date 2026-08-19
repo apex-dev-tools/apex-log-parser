@@ -581,7 +581,6 @@ function parseBytes(fragment: string | undefined): number {
 export class BulkHeapAllocateLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finest;
   debugCategory: DebugCategory = 'apexCode';
-  logCategory = 'Apex Code';
   /** Bytes allocated by this bulk allocation (from the "Bytes:N" fragment). */
   bytes = 0;
   constructor(parser: ApexLogParser, parts: string[]) {

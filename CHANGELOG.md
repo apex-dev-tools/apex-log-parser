@@ -63,3 +63,5 @@
 - Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
   found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
   log states no code unit.
+- Remove `BulkHeapAllocateLine.logCategory`. It stated `'Apex Code'`, a display string in no enum, on one
+  event class only. Read `debugCategory` for the `DebugLevels` property name, or `type` for the event name.
