@@ -165,9 +165,8 @@ export function parse(logData: string): ApexLog {
  * Stateful parsing engine. Prefer the `parse` function — it drives this class and returns an
  * `ApexLog` that already carries the governor limits, log issues and namespaces accumulated here.
  * The class is public because every event constructor takes one, so code that builds events needs
- * it. Its fields are parser state, not API: `parse` parses on a fresh instance every call, so the
- * fields of the instance you call it on stay empty. An instance you construct events against
- * yourself keeps accumulating them, so use one per log.
+ * it. Its fields are parser state, not API — construct one per log if you build events against it
+ * yourself.
  */
 export class ApexLogParser {
   logIssues: LogIssue[] = [];
@@ -204,8 +203,7 @@ export class ApexLogParser {
     // Nothing resets the fields below, and every event constructor pushes into them, so reusing an
     // instance would parse the new log on top of the previous one. Construct through
     // `this.constructor` so a subclass still parses with its own overrides.
-    const Parser = this.constructor as new () => ApexLogParser;
-    return new Parser().parseLog(debugLog);
+    return new (this.constructor as typeof ApexLogParser)().parseLog(debugLog);
   }
 
   private parseLog(debugLog: string): ApexLog {
