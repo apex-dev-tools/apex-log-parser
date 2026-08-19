@@ -22,6 +22,7 @@ export type {
   LogIssue,
   LogLevel,
   LogTimezone,
+  NamespaceLimits,
   SelfTotal,
   Truncation,
   TruncationRegion,

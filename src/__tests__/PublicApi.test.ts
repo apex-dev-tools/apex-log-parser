@@ -20,6 +20,7 @@ import type {
   LogIssue,
   LogLevel,
   LogTimezone,
+  NamespaceLimits,
   RunningTotalObservation,
   SelfTotal,
   Truncation,
@@ -65,6 +66,7 @@ interface PublicTypeSurface {
   logIssue: LogIssue;
   logLevel: LogLevel;
   logTimezone: LogTimezone;
+  namespaceLimits: NamespaceLimits;
   runningTotalObservation: RunningTotalObservation;
   selfTotal: SelfTotal;
   truncation: Truncation;

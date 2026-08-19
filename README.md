@@ -103,14 +103,16 @@ console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} ro
 // DML:  1 statements, 50 rows
 ```
 
-Governor limits are on the root too, each metric `{ used, limit }`:
+Governor limits are on the root too. `final` states what the transaction had used when the log
+ended, `peak` the highest each metric reached — check `peak` against a ceiling, because counters
+fall mid-log. Each metric states `{ used, limit, percentUsed }`:
 
 ```typescript
-const limits = log.governorLimits;
+const { final, peak } = log.governorLimits;
 
-console.log(`CPU:  ${limits.cpuTime.used}/${limits.cpuTime.limit}ms`);
-console.log(`SOQL: ${limits.soqlQueries.used}/${limits.soqlQueries.limit}`);
-console.log(`Heap: ${limits.heapSize.used}/${limits.heapSize.limit} bytes`);
+console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
+console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
+console.log(`Heap: ${peak.heapSize.used}/${peak.heapSize.limit} bytes`);
 ```
 
 ## Find the slowest methods
@@ -173,8 +175,8 @@ the most common surprise:
 | Flow and Process Builder limit lines | `WORKFLOW` at `FINER` |
 
 **All-zero limits mean "not reported".** Without a `LIMIT_USAGE_FOR_NS` block, every
-`governorLimits` metric stays at `{ used: 0, limit: 0 }`. That is not a transaction that used
-nothing.
+`governorLimits.final` and `governorLimits.peak` metric stays at
+`{ used: 0, limit: 0, percentUsed: null }`. That is not a transaction that used nothing.
 
 **Read totals from the root.** It already aggregates the tree — walking it to count SOQL or DML
 is wasted work.
@@ -219,8 +221,8 @@ Anything else falls back to a generic line class, so no log line is lost. The bu
 
 ### How do I analyse Salesforce governor limits programmatically?
 
-Call `parse()` and read `log.governorLimits` — 13 metrics, each with `used` and `limit`, plus
-`byNamespace` and point-in-time `snapshots`. See [Quick start](#quick-start), and read
+Call `parse()` and read `log.governorLimits` — `final` and `peak`, each stating 13 metrics with
+`used`, `limit` and `percentUsed`, plus `byNamespace` and point-in-time `snapshots`. See [Quick start](#quick-start), and read
 [Tips](#tips) first if every metric comes back zero.
 
 ## Requirements

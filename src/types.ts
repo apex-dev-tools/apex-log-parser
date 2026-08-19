@@ -85,10 +85,40 @@ export interface GovernorSnapshot {
   limits: Limits;
 }
 
-export interface GovernorLimits extends Limits {
-  byNamespace: Map<string, Limits>;
+/** One namespace's own governor limit usage, derived from the snapshots it reported. */
+export interface NamespaceLimits {
+  /** The namespace's last snapshot - what it had used when the log ended. */
+  final: Limits;
+  /** The highest value each metric reached in the namespace's own snapshots. */
+  peak: Limits;
+}
+
+/**
+ * Governor limit usage for the whole log, derived from the cumulative `LIMIT_USAGE_FOR_NS` blocks.
+ * The combined figures sum the namespaces, because each namespace states the usage it consumed
+ * itself - except `heapSize`, which is a level and not a counter, so it is the highest figure and
+ * never a sum.
+ *
+ * A combined `percentUsed` divides that sum by the ceiling the log stated. The platform shares the
+ * ceiling for some metrics (CPU time, callouts) and gives each namespace its own for others (SOQL,
+ * DML), so read `byNamespace` when several namespaces reported and the split matters.
+ */
+export interface GovernorLimits {
   /** Point-in-time snapshots of governor limit usage, ordered by timestamp ascending. */
   snapshots: GovernorSnapshot[];
+  /** Each namespace's last snapshot, combined. What the transaction had used when the log ended. */
+  final: Limits;
+  /**
+   * The high-water mark of the combined figure: the highest each metric reached at any timepoint,
+   * carrying every namespace's last value forward. Higher than `final` whenever a counter falls,
+   * which real logs do - so `peak` is the figure to check against a ceiling.
+   *
+   * `heapSize` also folds in `ApexLog.heapPeak`, computed from `HEAP_ALLOCATE` events. That is the
+   * only heap figure most logs give: an observed cumulative block always states heap as 0.
+   */
+  peak: Limits;
+  /** Per namespace, keyed by the namespace the block declared, in first-reported order. */
+  byNamespace: Map<string, NamespaceLimits>;
 }
 
 /**

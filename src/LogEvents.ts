@@ -5,6 +5,7 @@
 import type { ApexLogParser } from './ApexLogParser.js';
 import type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
 import {
+  emptyGovernorLimits,
   emptyLimits,
   parseCodedLimit,
   parseLabelledLimit,
@@ -16,7 +17,6 @@ import type {
   DebugCategory,
   DebugLevels,
   GovernorLimits,
-  Limits,
   LineNumber,
   LogCategory,
   LogEventType,
@@ -447,11 +447,7 @@ export class ApexLog extends LogEvent {
    */
   public truncatedEvents: LogEvent[] = [];
 
-  public governorLimits: GovernorLimits = {
-    ...emptyLimits(),
-    byNamespace: new Map<string, Limits>(),
-    snapshots: [],
-  };
+  public governorLimits: GovernorLimits = emptyGovernorLimits();
 
   /**
    * The wall-clock time of the first event, in milliseconds since midnight.
@@ -1332,10 +1328,9 @@ export class LimitUsageForNSLine extends LogEvent {
       }
     }
 
-    parser.governorLimits.byNamespace.set(this.namespace, limits);
-
-    // Track snapshots for governor limit visualization
-    parser.governorLimits.snapshots.push({
+    // Only the snapshot is recorded here: the parser derives the combined and per-namespace
+    // figures from the whole series once the log is parsed.
+    parser.governorSnapshots.push({
       timestamp: this.timestamp,
       namespace: this.namespace,
       limits,

@@ -10,13 +10,12 @@ import {
   applyFlowDbResiduals,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
-import { emptyLimits } from './limits.js';
+import { deriveGovernorLimits } from './limits.js';
 import { LOG_LEVEL } from './types.js';
 import type {
   DebugLevels,
-  GovernorLimits,
+  GovernorSnapshot,
   IssueType,
-  Limits,
   LogEventType,
   LogIssue,
   LogLevel,
@@ -186,11 +185,7 @@ export class ApexLogParser {
   eventsById: LogEvent[] = [];
   /** Every exception event (EXCEPTION_THROWN, FATAL_ERROR) in log order. */
   exceptions: LogEvent[] = [];
-  governorLimits: GovernorLimits = {
-    ...emptyLimits(),
-    byNamespace: new Map<string, Limits>(),
-    snapshots: [],
-  };
+  readonly governorSnapshots: GovernorSnapshot[] = [];
 
   /**
    * Flow elements that may report their own database usage, in log order. Their usage is attributed
@@ -213,11 +208,10 @@ export class ApexLogParser {
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
     apexLog.namespaces = Array.from(this.namespaces);
-    apexLog.governorLimits = this.governorLimits;
     apexLog.eventsById = this.eventsById;
     apexLog.exceptions = this.exceptions;
 
-    this.addGovernorLimits(apexLog);
+    apexLog.governorLimits = deriveGovernorLimits(this.governorSnapshots, apexLog.heapPeak);
     this.resolveIssueEndTimes(apexLog);
 
     apexLog.truncation = this.buildTruncation();
@@ -302,39 +296,6 @@ export class ApexLogParser {
   trackHeapAllocation(bytes: number): number {
     this.runningHeap += bytes;
     return Math.max(0, this.runningHeap);
-  }
-
-  private addGovernorLimits(apexLog: ApexLog) {
-    const totalLimits = apexLog.governorLimits;
-    if (totalLimits) {
-      for (const limitsForNs of apexLog.governorLimits.byNamespace.values()) {
-        for (const [key, value] of Object.entries(limitsForNs) as Array<
-          [keyof Limits, Limits[keyof Limits]]
-        >) {
-          if (!value) {
-            continue;
-          }
-
-          const currentLimit = totalLimits[key];
-          currentLimit.limit = value.limit;
-          currentLimit.used += value.used;
-        }
-      }
-
-      // Heap is a transaction-wide PEAK, never a per-namespace sum and never the last block
-      // (heap falls as memory is freed, so last-block/sum both misreport it — see #862 for
-      // why global limits aren't summed). Take the highest heap any snapshot reported, and the
-      // computed peak live heap (from HEAP_ALLOCATE events — more precise, and the only source
-      // when a log has no "Maximum heap size" line). The limit (denominator) is left as the
-      // per-namespace value the loop set; correcting it needs certified-pool detection (#862).
-      let reportedHeapPeak = 0;
-      for (const snapshot of apexLog.governorLimits.snapshots) {
-        if (snapshot.limits.heapSize.used > reportedHeapPeak) {
-          reportedHeapPeak = snapshot.limits.heapSize.used;
-        }
-      }
-      totalLimits.heapSize.used = Math.max(reportedHeapPeak, apexLog.heapPeak);
-    }
   }
 
   private parseLine(line: string, lastEntry: LogEvent | null): LogEvent | null {
