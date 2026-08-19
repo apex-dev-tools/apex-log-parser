@@ -144,10 +144,11 @@ console.table(findSlowest(parse(logData)));
 
 `parse(logData: string): ApexLog` — that is the whole entry point. There is no state to reset
 between calls. `ApexLog` is the root `LogEvent`, and adds `governorLimits`, `namespaces`,
-`debugLevels`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
+`debugLevels`, `userInfo`, `entryPoint`, `truncation`, `logIssues`, `parsingErrors`,
+`exceptions` and `eventsById`.
 
 There are two entry points. The root exports runtime values only: `parse`, the `ApexLogParser`
-class, `DebugLevel`, and the event classes you need for `instanceof` narrowing. Every type, and the
+class, and the event classes you need for `instanceof` narrowing. Every type, and the
 const companions that go with them, come from `@apexdevtools/apex-log-parser/types`:
 
 ```typescript

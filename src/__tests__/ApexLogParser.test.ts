@@ -1002,21 +1002,37 @@ describe('Log Settings tests', () => {
 
   const apexLog = parse(log);
 
-  it('The settings should be found', () => {
-    expect(apexLog.debugLevels).not.toBe(null);
-  });
   it('The settings should be as expected', () => {
-    expect(apexLog.debugLevels).toEqual([
-      { logCategory: 'APEX_CODE', logLevel: 'FINE' },
-      { logCategory: 'APEX_PROFILING', logLevel: 'NONE' },
-      { logCategory: 'CALLOUT', logLevel: 'NONE' },
-      { logCategory: 'DB', logLevel: 'INFO' },
-      { logCategory: 'NBA', logLevel: 'NONE' },
-      { logCategory: 'SYSTEM', logLevel: 'NONE' },
-      { logCategory: 'VALIDATION', logLevel: 'INFO' },
-      { logCategory: 'VISUALFORCE', logLevel: 'NONE' },
-      { logCategory: 'WAVE', logLevel: 'NONE' },
-      { logCategory: 'WORKFLOW', logLevel: 'INFO' },
+    expect(apexLog.debugLevels).toEqual({
+      apexCode: 'FINE',
+      apexProfiling: 'NONE',
+      callout: 'NONE',
+      database: 'INFO',
+      nba: 'NONE',
+      system: 'NONE',
+      validation: 'INFO',
+      visualforce: 'NONE',
+      wave: 'NONE',
+      workflow: 'INFO',
+    });
+  });
+
+  it('leaves out a category the header did not declare', () => {
+    expect(apexLog.debugLevels.dataAccess).toBeUndefined();
+    expect(apexLog.parsingErrors).toEqual([]);
+  });
+
+  it('reports an unknown category and an unknown level, and ignores an empty entry', () => {
+    const parsed = parse(
+      '61.0 APEX_CODE,FINE;APEX_PROFILING,WIBBLE;FUTURE_CATEGORY,FINE;\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|EXECUTION_FINISHED\n',
+    );
+
+    expect(parsed.debugLevels).toEqual({ apexCode: 'FINE' });
+    expect(parsed.parsingErrors).toEqual([
+      'Unsupported debug level: APEX_PROFILING,WIBBLE',
+      'Unsupported debug log category: FUTURE_CATEGORY',
     ]);
   });
 });

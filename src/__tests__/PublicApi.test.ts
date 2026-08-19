@@ -6,6 +6,7 @@ import * as publicTypes from '../publicTypes.js';
 import type {
   CPUType,
   DebugCategory,
+  DebugLevels,
   GovernorLimits,
   GovernorSnapshot,
   IssueType,
@@ -17,10 +18,12 @@ import type {
   LogEventType,
   LogIssue,
   LogLevel,
+  LogTimezone,
   RunningTotalObservation,
   SelfTotal,
   Truncation,
   TruncationRegion,
+  UserInfo,
 } from '../publicTypes.js';
 
 // The published surface is a contract with the log-viewer and the MCP server, so a change to it must
@@ -29,7 +32,6 @@ const ROOT_EXPORTS = [
   'ApexLog',
   'ApexLogParser',
   'CodeUnitStartedLine',
-  'DebugLevel',
   'DMLBeginLine',
   'ExecutionStartedLine',
   'HeapAllocateLine',
@@ -42,12 +44,13 @@ const ROOT_EXPORTS = [
   'SOSLExecuteBeginLine',
 ];
 
-const TYPES_RUNTIME_EXPORTS = ['ALL_LOG_CATEGORIES', 'DEBUG_CATEGORY', 'LOG_CATEGORY', 'LOG_LEVEL'];
+const TYPES_RUNTIME_EXPORTS = ['ALL_LOG_CATEGORIES', 'LOG_CATEGORY', 'LOG_LEVEL'];
 
 // Fails the typecheck, not the test run, if a public type is removed or renamed.
 interface PublicTypeSurface {
   cpuType: CPUType;
   debugCategory: DebugCategory;
+  debugLevels: DebugLevels;
   governorLimits: GovernorLimits;
   governorSnapshot: GovernorSnapshot;
   issueType: IssueType;
@@ -59,10 +62,12 @@ interface PublicTypeSurface {
   logEventType: LogEventType;
   logIssue: LogIssue;
   logLevel: LogLevel;
+  logTimezone: LogTimezone;
   runningTotalObservation: RunningTotalObservation;
   selfTotal: SelfTotal;
   truncation: Truncation;
   truncationRegion: TruncationRegion;
+  userInfo: UserInfo;
 }
 
 describe('public API', () => {

@@ -2,16 +2,26 @@
  * Copyright (c) 2020 Certinia Inc. All rights reserved.
  */
 
-import { ApexLog, type LogEvent, applyFlowDbResiduals } from './LogEvents.js';
+import {
+  ApexLog,
+  CodeUnitStartedLine,
+  ExecutionStartedLine,
+  type LogEvent,
+  applyFlowDbResiduals,
+} from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
+import { LOG_LEVEL } from './types.js';
 import type {
+  DebugLevels,
   GovernorLimits,
   IssueType,
   Limits,
   LogEventType,
   LogIssue,
+  LogLevel,
   Truncation,
   TruncationRegion,
+  UserInfo,
 } from './types.js';
 
 const typePattern = /^[A-Z_]*$/,
@@ -36,6 +46,103 @@ const truncationKinds: Record<string, TruncationRegion['kind']> = {
 function issueKey(type: IssueType, summary: string): string {
   return type + ':' + summary;
 }
+
+/**
+ * The first code unit, which is what the transaction ran. It sits under `EXECUTION_STARTED` in most
+ * logs, but directly on the root in a log that holds no `EXECUTION_STARTED`. One level deep only.
+ */
+function findEntryPoint(root: ApexLog): CodeUnitStartedLine | null {
+  for (const child of root.children) {
+    if (child instanceof CodeUnitStartedLine) {
+      return child;
+    }
+    if (child instanceof ExecutionStartedLine) {
+      for (const event of child.children) {
+        if (event instanceof CodeUnitStartedLine) {
+          return event;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** The settings line names each category with a log token, which is not the `DebugLevels` property. */
+const debugLevelKeyByToken: Record<string, keyof DebugLevels> = {
+  APEX_CODE: 'apexCode',
+  APEX_PROFILING: 'apexProfiling',
+  CALLOUT: 'callout',
+  DATA_ACCESS: 'dataAccess',
+  DB: 'database',
+  NBA: 'nba',
+  SYSTEM: 'system',
+  VALIDATION: 'validation',
+  VISUALFORCE: 'visualforce',
+  WAVE: 'wave',
+  WORKFLOW: 'workflow',
+};
+
+// Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
+// the header line never reaches `UserInfoLine`. Only a timestamped line matches.
+const userInfoPattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|USER_INFO\|.*/m;
+// Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
+// localised, label with either part missing. Read the two parts apart, so one absent part does not
+// leave the other in the label.
+const gmtPrefixPattern = /^\((GMT[^)]*)\)\s*/;
+// Last group, because an IANA name can hold slashes.
+const ianaNamePattern = /\s\(([^)]*)\)$/;
+const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
+
+/**
+ * Minutes east of UTC. The header states `GMTZ` rather than `GMT+00:00` for UTC.
+ * @returns null when the header stated no offset this can read.
+ */
+function parseGmtOffset(offset: string): number | null {
+  if (offset === 'GMTZ') {
+    return 0;
+  }
+
+  const match = offset.match(gmtOffsetPattern);
+  if (!match) {
+    return null;
+  }
+
+  const minutes = Number.parseInt(match[2] ?? '0', 10) * 60 + Number.parseInt(match[3] ?? '0', 10);
+  return match[1] === '-' ? -minutes : minutes;
+}
+
+/**
+ * Reads the `USER_INFO` header line: id, user name, timezone label and offset.
+ * @returns null when the log states no user.
+ */
+function parseUserInfo(log: string): UserInfo | null {
+  // Header region only, so a USER_DEBUG message that quotes a whole log, timestamped lines
+  // included, cannot stand in for a header the log never stated.
+  const executionStarted = log.indexOf('|EXECUTION_STARTED');
+  const header = executionStarted < 0 ? log : log.slice(0, executionStarted);
+  const line = header.match(userInfoPattern)?.[0];
+  if (!line) {
+    return null;
+  }
+
+  const parts = line.split('|');
+  const field = parts[5] ?? '';
+  const gmtPrefix = field.match(gmtPrefixPattern);
+  const timezone = field.slice(gmtPrefix?.[0]?.length ?? 0);
+  const named = timezone.match(ianaNamePattern);
+  return {
+    id: parts[3] ?? '',
+    userName: parts[4] ?? '',
+    timezone: {
+      label: timezone.replace(ianaNamePattern, '').trim(),
+      name: named?.[1] ?? null,
+      // The label states the offset too, so a log with no offset column is still readable.
+      offsetMinutes: parseGmtOffset(parts[6] ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? ''),
+    },
+  };
+}
+
+const logLevels = new Set<string>(Object.values(LOG_LEVEL));
 
 const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
 
@@ -112,6 +219,8 @@ export class ApexLogParser {
     const apexLog = this.toLogTree(lineGenerator);
     apexLog.size = debugLog.length;
     apexLog.debugLevels = this.getDebugLevels(debugLog);
+    apexLog.userInfo = parseUserInfo(debugLog);
+    apexLog.entryPoint = findEntryPoint(apexLog);
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
     apexLog.namespaces = Array.from(this.namespaces);
@@ -684,29 +793,30 @@ export class ApexLogParser {
     this.addLogIssue(startTime, eventIndex, summary, description, type);
   }
 
-  private getDebugLevels(log: string): DebugLevel[] {
+  private getDebugLevels(log: string): DebugLevels {
     const match = log.match(settingsPattern);
     if (!match) {
-      return [];
+      return {};
     }
 
-    const settings = match[0],
-      settingList = settings.substring(settings.indexOf(' ') + 1).split(';');
+    const settings = match[0];
+    const levels: DebugLevels = {};
+    for (const entry of settings.substring(settings.indexOf(' ') + 1).split(';')) {
+      if (!entry) {
+        continue;
+      }
 
-    return settingList.map((entry) => {
-      const parts = entry.split(',');
-      return new DebugLevel(parts[0] || '', parts[1] || '');
-    });
-  }
-}
-
-export class DebugLevel {
-  logCategory: string;
-  logLevel: string;
-
-  constructor(category: string, level: string) {
-    this.logCategory = category;
-    this.logLevel = level;
+      const [token, level] = entry.split(',');
+      const key = token ? debugLevelKeyByToken[token] : undefined;
+      if (!key) {
+        this.parsingErrors.push(`Unsupported debug log category: ${token}`);
+      } else if (!level || !logLevels.has(level)) {
+        this.parsingErrors.push(`Unsupported debug level: ${entry}`);
+      } else {
+        levels[key] = level as LogLevel;
+      }
+    }
+    return levels;
   }
 }
 

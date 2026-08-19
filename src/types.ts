@@ -5,6 +5,8 @@
 export type CPUType = 'loading' | 'custom' | 'method' | 'free' | 'system' | 'pkg' | '';
 
 export const LOG_LEVEL = {
+  /** Only the log header states this - a category the header switched off. */
+  None: 'NONE',
   Error: 'ERROR',
   Warn: 'WARN',
   Info: 'INFO',
@@ -19,28 +21,6 @@ export type LogLevel = (typeof LOG_LEVEL)[keyof typeof LOG_LEVEL] | '';
 export type IssueType = 'unexpected' | 'error' | 'skip' | 'fatal';
 
 export type LineNumber = number | 'EXTERNAL' | null; // an actual line-number or 'EXTERNAL'
-
-/**
- * Original Salesforce debug log categories as defined in SF Setup > Debug Log Levels.
- * These are the categories users configure in the Salesforce UI.
- * See: https://help.salesforce.com/s/articleView?id=platform.code_setting_debug_log_levels.htm
- */
-export const DEBUG_CATEGORY = {
-  Database: 'Database',
-  Workflow: 'Workflow',
-  NBA: 'NBA',
-  Validation: 'Validation',
-  Callout: 'Callout',
-  ApexCode: 'Apex Code',
-  ApexProfiling: 'Apex Profiling',
-  Visualforce: 'Visualforce',
-  System: 'System',
-  DataAccess: 'Data Access',
-  Wave: 'Wave',
-} as const;
-
-/** Original Salesforce debug log category (from Debug Log Levels UI). */
-export type DebugCategory = (typeof DEBUG_CATEGORY)[keyof typeof DEBUG_CATEGORY] | '';
 
 /**
  * Timeline display categories - our simplified/enhanced view of SF categories.
@@ -62,6 +42,10 @@ export type LogCategory = (typeof LOG_CATEGORY)[keyof typeof LOG_CATEGORY] | '';
 /** Readonly array of all category values (for building Sets, iterating, etc.) */
 export const ALL_LOG_CATEGORIES: readonly LogCategory[] = Object.values(LOG_CATEGORY);
 
+/**
+ * Governor limit usage. `cpuTime` is milliseconds, `heapSize` is bytes, every other metric is a
+ * count. `limit` is 0 when the log stated no ceiling.
+ */
 export interface Limits {
   soqlQueries: { used: number; limit: number };
   soslQueries: { used: number; limit: number };
@@ -94,6 +78,52 @@ export interface GovernorLimits extends Limits {
   byNamespace: Map<string, Limits>;
   /** Point-in-time snapshots of governor limit usage, ordered by timestamp ascending. */
   snapshots: GovernorSnapshot[];
+}
+
+/**
+ * The log level the header declared per category. An absent property means the header declared no
+ * level for that category, which is not the same as nothing of that category having run. A category
+ * the platform adds later appears here as a new optional property.
+ */
+export interface DebugLevels {
+  apexCode?: LogLevel;
+  apexProfiling?: LogLevel;
+  callout?: LogLevel;
+  dataAccess?: LogLevel;
+  database?: LogLevel;
+  nba?: LogLevel;
+  system?: LogLevel;
+  validation?: LogLevel;
+  visualforce?: LogLevel;
+  wave?: LogLevel;
+  workflow?: LogLevel;
+}
+
+/**
+ * Original Salesforce debug log category, as SF Setup > Debug Log Levels defines it, or '' when an
+ * event states none. Each value is a `DebugLevels` property, so `debugLevels[event.debugCategory]`
+ * states the level the log header declared for it once you rule out ''. It is a plain literal, not a
+ * const, because the property name is the value - there is no second spelling to look up.
+ * See: https://help.salesforce.com/s/articleView?id=platform.code_setting_debug_log_levels.htm
+ */
+export type DebugCategory = keyof DebugLevels | '';
+
+/** The user timezone as the log header stated it. */
+export interface LogTimezone {
+  /** The display label, e.g. `Pacific Standard Time`. Localised in some logs. */
+  label: string;
+  /** IANA name, e.g. `America/Los_Angeles`. Null when the header stated no name. */
+  name: string | null;
+  /** Minutes east of UTC, e.g. -480 for `GMT-08:00`. Null when the header stated no offset. */
+  offsetMinutes: number | null;
+}
+
+/** Who ran the transaction, from the `USER_INFO` header line. */
+export interface UserInfo {
+  /** The 15 or 18 character user id. */
+  id: string;
+  userName: string;
+  timezone: LogTimezone;
 }
 
 /**

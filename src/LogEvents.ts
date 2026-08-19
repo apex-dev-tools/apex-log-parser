@@ -2,12 +2,13 @@
  * Copyright (c) 2020 Certinia Inc. All rights reserved.
  */
 
-import type { ApexLogParser, DebugLevel } from './ApexLogParser.js';
+import type { ApexLogParser } from './ApexLogParser.js';
 import type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
 import { parseCodedLimit, parseLabelledLimit, parseTotalLimit } from './limits.js';
 import type {
   CPUType,
   DebugCategory,
+  DebugLevels,
   GovernorLimits,
   Limits,
   LineNumber,
@@ -17,8 +18,9 @@ import type {
   LogLevel,
   SelfTotal,
   Truncation,
+  UserInfo,
 } from './types.js';
-import { DEBUG_CATEGORY, LOG_CATEGORY, LOG_LEVEL } from './types.js';
+import { LOG_CATEGORY, LOG_LEVEL } from './types.js';
 
 /**
  * All log lines extend this base class.
@@ -400,7 +402,7 @@ export class ApexLog extends LogEvent {
   /**
    * The Apex Debug Logging Levels for the current log
    */
-  public debugLevels: DebugLevel[] = [];
+  public debugLevels: DebugLevels = {};
 
   /**
    * All the namespaces that appear in this log.
@@ -416,6 +418,15 @@ export class ApexLog extends LogEvent {
    * Any issues that occurred during the parsing of the log, such as an unrecognized log event type.
    */
   public parsingErrors: string[] = [];
+
+  /**
+   * The first code unit the log states, which is what the transaction ran. Null when the log states
+   * no code unit at all.
+   */
+  public entryPoint: CodeUnitStartedLine | null = null;
+
+  /** Who ran the transaction, from the `USER_INFO` header line. Null when it states no user. */
+  public userInfo: UserInfo | null = null;
 
   /**
    * Every region the platform did not write in full, and the byte total it reported.
@@ -576,7 +587,7 @@ function parseBytes(fragment: string | undefined): number {
 
 export class BulkHeapAllocateLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finest;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   logCategory = 'Apex Code';
   /** Bytes allocated by this bulk allocation (from the "Bytes:N" fragment). */
   bytes = 0;
@@ -589,7 +600,7 @@ export class BulkHeapAllocateLine extends LogEvent {
 }
 
 export class CalloutRequestLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['CALLOUT_RESPONSE'], LOG_CATEGORY.Callout, 'free');
@@ -600,7 +611,7 @@ export class CalloutRequestLine extends DurationLogEvent {
 
 export class CalloutResponseLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -610,7 +621,7 @@ export class CalloutResponseLine extends LogEvent {
   }
 }
 export class NamedCredentialRequestLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -619,7 +630,7 @@ export class NamedCredentialRequestLine extends LogEvent {
 }
 
 export class NamedCredentialResponseLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -628,7 +639,7 @@ export class NamedCredentialResponseLine extends LogEvent {
 }
 
 export class NamedCredentialResponseDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -637,7 +648,7 @@ export class NamedCredentialResponseDetailLine extends LogEvent {
 }
 
 export class ConstructorEntryLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   hasValidSymbols = true;
   suffix = ' (constructor)';
@@ -673,7 +684,7 @@ export class ConstructorEntryLine extends DurationLogEvent {
 
 export class ConstructorExitLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -684,7 +695,7 @@ export class ConstructorExitLine extends LogEvent {
 
 export class EmailQueueLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -693,7 +704,7 @@ export class EmailQueueLine extends LogEvent {
 }
 
 export class MethodEntryLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   hasValidSymbols = true;
 
@@ -751,7 +762,7 @@ export class MethodEntryLine extends DurationLogEvent {
 }
 export class MethodExitLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -772,7 +783,7 @@ export class MethodExitLine extends LogEvent {
 }
 
 export class SystemConstructorEntryLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   suffix = ' (system constructor)';
 
@@ -785,7 +796,7 @@ export class SystemConstructorEntryLine extends DurationLogEvent {
 
 export class SystemConstructorExitLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -794,7 +805,7 @@ export class SystemConstructorExitLine extends LogEvent {
   }
 }
 export class SystemMethodEntryLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['SYSTEM_METHOD_EXIT'], LOG_CATEGORY.System, 'method');
@@ -805,7 +816,7 @@ export class SystemMethodEntryLine extends DurationLogEvent {
 
 export class SystemMethodExitLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -815,7 +826,7 @@ export class SystemMethodExitLine extends LogEvent {
 }
 
 export class CodeUnitStartedLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Error;
   // Not "entrypoint": most code units (triggers, validation rules, VF pages)
   // start partway through a transaction, and the text can read exactly like a
@@ -892,7 +903,7 @@ export class CodeUnitStartedLine extends DurationLogEvent {
 }
 export class CodeUnitFinishedLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -902,7 +913,7 @@ export class CodeUnitFinishedLine extends LogEvent {
 }
 
 export class VFApexCallStartLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   hasValidSymbols = true;
   suffix = ' (VF APEX)';
@@ -951,7 +962,7 @@ export class VFApexCallStartLine extends DurationLogEvent {
 
 export class VFApexCallEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -961,7 +972,7 @@ export class VFApexCallEndLine extends LogEvent {
 }
 
 export class VFDeserializeViewstateBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['VF_DESERIALIZE_VIEWSTATE_END'], LOG_CATEGORY.System, 'method');
@@ -969,7 +980,7 @@ export class VFDeserializeViewstateBeginLine extends DurationLogEvent {
 }
 
 export class VFFormulaStartLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   suffix = ' (VF FORMULA)';
 
@@ -980,7 +991,7 @@ export class VFFormulaStartLine extends DurationLogEvent {
 }
 
 export class VFFormulaEndLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   isExit = true;
 
@@ -991,7 +1002,7 @@ export class VFFormulaEndLine extends LogEvent {
 }
 
 export class VFSeralizeViewStateStartLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['VF_SERIALIZE_VIEWSTATE_END'], LOG_CATEGORY.System, 'method');
@@ -999,7 +1010,7 @@ export class VFSeralizeViewStateStartLine extends DurationLogEvent {
 }
 
 export class VFPageMessageLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1009,7 +1020,7 @@ export class VFPageMessageLine extends LogEvent {
 }
 
 export class DMLBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   dmlCount = {
     self: 1,
@@ -1034,7 +1045,7 @@ export class DMLBeginLine extends DurationLogEvent {
 
 export class DMLEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1045,7 +1056,7 @@ export class DMLEndLine extends LogEvent {
 
 export class IdeasQueryExecuteLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finest;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1053,7 +1064,7 @@ export class IdeasQueryExecuteLine extends LogEvent {
 }
 
 export class SOQLExecuteBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   aggregations = 0;
   children: SOQLExecuteExplainLine[] = [];
@@ -1083,7 +1094,7 @@ export class SOQLExecuteBeginLine extends DurationLogEvent {
 
 export class SOQLExecuteEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1095,7 +1106,7 @@ export class SOQLExecuteEndLine extends LogEvent {
 
 export class SOQLExecuteExplainLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finest;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   cardinality: number | null = null; // The estimated number of records that the leading operation type would return
   fields: string[] | null = null; //The indexed field(s) used by the Query Optimizer. If the leading operation type is Index, the fields value is Index. Otherwise, the fields value is null.
   leadingOperationType: string | null = null; // The primary operation type that Salesforce will use to optimize the query.
@@ -1142,7 +1153,7 @@ export class SOQLExecuteExplainLine extends LogEvent {
 }
 
 export class SOSLExecuteBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   soslCount = {
     self: 1,
@@ -1162,7 +1173,7 @@ export class SOSLExecuteBeginLine extends DurationLogEvent {
 
 export class SOSLExecuteEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1174,7 +1185,7 @@ export class SOSLExecuteEndLine extends LogEvent {
 
 export class HeapAllocateLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finer;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   /** Bytes allocated by this line. Example: "|HEAP_ALLOCATE|[84]|Bytes:152" → 152. */
   bytes = 0;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1188,7 +1199,7 @@ export class HeapAllocateLine extends LogEvent {
 
 export class HeapDeallocateLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finer;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   /** Bytes deallocated by this line (from the "Bytes:N" fragment, when present). */
   bytes = 0;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1200,7 +1211,7 @@ export class HeapDeallocateLine extends LogEvent {
 
 export class StatementExecuteLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finer;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1209,7 +1220,7 @@ export class StatementExecuteLine extends LogEvent {
 
 export class VariableScopeBeginLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finest;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1219,7 +1230,7 @@ export class VariableScopeBeginLine extends LogEvent {
 
 export class VariableAssignmentLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finest;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1228,7 +1239,7 @@ export class VariableAssignmentLine extends LogEvent {
 }
 export class UserInfoLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1238,7 +1249,7 @@ export class UserInfoLine extends LogEvent {
 
 export class UserDebugLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Debug;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   acceptsText = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1249,7 +1260,7 @@ export class UserDebugLine extends LogEvent {
 }
 
 export class CumulativeLimitUsageLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   namespace = 'default';
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1259,7 +1270,7 @@ export class CumulativeLimitUsageLine extends DurationLogEvent {
 
 export class CumulativeProfilingLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   acceptsText = true;
   namespace = 'default';
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1269,7 +1280,7 @@ export class CumulativeProfilingLine extends LogEvent {
 }
 
 export class CumulativeProfilingBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   namespace = 'default';
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1278,7 +1289,7 @@ export class CumulativeProfilingBeginLine extends DurationLogEvent {
 }
 
 export class LimitUsageLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   debugLevel: LogLevel = LOG_LEVEL.Finest;
   namespace = 'default';
   /**
@@ -1295,7 +1306,7 @@ export class LimitUsageLine extends LogEvent {
 }
 
 export class LimitUsageForNSLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   debugLevel: LogLevel = LOG_LEVEL.Finest;
 
   namespace = 'default';
@@ -1353,7 +1364,7 @@ export class LimitUsageForNSLine extends LogEvent {
 }
 
 export class NBANodeBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['NBA_NODE_END'], LOG_CATEGORY.Automation, 'method');
@@ -1363,7 +1374,7 @@ export class NBANodeBegin extends DurationLogEvent {
 
 export class NBANodeDetail extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts.slice(2).join(' | ');
@@ -1371,7 +1382,7 @@ export class NBANodeDetail extends LogEvent {
 }
 export class NBANodeEnd extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   isExit = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1380,7 +1391,7 @@ export class NBANodeEnd extends LogEvent {
 }
 export class NBANodeError extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts.slice(2).join(' | ');
@@ -1388,14 +1399,14 @@ export class NBANodeError extends LogEvent {
 }
 export class NBAOfferInvalid extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts.slice(2).join(' | ');
   }
 }
 export class NBAStrategyBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['NBA_STRATEGY_END'], LOG_CATEGORY.Automation, 'method');
@@ -1404,7 +1415,7 @@ export class NBAStrategyBegin extends DurationLogEvent {
 }
 export class NBAStrategyEnd extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   isExit = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1413,7 +1424,7 @@ export class NBAStrategyEnd extends LogEvent {
 }
 export class NBAStrategyError extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.NBA;
+  debugCategory: DebugCategory = 'nba';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts.slice(2).join(' | ');
@@ -1422,7 +1433,7 @@ export class NBAStrategyError extends LogEvent {
 
 export class PushTraceFlagsLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1432,7 +1443,7 @@ export class PushTraceFlagsLine extends LogEvent {
 
 export class PopTraceFlagsLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1441,7 +1452,7 @@ export class PopTraceFlagsLine extends LogEvent {
 }
 
 export class QueryMoreBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['QUERY_MORE_END'], LOG_CATEGORY.SOQL, 'custom');
@@ -1452,7 +1463,7 @@ export class QueryMoreBeginLine extends DurationLogEvent {
 
 export class QueryMoreEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1463,7 +1474,7 @@ export class QueryMoreEndLine extends LogEvent {
 }
 export class QueryMoreIterationsLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1473,7 +1484,7 @@ export class QueryMoreIterationsLine extends LogEvent {
 
 export class SavepointRollbackLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1483,7 +1494,7 @@ export class SavepointRollbackLine extends LogEvent {
 
 export class SavePointSetLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
@@ -1493,7 +1504,7 @@ export class SavePointSetLine extends LogEvent {
 
 export class TotalEmailRecipientsQueuedLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts[2] || '';
@@ -1502,7 +1513,7 @@ export class TotalEmailRecipientsQueuedLine extends LogEvent {
 
 export class StackFrameVariableListLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   acceptsText = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1512,7 +1523,7 @@ export class StackFrameVariableListLine extends LogEvent {
 
 export class StaticVariableListLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   acceptsText = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1523,7 +1534,7 @@ export class StaticVariableListLine extends LogEvent {
 // This looks like a method, but the exit line is often missing...
 export class SystemModeEnterLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   // namespace = "system";
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1534,7 +1545,7 @@ export class SystemModeEnterLine extends LogEvent {
 
 export class SystemModeExitLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts[2] || '';
@@ -1542,7 +1553,7 @@ export class SystemModeExitLine extends LogEvent {
 }
 
 export class ExecutionStartedLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Error;
   namespace = 'default';
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1551,7 +1562,7 @@ export class ExecutionStartedLine extends DurationLogEvent {
 }
 
 export class EnteringManagedPackageLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   // The text is a bare namespace token (`c2g`, `dlrs`, `java__util`), so say
   // what it is.
@@ -1572,7 +1583,7 @@ export class EnteringManagedPackageLine extends DurationLogEvent {
 }
 
 export class EventSericePubBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['EVENT_SERVICE_PUB_END'], LOG_CATEGORY.Automation, 'custom');
@@ -1582,7 +1593,7 @@ export class EventSericePubBeginLine extends DurationLogEvent {
 
 export class EventSericePubEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1593,7 +1604,7 @@ export class EventSericePubEndLine extends LogEvent {
 
 export class EventSericePubDetailLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finer;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts[2] + ' ' + parts[3] + ' ' + parts[4];
@@ -1601,7 +1612,7 @@ export class EventSericePubDetailLine extends LogEvent {
 }
 
 export class EventSericeSubBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['EVENT_SERVICE_SUB_END'], LOG_CATEGORY.Automation, 'custom');
@@ -1611,7 +1622,7 @@ export class EventSericeSubBeginLine extends DurationLogEvent {
 
 export class EventSericeSubEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   isExit = true;
 
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1622,7 +1633,7 @@ export class EventSericeSubEndLine extends LogEvent {
 
 export class EventSericeSubDetailLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finer;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]} ${parts[3]} ${parts[4]} ${parts[6]} ${parts[6]}`;
@@ -1630,7 +1641,7 @@ export class EventSericeSubDetailLine extends LogEvent {
 }
 
 export class FlowStartInterviewsBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   text = 'FLOW_START_INTERVIEWS : ';
 
@@ -1672,7 +1683,7 @@ export class FlowStartInterviewsBeginLine extends DurationLogEvent {
 }
 
 export class FlowStartInterviewsErrorLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Error;
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1682,7 +1693,7 @@ export class FlowStartInterviewsErrorLine extends LogEvent {
 }
 
 export class FlowStartInterviewBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   // The text is just the flow's label ("Account Before Save LC"), which reads
   // like anything else. The plural FLOW_START_INTERVIEWS_BEGIN resolves its own
@@ -1695,7 +1706,7 @@ export class FlowStartInterviewBeginLine extends DurationLogEvent {
 }
 
 export class FlowStartInterviewLimitUsageLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   /** Governor-limit observation. Example: "SOQL queries: 0 out of 100". */
   limitUsage: LimitObservation | null = null;
@@ -1707,7 +1718,7 @@ export class FlowStartInterviewLimitUsageLine extends LogEvent {
 }
 
 export class FlowStartScheduledRecordsLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1716,7 +1727,7 @@ export class FlowStartScheduledRecordsLine extends LogEvent {
 }
 
 export class FlowCreateInterviewErrorLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Error;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1813,7 +1824,7 @@ interface FlowDbReport {
 }
 
 export class FlowElementBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['FLOW_ELEMENT_END'], LOG_CATEGORY.Automation, 'custom');
@@ -1823,7 +1834,7 @@ export class FlowElementBeginLine extends DurationLogEvent {
 }
 
 export class FlowElementDeferredLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1832,7 +1843,7 @@ export class FlowElementDeferredLine extends LogEvent {
 }
 
 export class FlowElementAssignmentLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   acceptsText = true;
 
@@ -1843,7 +1854,7 @@ export class FlowElementAssignmentLine extends LogEvent {
 }
 
 export class FlowWaitEventResumingDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1852,7 +1863,7 @@ export class FlowWaitEventResumingDetailLine extends LogEvent {
 }
 
 export class FlowWaitEventWaitingDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1861,7 +1872,7 @@ export class FlowWaitEventWaitingDetailLine extends LogEvent {
 }
 
 export class FlowWaitResumingDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1870,7 +1881,7 @@ export class FlowWaitResumingDetailLine extends LogEvent {
 }
 
 export class FlowWaitWaitingDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1879,7 +1890,7 @@ export class FlowWaitWaitingDetailLine extends LogEvent {
 }
 
 export class FlowInterviewFinishedLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1888,7 +1899,7 @@ export class FlowInterviewFinishedLine extends LogEvent {
 }
 
 export class FlowInterviewResumedLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1897,7 +1908,7 @@ export class FlowInterviewResumedLine extends LogEvent {
 }
 
 export class FlowInterviewPausedLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1906,7 +1917,7 @@ export class FlowInterviewPausedLine extends LogEvent {
 }
 
 export class FlowElementErrorLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Error;
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -1916,7 +1927,7 @@ export class FlowElementErrorLine extends LogEvent {
 }
 
 export class FlowElementFaultLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Warn;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1929,7 +1940,7 @@ export class FlowElementFaultLine extends LogEvent {
  * The enclosing flow element reads the delta from these children - see `applyFlowDbResiduals`.
  */
 class FlowRunningTotalLimitUsageLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   /** Governor-limit observation. Example: "2 ms CPU time, total 10 out of 15000". */
   limitUsage: RunningTotalObservation | null;
@@ -1943,7 +1954,7 @@ class FlowRunningTotalLimitUsageLine extends LogEvent {
 export class FlowElementLimitUsageLine extends FlowRunningTotalLimitUsageLine {}
 
 export class FlowInterviewFinishedLimitUsageLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   /** Governor-limit observation. Example: "SOQL queries: 0 out of 100". */
   limitUsage: LimitObservation | null = null;
@@ -1955,7 +1966,7 @@ export class FlowInterviewFinishedLimitUsageLine extends LogEvent {
 }
 
 export class FlowSubflowDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1964,7 +1975,7 @@ export class FlowSubflowDetailLine extends LogEvent {
 }
 
 export class FlowActionCallDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1973,7 +1984,7 @@ export class FlowActionCallDetailLine extends LogEvent {
 }
 
 export class FlowAssignmentDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1982,7 +1993,7 @@ export class FlowAssignmentDetailLine extends LogEvent {
 }
 
 export class FlowLoopDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -1991,7 +2002,7 @@ export class FlowLoopDetailLine extends LogEvent {
 }
 
 export class FlowRuleDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2000,7 +2011,7 @@ export class FlowRuleDetailLine extends LogEvent {
 }
 
 export class FlowBulkElementBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['FLOW_BULK_ELEMENT_END'], LOG_CATEGORY.Automation, 'custom');
@@ -2010,7 +2021,7 @@ export class FlowBulkElementBeginLine extends DurationLogEvent {
 }
 
 export class FlowBulkElementDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2019,7 +2030,7 @@ export class FlowBulkElementDetailLine extends LogEvent {
 }
 
 export class FlowBulkElementNotSupportedLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2031,7 +2042,7 @@ export class FlowBulkElementLimitUsageLine extends FlowRunningTotalLimitUsageLin
 
 export class PNInvalidAppLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]}.${parts[3]}`;
@@ -2040,7 +2051,7 @@ export class PNInvalidAppLine extends LogEvent {
 
 export class PNInvalidCertificateLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]}.${parts[3]}`;
@@ -2048,7 +2059,7 @@ export class PNInvalidCertificateLine extends LogEvent {
 }
 export class PNInvalidNotificationLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]}.${parts[3]} : ${parts[4]} : ${parts[5]} : ${parts[6]} : ${parts[7]} : ${parts[8]}`;
@@ -2056,7 +2067,7 @@ export class PNInvalidNotificationLine extends LogEvent {
 }
 export class PNNoDevicesLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Debug;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]}.${parts[3]}`;
@@ -2065,7 +2076,7 @@ export class PNNoDevicesLine extends LogEvent {
 
 export class PNSentLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Debug;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]}.${parts[3]} : ${parts[4]} : ${parts[5]} : ${parts[6]} : ${parts[7]}`;
@@ -2074,7 +2085,7 @@ export class PNSentLine extends LogEvent {
 
 export class SLAEndLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]} : ${parts[3]} : ${parts[4]} : ${parts[5]} : ${parts[6]}`;
@@ -2083,7 +2094,7 @@ export class SLAEndLine extends LogEvent {
 
 export class SLAEvalMilestoneLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]}`;
@@ -2092,7 +2103,7 @@ export class SLAEvalMilestoneLine extends LogEvent {
 
 export class SLAProcessCaseLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]}`;
@@ -2100,7 +2111,7 @@ export class SLAProcessCaseLine extends LogEvent {
 }
 
 export class TestingLimitsLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexProfiling;
+  debugCategory: DebugCategory = 'apexProfiling';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   acceptsText = true;
 
@@ -2110,7 +2121,7 @@ export class TestingLimitsLine extends LogEvent {
 }
 
 export class ValidationRuleLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Validation;
+  debugCategory: DebugCategory = 'validation';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2119,7 +2130,7 @@ export class ValidationRuleLine extends LogEvent {
 }
 
 export class ValidationErrorLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Validation;
+  debugCategory: DebugCategory = 'validation';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -2129,7 +2140,7 @@ export class ValidationErrorLine extends LogEvent {
 }
 
 export class ValidationFormulaLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Validation;
+  debugCategory: DebugCategory = 'validation';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   acceptsText = true;
 
@@ -2142,7 +2153,7 @@ export class ValidationFormulaLine extends LogEvent {
 }
 
 export class ValidationPassLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Validation;
+  debugCategory: DebugCategory = 'validation';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2151,7 +2162,7 @@ export class ValidationPassLine extends LogEvent {
 }
 
 export class WFFlowActionErrorLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Error;
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -2161,7 +2172,7 @@ export class WFFlowActionErrorLine extends LogEvent {
 }
 
 export class WFFlowActionErrorDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Error;
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -2171,7 +2182,7 @@ export class WFFlowActionErrorDetailLine extends LogEvent {
 }
 
 export class WFFieldUpdateLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2182,7 +2193,7 @@ export class WFFieldUpdateLine extends DurationLogEvent {
 }
 
 export class WFRuleEvalBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['WF_RULE_EVAL_END'], LOG_CATEGORY.Automation, 'custom');
@@ -2191,7 +2202,7 @@ export class WFRuleEvalBeginLine extends DurationLogEvent {
 }
 
 export class WFRuleEvalValueLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2200,7 +2211,7 @@ export class WFRuleEvalValueLine extends LogEvent {
 }
 
 export class WFRuleFilterLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   acceptsText = true;
 
@@ -2211,7 +2222,7 @@ export class WFRuleFilterLine extends LogEvent {
 }
 
 export class WFCriteriaBeginLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(
@@ -2226,7 +2237,7 @@ export class WFCriteriaBeginLine extends DurationLogEvent {
 }
 
 export class WFFormulaLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   acceptsText = true;
   isExit = true;
@@ -2239,7 +2250,7 @@ export class WFFormulaLine extends DurationLogEvent {
 }
 
 export class WFActionLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2248,7 +2259,7 @@ export class WFActionLine extends LogEvent {
 }
 
 export class WFActionsEndLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2257,7 +2268,7 @@ export class WFActionsEndLine extends LogEvent {
 }
 
 export class WFActionTaskLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2266,7 +2277,7 @@ export class WFActionTaskLine extends LogEvent {
 }
 
 export class WFApprovalLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2277,7 +2288,7 @@ export class WFApprovalLine extends DurationLogEvent {
 }
 
 export class WFApprovalRemoveLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2286,7 +2297,7 @@ export class WFApprovalRemoveLine extends LogEvent {
 }
 
 export class WFApprovalSubmitLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2297,7 +2308,7 @@ export class WFApprovalSubmitLine extends DurationLogEvent {
 }
 
 export class WFApprovalSubmitterLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2306,7 +2317,7 @@ export class WFApprovalSubmitterLine extends LogEvent {
 }
 
 export class WFAssignLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2315,7 +2326,7 @@ export class WFAssignLine extends LogEvent {
 }
 
 export class WFEmailAlertLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2326,7 +2337,7 @@ export class WFEmailAlertLine extends DurationLogEvent {
 }
 
 export class WFEmailSentLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2337,7 +2348,7 @@ export class WFEmailSentLine extends DurationLogEvent {
 }
 
 export class WFEnqueueActionsLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2346,7 +2357,7 @@ export class WFEnqueueActionsLine extends LogEvent {
 }
 
 export class WFEscalationActionLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2355,7 +2366,7 @@ export class WFEscalationActionLine extends LogEvent {
 }
 
 export class WFEvalEntryCriteriaLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2366,7 +2377,7 @@ export class WFEvalEntryCriteriaLine extends DurationLogEvent {
 }
 
 export class WFFlowActionDetailLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2376,7 +2387,7 @@ export class WFFlowActionDetailLine extends LogEvent {
 }
 
 export class WFNextApproverLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2387,7 +2398,7 @@ export class WFNextApproverLine extends DurationLogEvent {
 }
 
 export class WFOutboundMsgLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2396,7 +2407,7 @@ export class WFOutboundMsgLine extends LogEvent {
 }
 
 export class WFProcessFoundLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2407,7 +2418,7 @@ export class WFProcessFoundLine extends DurationLogEvent {
 }
 
 export class WFProcessNode extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2418,7 +2429,7 @@ export class WFProcessNode extends DurationLogEvent {
 }
 
 export class WFReassignRecordLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2427,7 +2438,7 @@ export class WFReassignRecordLine extends LogEvent {
 }
 
 export class WFResponseNotifyLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2436,7 +2447,7 @@ export class WFResponseNotifyLine extends LogEvent {
 }
 
 export class WFRuleEntryOrderLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2445,7 +2456,7 @@ export class WFRuleEntryOrderLine extends LogEvent {
 }
 
 export class WFRuleInvocationLine extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   isExit = true;
   nextLineIsExit = true;
@@ -2456,7 +2467,7 @@ export class WFRuleInvocationLine extends DurationLogEvent {
 }
 
 export class WFSoftRejectLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2465,7 +2476,7 @@ export class WFSoftRejectLine extends LogEvent {
 }
 
 export class WFTimeTriggerLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2474,7 +2485,7 @@ export class WFTimeTriggerLine extends LogEvent {
 }
 
 export class WFSpoolActionBeginLine extends LogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Workflow;
+  debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -2499,7 +2510,7 @@ function splitIssueText(text: string): { summary: string; description: string } 
 
 export class ExceptionThrownLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   discontinuity = true;
   acceptsText = true;
   thrownCount = { self: 1, total: 1 };
@@ -2521,7 +2532,7 @@ export class ExceptionThrownLine extends LogEvent {
 
 export class FatalErrorLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   acceptsText = true;
   discontinuity = true;
 
@@ -2539,7 +2550,7 @@ export class FatalErrorLine extends LogEvent {
 
 export class XDSDetailLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finer;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts[2] || '';
@@ -2548,7 +2559,7 @@ export class XDSDetailLine extends LogEvent {
 
 export class XDSResponseLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[2]} : ${parts[3]} : ${parts[4]} : ${parts[5]} : ${parts[6]}`;
@@ -2556,7 +2567,7 @@ export class XDSResponseLine extends LogEvent {
 }
 export class XDSResponseDetailLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finer;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts[2] || '';
@@ -2565,7 +2576,7 @@ export class XDSResponseDetailLine extends LogEvent {
 
 export class XDSResponseErrorLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Error;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Callout;
+  debugCategory: DebugCategory = 'callout';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts[2] || '';
@@ -2574,7 +2585,7 @@ export class XDSResponseErrorLine extends LogEvent {
 
 // e.g. "09:45:31.888 (38889007737)|DUPLICATE_DETECTION_BEGIN"
 export class DuplicateDetectionBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['DUPLICATE_DETECTION_END'], LOG_CATEGORY.System, 'custom');
@@ -2584,7 +2595,7 @@ export class DuplicateDetectionBegin extends DurationLogEvent {
 // e.g. "09:45:31.888 (38889067408)|DUPLICATE_DETECTION_RULE_INVOCATION|DuplicateRuleId:0Bm20000000CaSP|DuplicateRuleName:Duplicate Account|DmlType:UPDATE"
 export class DuplicateDetectionRule extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = `${parts[3]} - ${parts[4]}`;
@@ -2597,7 +2608,7 @@ export class DuplicateDetectionRule extends LogEvent {
  */
 export class BulkDMLEntry extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts[2] || '';
@@ -2609,7 +2620,7 @@ export class BulkDMLEntry extends LogEvent {
  */
 export class DuplicateDetectionDetails extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Debug;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts.slice(2).join(' | ');
@@ -2621,7 +2632,7 @@ export class DuplicateDetectionDetails extends LogEvent {
  */
 export class DuplicateDetectionSummary extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.text = parts.slice(2).join(' | ');
@@ -2629,14 +2640,14 @@ export class DuplicateDetectionSummary extends LogEvent {
 }
 
 export class SessionCachePutBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['SESSION_CACHE_PUT_END'], LOG_CATEGORY.Apex, 'method');
   }
 }
 export class SessionCacheGetBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['SESSION_CACHE_GET_END'], LOG_CATEGORY.Apex, 'method');
@@ -2644,7 +2655,7 @@ export class SessionCacheGetBegin extends DurationLogEvent {
 }
 
 export class SessionCacheRemoveBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['SESSION_CACHE_REMOVE_END'], LOG_CATEGORY.Apex, 'method');
@@ -2652,7 +2663,7 @@ export class SessionCacheRemoveBegin extends DurationLogEvent {
 }
 
 export class OrgCachePutBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['ORG_CACHE_PUT_END'], LOG_CATEGORY.Apex, 'method');
@@ -2660,7 +2671,7 @@ export class OrgCachePutBegin extends DurationLogEvent {
 }
 
 export class OrgCacheGetBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['ORG_CACHE_GET_END'], LOG_CATEGORY.Apex, 'method');
@@ -2668,7 +2679,7 @@ export class OrgCacheGetBegin extends DurationLogEvent {
 }
 
 export class OrgCacheRemoveBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['ORG_CACHE_REMOVE_END'], LOG_CATEGORY.Apex, 'method');
@@ -2676,7 +2687,7 @@ export class OrgCacheRemoveBegin extends DurationLogEvent {
 }
 
 export class VFSerializeContinuationStateBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['VF_SERIALIZE_CONTINUATION_STATE_END'], LOG_CATEGORY.Apex, 'method');
@@ -2684,7 +2695,7 @@ export class VFSerializeContinuationStateBegin extends DurationLogEvent {
 }
 
 export class VFDeserializeContinuationStateBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Visualforce;
+  debugCategory: DebugCategory = 'visualforce';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['VF_SERIALIZE_CONTINUATION_STATE_END'], LOG_CATEGORY.Apex, 'method');
@@ -2692,7 +2703,7 @@ export class VFDeserializeContinuationStateBegin extends DurationLogEvent {
 }
 
 export class MatchEngineBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['MATCH_ENGINE_END'], LOG_CATEGORY.System, 'method');
@@ -2700,7 +2711,7 @@ export class MatchEngineBegin extends DurationLogEvent {
 }
 
 export class CursorCreateBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.Database;
+  debugCategory: DebugCategory = 'database';
   debugLevel: LogLevel = LOG_LEVEL.Info;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['CURSOR_CREATE_END'], LOG_CATEGORY.SOQL, 'method');
@@ -2708,7 +2719,7 @@ export class CursorCreateBegin extends DurationLogEvent {
 }
 
 export class FormulaEvaluateBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.ApexCode;
+  debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Finer;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['FORMULA_EVALUATE_END'], LOG_CATEGORY.Apex, 'method');
@@ -2716,7 +2727,7 @@ export class FormulaEvaluateBegin extends DurationLogEvent {
 }
 
 export class RlmConfiguratorBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['RLM_CONFIGURATOR_END'], LOG_CATEGORY.System, 'method');
@@ -2724,7 +2735,7 @@ export class RlmConfiguratorBegin extends DurationLogEvent {
 }
 
 export class RlmPricingBegin extends DurationLogEvent {
-  debugCategory: DebugCategory = DEBUG_CATEGORY.System;
+  debugCategory: DebugCategory = 'system';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['RLM_PRICING_END'], LOG_CATEGORY.System, 'method');
