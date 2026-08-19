@@ -94,6 +94,9 @@ export abstract class LogEvent {
    */
   namespace: string | 'default' = '';
 
+  /** Namespace of the immediate parent - who invoked this, not the nearest namespaced caller. */
+  callerNamespace: string | 'default' = 'default';
+
   /**
    * Could match to a corresponding symbol in a file in the workspace?
    */
@@ -717,6 +720,10 @@ export class MethodEntryLine extends DurationLogEvent {
   onEnd(end: MethodExitLine, _stack: LogEvent[]): void {
     if (end.namespace && !end.text.endsWith(')')) {
       this.namespace = end.namespace;
+      // The children parsed before the exit line stated this namespace, so they hold the stale one.
+      for (const child of this.children) {
+        child.callerNamespace = end.namespace;
+      }
     }
   }
 

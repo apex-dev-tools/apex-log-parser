@@ -470,6 +470,7 @@ export class ApexLogParser {
         lineIter.fetch(); // it's a child - consume the line
         this.lastTimestamp = nextLine.timestamp;
         nextLine.namespace ||= currentLine.namespace || 'default';
+        nextLine.callerNamespace = currentLine.namespace || 'default';
         nextLine.parent = currentLine;
         currentLine.children.push(nextLine);
 
