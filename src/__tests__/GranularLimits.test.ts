@@ -87,10 +87,27 @@ describe('granular limit parsing (via parse)', () => {
   it('parses the whole cumulative LIMIT_USAGE_FOR_NS block (shared parser)', () => {
     const snapshot = apexLog.governorLimits.snapshots.at(-1);
     expect(snapshot?.namespace).toBe('default');
-    expect(snapshot?.limits.soqlQueries).toEqual({ used: 8, limit: 100 });
-    expect(snapshot?.limits.cpuTime).toEqual({ used: 4564, limit: 10000 });
-    expect(snapshot?.limits.heapSize).toEqual({ used: 1234, limit: 6000000 });
-    expect(snapshot?.limits.dmlRows).toEqual({ used: 12, limit: 10000 });
-    expect(snapshot?.limits.mobileApexPushCalls).toEqual({ used: 0, limit: 10 });
+    expect(snapshot?.limits.soqlQueries).toEqual({ used: 8, limit: 100, percentUsed: 8 });
+    expect(snapshot?.limits.cpuTime).toEqual({ used: 4564, limit: 10000, percentUsed: 45.64 });
+    expect(snapshot?.limits.heapSize).toEqual({
+      used: 1234,
+      limit: 6000000,
+      percentUsed: (1234 / 6000000) * 100,
+    });
+    expect(snapshot?.limits.dmlRows).toEqual({ used: 12, limit: 10000, percentUsed: 0.12 });
+    expect(snapshot?.limits.mobileApexPushCalls).toEqual({ used: 0, limit: 10, percentUsed: 0 });
+  });
+
+  it('percentUsed is null for a metric the block never stated', () => {
+    // A block that states only SOQL: every other metric has no ceiling, so it has no percentage.
+    const partial = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
+        '  Number of SOQL queries: 25 out of 100\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+    const limits = partial.governorLimits.byNamespace.get('default');
+    expect(limits?.soqlQueries).toEqual({ used: 25, limit: 100, percentUsed: 25 });
+    expect(limits?.cpuTime).toEqual({ used: 0, limit: 0, percentUsed: null });
   });
 });

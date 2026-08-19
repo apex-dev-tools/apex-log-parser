@@ -11,10 +11,35 @@
  * - single `LIMIT_USAGE`                      — code "SOQL", used "1", limit "100"
  */
 
-import type { Limits } from './types.js';
+import type { LimitValue, Limits } from './types.js';
 
 /** Metric key of a governor limit that can be tracked granularly. */
 export type LimitMetricKey = keyof Limits;
+
+/** A limit value with `percentUsed` derived, null when the log stated no ceiling. */
+export function toLimitValue(used: number, limit: number): LimitValue {
+  return { used, limit, percentUsed: limit > 0 ? (used / limit) * 100 : null };
+}
+
+/** Every metric at zero, with no ceiling. The one place a `Limits` is built from nothing. */
+export function emptyLimits(): Limits {
+  const zero = (): LimitValue => toLimitValue(0, 0);
+  return {
+    soqlQueries: zero(),
+    soslQueries: zero(),
+    queryRows: zero(),
+    dmlStatements: zero(),
+    publishImmediateDml: zero(),
+    dmlRows: zero(),
+    cpuTime: zero(),
+    heapSize: zero(),
+    callouts: zero(),
+    emailInvocations: zero(),
+    futureCalls: zero(),
+    queueableJobsAddedToQueue: zero(),
+    mobileApexPushCalls: zero(),
+  };
+}
 
 /**
  * A single governor-limit observation parsed from a limit-usage log line. `used`/`limit` are the

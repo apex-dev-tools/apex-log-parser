@@ -10,6 +10,7 @@ import {
   applyFlowDbResiduals,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
+import { emptyLimits } from './limits.js';
 import { LOG_LEVEL } from './types.js';
 import type {
   DebugLevels,
@@ -186,19 +187,7 @@ export class ApexLogParser {
   /** Every exception event (EXCEPTION_THROWN, FATAL_ERROR) in log order. */
   exceptions: LogEvent[] = [];
   governorLimits: GovernorLimits = {
-    soqlQueries: { used: 0, limit: 0 },
-    soslQueries: { used: 0, limit: 0 },
-    queryRows: { used: 0, limit: 0 },
-    dmlStatements: { used: 0, limit: 0 },
-    publishImmediateDml: { used: 0, limit: 0 },
-    dmlRows: { used: 0, limit: 0 },
-    cpuTime: { used: 0, limit: 0 },
-    heapSize: { used: 0, limit: 0 },
-    callouts: { used: 0, limit: 0 },
-    emailInvocations: { used: 0, limit: 0 },
-    futureCalls: { used: 0, limit: 0 },
-    queueableJobsAddedToQueue: { used: 0, limit: 0 },
-    mobileApexPushCalls: { used: 0, limit: 0 },
+    ...emptyLimits(),
     byNamespace: new Map<string, Limits>(),
     snapshots: [],
   };

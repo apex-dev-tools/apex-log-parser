@@ -14,6 +14,7 @@ export type {
   GovernorLimits,
   GovernorSnapshot,
   IssueType,
+  LimitValue,
   Limits,
   LineNumber,
   LogCategory,

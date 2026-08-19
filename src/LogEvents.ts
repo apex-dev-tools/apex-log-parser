@@ -4,7 +4,13 @@
 
 import type { ApexLogParser } from './ApexLogParser.js';
 import type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
-import { parseCodedLimit, parseLabelledLimit, parseTotalLimit } from './limits.js';
+import {
+  emptyLimits,
+  parseCodedLimit,
+  parseLabelledLimit,
+  parseTotalLimit,
+  toLimitValue,
+} from './limits.js';
 import type {
   CPUType,
   DebugCategory,
@@ -442,19 +448,7 @@ export class ApexLog extends LogEvent {
   public truncatedEvents: LogEvent[] = [];
 
   public governorLimits: GovernorLimits = {
-    soqlQueries: { used: 0, limit: 0 },
-    soslQueries: { used: 0, limit: 0 },
-    queryRows: { used: 0, limit: 0 },
-    dmlStatements: { used: 0, limit: 0 },
-    publishImmediateDml: { used: 0, limit: 0 },
-    dmlRows: { used: 0, limit: 0 },
-    cpuTime: { used: 0, limit: 0 },
-    heapSize: { used: 0, limit: 0 },
-    callouts: { used: 0, limit: 0 },
-    emailInvocations: { used: 0, limit: 0 },
-    futureCalls: { used: 0, limit: 0 },
-    queueableJobsAddedToQueue: { used: 0, limit: 0 },
-    mobileApexPushCalls: { used: 0, limit: 0 },
+    ...emptyLimits(),
     byNamespace: new Map<string, Limits>(),
     snapshots: [],
   };
@@ -1329,26 +1323,12 @@ export class LimitUsageForNSLine extends LogEvent {
     this.text = cleanedText;
 
     // Parse each "Label: used/limit" line via the shared limit parser.
-    const limits: Limits = {
-      soqlQueries: { used: 0, limit: 0 },
-      soslQueries: { used: 0, limit: 0 },
-      queryRows: { used: 0, limit: 0 },
-      dmlStatements: { used: 0, limit: 0 },
-      publishImmediateDml: { used: 0, limit: 0 },
-      dmlRows: { used: 0, limit: 0 },
-      cpuTime: { used: 0, limit: 0 },
-      heapSize: { used: 0, limit: 0 },
-      callouts: { used: 0, limit: 0 },
-      emailInvocations: { used: 0, limit: 0 },
-      futureCalls: { used: 0, limit: 0 },
-      queueableJobsAddedToQueue: { used: 0, limit: 0 },
-      mobileApexPushCalls: { used: 0, limit: 0 },
-    };
+    const limits = emptyLimits();
 
     for (const line of cleanedText.split('\n')) {
       const observation = parseLabelledLimit(line);
       if (observation) {
-        limits[observation.metric] = { used: observation.used, limit: observation.limit };
+        limits[observation.metric] = toLimitValue(observation.used, observation.limit);
       }
     }
 

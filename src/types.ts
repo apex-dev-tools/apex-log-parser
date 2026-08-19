@@ -43,23 +43,34 @@ export type LogCategory = (typeof LOG_CATEGORY)[keyof typeof LOG_CATEGORY] | '';
 export const ALL_LOG_CATEGORIES: readonly LogCategory[] = Object.values(LOG_CATEGORY);
 
 /**
+ * Usage of one governor limit. `limit` is 0 when the log stated no ceiling, and `percentUsed` is
+ * then null - the parser never substitutes a default ceiling, because a guessed denominator would
+ * be reported as fact. `percentUsed` is not rounded.
+ */
+export interface LimitValue {
+  used: number;
+  limit: number;
+  percentUsed: number | null;
+}
+
+/**
  * Governor limit usage. `cpuTime` is milliseconds, `heapSize` is bytes, every other metric is a
- * count. `limit` is 0 when the log stated no ceiling.
+ * count.
  */
 export interface Limits {
-  soqlQueries: { used: number; limit: number };
-  soslQueries: { used: number; limit: number };
-  queryRows: { used: number; limit: number };
-  dmlStatements: { used: number; limit: number };
-  publishImmediateDml: { used: number; limit: number };
-  dmlRows: { used: number; limit: number };
-  cpuTime: { used: number; limit: number };
-  heapSize: { used: number; limit: number };
-  callouts: { used: number; limit: number };
-  emailInvocations: { used: number; limit: number };
-  futureCalls: { used: number; limit: number };
-  queueableJobsAddedToQueue: { used: number; limit: number };
-  mobileApexPushCalls: { used: number; limit: number };
+  soqlQueries: LimitValue;
+  soslQueries: LimitValue;
+  queryRows: LimitValue;
+  dmlStatements: LimitValue;
+  publishImmediateDml: LimitValue;
+  dmlRows: LimitValue;
+  cpuTime: LimitValue;
+  heapSize: LimitValue;
+  callouts: LimitValue;
+  emailInvocations: LimitValue;
+  futureCalls: LimitValue;
+  queueableJobsAddedToQueue: LimitValue;
+  mobileApexPushCalls: LimitValue;
 }
 
 /**
