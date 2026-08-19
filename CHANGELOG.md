@@ -52,6 +52,10 @@
   because counters fall mid-log, so `final` under-reports a breach. `peak.heapSize` also folds
   `ApexLog.heapPeak`, the only heap figure most logs give. Metric iteration over `final` or `peak` is
   now total: no `byNamespace` or `snapshots` key to filter out.
+- Fix state leaking between `ApexLogParser.parse` calls. Nothing reset the parser fields, so a second
+  call parsed the new log on top of the first: it inherited the earlier governor limit snapshots, log
+  issues, namespaces and event index. `parse` now parses on a fresh instance every call, which also
+  means the fields of the instance you call it on stay empty - they were never API.
 - Add `ApexLog.entryPoint` — the first `CodeUnitStartedLine`, which is what the transaction ran. It is
   found whether the code unit sits under `EXECUTION_STARTED` or directly on the root. Null when the
   log states no code unit.

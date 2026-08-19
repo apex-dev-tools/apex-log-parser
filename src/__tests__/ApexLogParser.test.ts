@@ -4,7 +4,7 @@
 import { ApexLogParser } from '../ApexLogParser.js';
 import { parseObjectNamespace, parseRows, parseVfNamespace } from '../LogEvents.js';
 import { lineTypeMap } from '../LogLineMapping.js';
-import type { SOQLExecuteBeginLine } from '../index.js';
+import type { ApexLog, SOQLExecuteBeginLine } from '../index.js';
 import {
   CodeUnitStartedLine,
   ExecutionStartedLine,
@@ -1843,5 +1843,64 @@ describe('ApexLog.startTime tests', () => {
 
     const log = parse(logData);
     expect(log.startTime).toBe(52205123);
+  });
+});
+
+describe('parser state per parse call', () => {
+  const logA =
+    '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+    '09:18:22.6 (200)|HEAP_ALLOCATE|[84]|Bytes:152\n' +
+    '09:18:22.6 (300)|CODE_UNIT_STARTED|[EXTERNAL]|01p000000000000|MyClass.myMethod\n' +
+    '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
+    '  Number of SOQL queries: 8 out of 100\n' +
+    '09:18:22.6 (600)|CODE_UNIT_FINISHED|MyClass.myMethod\n' +
+    '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+  const logB =
+    '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+    '09:18:22.6 (300)|CODE_UNIT_STARTED|[EXTERNAL]|01p000000000000|myNS.Other.run\n' +
+    '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(myNS)|\n' +
+    '  Number of SOQL queries: 3 out of 100\n' +
+    '09:18:22.6 (600)|CODE_UNIT_FINISHED|myNS.Other.run\n' +
+    '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+  const facts = (log: ApexLog) => ({
+    snapshots: log.governorLimits.snapshots.length,
+    namespaces: log.namespaces,
+    soql: log.governorLimits.final.soqlQueries.used,
+    heapPeak: log.heapPeak,
+    events: log.eventsById.length,
+  });
+
+  it('does not carry state from one log to the next', () => {
+    const parser = new ApexLogParser();
+    const first = facts(parser.parse(logA));
+    const second = facts(parser.parse(logB));
+    expect(first).toEqual(facts(parse(logA)));
+    expect(second).toEqual(facts(parse(logB)));
+  });
+
+  it('parses the same log twice to the same figures', () => {
+    const parser = new ApexLogParser();
+    expect(facts(parser.parse(logA))).toEqual(facts(parser.parse(logA)));
+  });
+
+  it('parses with the overrides of a subclass', () => {
+    let allocations = 0;
+    class CountingParser extends ApexLogParser {
+      override trackHeapAllocation(bytes: number): number {
+        allocations++;
+        return super.trackHeapAllocation(bytes);
+      }
+    }
+    const log = new CountingParser().parse(logA);
+    expect(allocations).toBe(1);
+    expect(log.heapPeak).toBe(152);
+  });
+
+  it('leaves the instance it was called on empty', () => {
+    const parser = new ApexLogParser();
+    parser.parse(logA);
+    expect(parser.governorSnapshots).toEqual([]);
+    expect(parser.eventsById).toEqual([]);
+    expect(parser.namespaces.size).toBe(0);
   });
 });

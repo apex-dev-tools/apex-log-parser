@@ -145,9 +145,9 @@ console.table(findSlowest(parse(logData)));
 ## API
 
 `parse(logData: string): ApexLog` — that is the whole entry point. There is no state to reset
-between calls. `ApexLog` is the root `LogEvent`, and adds `governorLimits`, `namespaces`,
-`debugLevels`, `userInfo`, `entryPoint`, `truncation`, `logIssues`, `parsingErrors`,
-`exceptions` and `eventsById`.
+between calls, and `ApexLogParser.parse` gives each call its own parser. `ApexLog` is the root
+`LogEvent`, and adds `governorLimits`, `namespaces`, `debugLevels`, `userInfo`, `entryPoint`,
+`truncation`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
 
 There are two entry points. The root exports runtime values only: `parse`, the `ApexLogParser`
 class, and the event classes you need for `instanceof` narrowing. Every type, and the
