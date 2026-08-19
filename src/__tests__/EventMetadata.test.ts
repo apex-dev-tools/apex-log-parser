@@ -1,8 +1,12 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import eventDatabase from '../../data/salesforce-debug-log-events.json' with { type: 'json' };
+import { ApexLogParser, debugLevelTokenByKey } from '../ApexLogParser.js';
+import { BasicExitLine, BasicLogLine } from '../LogEvents.js';
 import { getLogEventClass } from '../LogLineMapping.js';
 import { DMLBeginLine, parse } from '../index.js';
+import type { LogEventType } from '../types.js';
 
 describe('Event debugLevel and debugCategory', () => {
   describe('new events are parsed (not null from getLogEventClass)', () => {
@@ -100,6 +104,56 @@ describe('Event debugLevel and debugCategory', () => {
     const category = line!.debugCategory;
     expect(category).toBe('apexCode');
     expect(category && apexLog.debugLevels[category]).toBe('FINE');
+  });
+
+  describe('debugCategory matches the bundled event database', () => {
+    // Deriving the class literals from the database would add a lookup to a hot path - see #37.
+    const database = eventDatabase as {
+      categories: { name: string }[];
+      events: { event: string; category: string }[];
+    };
+
+    const rows = database.events.map(({ event, category }) => {
+      // `Rows:0` in every fragment slot, so the constructors which parse a row count accept the stub.
+      const parts = ['15:20:52.222 (100)', event, '[1]', 'Rows:0', 'Rows:0', 'Rows:0', 'Rows:0'];
+      const eventClass = getLogEventClass(event as LogEventType);
+      // A fresh parser per event, so one constructor cannot fold state into the next.
+      const debugCategory = eventClass
+        ? new eventClass(new ApexLogParser(), parts).debugCategory
+        : '';
+      return {
+        event,
+        category,
+        eventClass,
+        generic: eventClass === BasicLogLine || eventClass === BasicExitLine,
+        token: debugCategory ? debugLevelTokenByKey[debugCategory] : '',
+      };
+    });
+
+    it('states a class for every database event', () => {
+      expect(rows.length).toBeGreaterThan(0); // every other assertion here passes on an empty database
+      expect(rows.filter((row) => row.eventClass === null).map((row) => row.event)).toEqual([]);
+    });
+
+    it('states the database category on every event with its own class', () => {
+      expect(
+        rows
+          .filter((row) => !row.generic && row.token !== row.category)
+          .map((row) => `${row.event}: ${row.token} != ${row.category}`),
+      ).toEqual([]);
+    });
+
+    it('states no category only on the generic event classes', () => {
+      expect(
+        rows.filter((row) => (row.token === '') !== row.generic).map((row) => row.event),
+      ).toEqual([]);
+    });
+
+    it('states a token for every category the database declares', () => {
+      expect(Object.values(debugLevelTokenByKey).sort()).toEqual(
+        database.categories.map((entry) => entry.name).sort(),
+      );
+    });
   });
 
   describe('DMLBeginLine.sObjectType', () => {

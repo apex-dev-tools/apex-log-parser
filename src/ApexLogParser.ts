@@ -70,8 +70,9 @@ function findEntryPoint(root: ApexLog): CodeUnitStartedLine | null {
 /**
  * The settings line names each category with a log token, which is not the `DebugLevels` property.
  * Keyed by property, so a new `DebugLevels` category does not compile until it states its token.
+ * Exported for the test which crosses it with the bundled event database, not part of the API.
  */
-const debugLevelTokenByKey: Record<keyof DebugLevels, string> = {
+export const debugLevelTokenByKey: Record<keyof DebugLevels, string> = {
   apexCode: 'APEX_CODE',
   apexProfiling: 'APEX_PROFILING',
   callout: 'CALLOUT',
