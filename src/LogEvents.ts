@@ -95,6 +95,18 @@ export abstract class LogEvent {
   namespace: string | 'default' = '';
 
   /**
+   * The namespace of the immediate parent event - who invoked this. It does not skip past a platform
+   * or glue frame, so it states the caller as the log records it, not the nearest interesting caller.
+   * `'default'` for a root child, for an event with no namespaced caller, and on the root itself.
+   *
+   * Derived, not stored: a parent that only states its namespace on its exit line resolves it after
+   * its children are parsed, so a value captured at parse time would be stale.
+   */
+  get callerNamespace(): string {
+    return this.parent?.namespace || 'default';
+  }
+
+  /**
    * Could match to a corresponding symbol in a file in the workspace?
    */
   hasValidSymbols = false;
