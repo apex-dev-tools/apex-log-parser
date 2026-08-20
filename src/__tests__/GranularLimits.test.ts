@@ -172,3 +172,23 @@ describe('derived governor limit figures', () => {
     });
   });
 });
+
+describe('end of log closes the last event', () => {
+  const tail =
+    '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+    '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
+    '  Number of SOQL queries: 8 out of 100';
+
+  it.each([
+    ['no trailing newline', tail],
+    ['a trailing newline', `${tail}\n`],
+    ['a trailing CRLF', `${tail.replaceAll('\n', '\r\n')}\r\n`],
+  ])('records the final block when the log ends with %s', (_name, log) => {
+    const apexLog = parse(log);
+    const snapshot = apexLog.governorLimits.snapshots.at(-1);
+    expect(apexLog.governorLimits.snapshots).toHaveLength(1);
+    expect(snapshot?.namespace).toBe('default');
+    expect(snapshot?.limits.soqlQueries).toEqual({ used: 8, limit: 100, percentUsed: 8 });
+    expect(flatten(apexLog).at(-1)?.text).toBe('(default)\nNumber of SOQL queries: 8/100');
+  });
+});
