@@ -67,20 +67,28 @@ function findEntryPoint(root: ApexLog): CodeUnitStartedLine | null {
   return null;
 }
 
-/** The settings line names each category with a log token, which is not the `DebugLevels` property. */
-const debugLevelKeyByToken: Record<string, keyof DebugLevels> = {
-  APEX_CODE: 'apexCode',
-  APEX_PROFILING: 'apexProfiling',
-  CALLOUT: 'callout',
-  DATA_ACCESS: 'dataAccess',
-  DB: 'database',
-  NBA: 'nba',
-  SYSTEM: 'system',
-  VALIDATION: 'validation',
-  VISUALFORCE: 'visualforce',
-  WAVE: 'wave',
-  WORKFLOW: 'workflow',
+/**
+ * The settings line names each category with a log token, which is not the `DebugLevels` property.
+ * Keyed by property, so a new `DebugLevels` category does not compile until it states its token.
+ * Exported for the test which crosses it with the bundled event database, not part of the API.
+ */
+export const debugLevelTokenByKey: Record<keyof DebugLevels, string> = {
+  apexCode: 'APEX_CODE',
+  apexProfiling: 'APEX_PROFILING',
+  callout: 'CALLOUT',
+  dataAccess: 'DATA_ACCESS',
+  database: 'DB',
+  nba: 'NBA',
+  system: 'SYSTEM',
+  validation: 'VALIDATION',
+  visualforce: 'VISUALFORCE',
+  wave: 'WAVE',
+  workflow: 'WORKFLOW',
 };
+
+const debugLevelKeyByToken = new Map<string, keyof DebugLevels>(
+  Object.entries(debugLevelTokenByKey).map(([key, token]) => [token, key as keyof DebugLevels]),
+);
 
 // Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
 // the header line never reaches `UserInfoLine`. Only a timestamped line matches.
@@ -470,7 +478,6 @@ export class ApexLogParser {
         lineIter.fetch(); // it's a child - consume the line
         this.lastTimestamp = nextLine.timestamp;
         nextLine.namespace ||= currentLine.namespace || 'default';
-        nextLine.callerNamespace = currentLine.namespace || 'default';
         nextLine.parent = currentLine;
         currentLine.children.push(nextLine);
 
@@ -766,7 +773,7 @@ export class ApexLogParser {
       }
 
       const [token, level] = entry.split(',');
-      const key = token ? debugLevelKeyByToken[token] : undefined;
+      const key = token ? debugLevelKeyByToken.get(token) : undefined;
       if (!key) {
         this.parsingErrors.push(`Unsupported debug log category: ${token}`);
       } else if (!level || !logLevels.has(level)) {

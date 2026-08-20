@@ -94,9 +94,6 @@ export abstract class LogEvent {
    */
   namespace: string | 'default' = '';
 
-  /** Namespace of the immediate parent - who invoked this, not the nearest namespaced caller. */
-  callerNamespace: string | 'default' = 'default';
-
   /**
    * Could match to a corresponding symbol in a file in the workspace?
    */
@@ -581,7 +578,6 @@ function parseBytes(fragment: string | undefined): number {
 export class BulkHeapAllocateLine extends LogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Finest;
   debugCategory: DebugCategory = 'apexCode';
-  logCategory = 'Apex Code';
   /** Bytes allocated by this bulk allocation (from the "Bytes:N" fragment). */
   bytes = 0;
   constructor(parser: ApexLogParser, parts: string[]) {
@@ -720,10 +716,6 @@ export class MethodEntryLine extends DurationLogEvent {
   onEnd(end: MethodExitLine, _stack: LogEvent[]): void {
     if (end.namespace && !end.text.endsWith(')')) {
       this.namespace = end.namespace;
-      // The children parsed before the exit line stated this namespace, so they hold the stale one.
-      for (const child of this.children) {
-        child.callerNamespace = end.namespace;
-      }
     }
   }
 
