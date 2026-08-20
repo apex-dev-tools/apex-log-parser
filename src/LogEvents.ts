@@ -1298,18 +1298,15 @@ export class LimitUsageForNSLine extends LogEvent {
   debugCategory: DebugCategory = 'apexProfiling';
   debugLevel: LogLevel = LOG_LEVEL.Finest;
 
-  namespace = 'default';
-
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.acceptsText = true;
     this.text = parts[2] || '';
+    this.namespace = this.text.replace(/[()]/g, '') || 'default';
   }
 
+  // The body spans continuation lines, so it can only be read once text is complete.
   onAfter(parser: ApexLogParser, _next?: LogEvent): void {
-    // Parse the namespace from the first line (before any newline)
-    this.namespace = this.text.slice(0, this.text.indexOf('\n')).replace(/\(|\)/g, '');
-
     // Clean up the text for display
     const cleanedText = this.text
       .replace(/^\s+/gm, '')
