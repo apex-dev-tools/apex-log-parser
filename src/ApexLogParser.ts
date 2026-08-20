@@ -322,10 +322,6 @@ export class ApexLogParser {
     if (metaCtor) {
       const entry = new metaCtor(this, parts);
       entry.logLine = line;
-      lastEntry?.onAfter?.(this, entry);
-      if (entry.namespace) {
-        this.namespaces.add(entry.namespace);
-      }
       return entry;
     }
 
@@ -368,6 +364,13 @@ export class ApexLogParser {
     return null;
   }
 
+  private afterParse(entry: LogEvent, lastEntry: LogEvent | null) {
+    lastEntry?.onAfter?.(this, entry);
+    if (entry.namespace) {
+      this.namespaces.add(entry.namespace);
+    }
+  }
+
   private *generateLogLines(log: string): Generator<LogEvent> {
     let startIndex = log.search(/^\d{2}:\d{2}:\d{2}.\d{1} \(\d+\)\|EXECUTION_STARTED$/m);
     if (startIndex === -1) {
@@ -375,39 +378,36 @@ export class ApexLogParser {
     }
 
     const hascrlf = log.indexOf('\r\n', startIndex) > -1;
-    let lastEntry = null;
+    let lastEntry: LogEvent | null = null;
     let lfIndex = log.indexOf('\n', startIndex);
-    let eolIndex = lfIndex;
     let crlfIndex = -1;
 
-    while (eolIndex !== -1) {
-      if (hascrlf && eolIndex > crlfIndex) {
+    while (startIndex < log.length) {
+      const isLastLine = lfIndex === -1;
+      let eolIndex = isLastLine ? log.length : lfIndex;
+      if (hascrlf && !isLastLine && eolIndex > crlfIndex) {
         crlfIndex = log.indexOf('\r', eolIndex - 1);
-        eolIndex = crlfIndex + 1 === eolIndex ? crlfIndex : lfIndex;
+        eolIndex = crlfIndex + 1 === lfIndex ? crlfIndex : lfIndex;
       }
       const line = log.slice(startIndex, eolIndex);
       if (line) {
         // ignore blank lines
         const entry = this.parseLine(line, lastEntry);
         if (entry) {
+          this.afterParse(entry, lastEntry);
           lastEntry = entry;
           yield entry;
         }
       }
+      if (isLastLine) {
+        break;
+      }
       startIndex = lfIndex + 1;
-      lfIndex = eolIndex = log.indexOf('\n', startIndex);
+      lfIndex = log.indexOf('\n', startIndex);
     }
 
-    // Parse the last line
-    const line = log.slice(startIndex, log.length);
-    if (line) {
-      // ignore blank lines
-      const entry = this.parseLine(line, lastEntry);
-      if (entry) {
-        entry?.onAfter?.(this);
-        yield entry;
-      }
-    }
+    // Nothing follows the last event, so only the end of the log can close it.
+    lastEntry?.onAfter?.(this);
   }
 
   private toLogTree(lineGenerator: Generator<LogEvent>) {

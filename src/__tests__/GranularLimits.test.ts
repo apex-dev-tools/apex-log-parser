@@ -172,3 +172,45 @@ describe('derived governor limit figures', () => {
     });
   });
 });
+
+describe('end of log closes the last event', () => {
+  const tail =
+    '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+    '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
+    '  Number of SOQL queries: 8 out of 100';
+
+  it.each([
+    ['no trailing newline', tail],
+    ['a trailing newline', `${tail}\n`],
+    ['a trailing CRLF', `${tail.replaceAll('\n', '\r\n')}\r\n`],
+  ])('records the final block when the log ends with %s', (_name, log) => {
+    const apexLog = parse(log);
+    const snapshot = apexLog.governorLimits.snapshots.at(-1);
+    expect(apexLog.governorLimits.snapshots).toHaveLength(1);
+    expect(snapshot?.namespace).toBe('default');
+    expect(snapshot?.limits.soqlQueries).toEqual({ used: 8, limit: 100, percentUsed: 8 });
+    expect(flatten(apexLog).at(-1)?.text).toBe('(default)\nNumber of SOQL queries: 8/100');
+  });
+});
+
+describe('LIMIT_USAGE_FOR_NS namespace', () => {
+  const apexLog = parse(
+    '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
+      '  Number of SOQL queries: 1 out of 100\n' +
+      '09:18:22.6 (700)|LIMIT_USAGE_FOR_NS|(myNS)|\n' +
+      '  Number of SOQL queries: 2 out of 100\n' +
+      '09:18:22.6 (900)|LIMIT_USAGE_FOR_NS|otherNS|\n' +
+      '  Number of SOQL queries: 3 out of 100\n' +
+      '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+  );
+  const events = flatten(apexLog).filter((e) => e.type === 'LIMIT_USAGE_FOR_NS');
+
+  it('strips the parentheses, with or without them in the log', () => {
+    expect(events.map((e) => e.namespace)).toEqual(['default', 'myNS', 'otherNS']);
+  });
+
+  it('adds each one to the namespaces of the log', () => {
+    expect(apexLog.namespaces).toEqual(['default', 'myNS', 'otherNS']);
+  });
+});
