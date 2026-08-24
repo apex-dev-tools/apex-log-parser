@@ -61,3 +61,9 @@
   log states no code unit.
 - Remove `BulkHeapAllocateLine.logCategory`. It stated `'Apex Code'`, a display string in no enum, on one
   event class only. Read `debugCategory` for the `DebugLevels` property name, or `type` for the event name.
+- Add governor metric metadata. The `types` subpath now exports `LIMIT_METRIC` — the display label and
+  unit for each of the 13 governor metrics, keyed by metric — and `ALL_LIMIT_METRICS`, the same entries
+  as an ordered array. `cpuTime` states the CLDR unit `millisecond` and `heapSize` states `byte`, so a
+  caller passes the unit straight to `Intl.NumberFormat`. Every other metric states `count` and formats
+  as a plain number. The record is keyed by `Limits`, so a new metric does not compile until it states a
+  label and a unit.
