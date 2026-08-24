@@ -5,13 +5,6 @@
 // The '@apexdevtools/apex-log-parser/types' entry point. Listed by name so internal declarations
 // stay internal, and so nothing imports this file - types.ts and limits.ts stay leaves.
 
-export {
-  ALL_LIMIT_METRICS,
-  ALL_LOG_CATEGORIES,
-  LIMIT_METRIC,
-  LOG_CATEGORY,
-  LOG_LEVEL,
-} from './types.js';
 export type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
 export type {
   CPUType,
@@ -22,8 +15,8 @@ export type {
   IssueType,
   LimitMetricMeta,
   LimitMetricUnit,
-  LimitValue,
   Limits,
+  LimitValue,
   LineNumber,
   LogCategory,
   LogEventType,
@@ -35,4 +28,11 @@ export type {
   Truncation,
   TruncationRegion,
   UserInfo,
+} from './types.js';
+export {
+  ALL_LIMIT_METRICS,
+  ALL_LOG_CATEGORIES,
+  LIMIT_METRIC,
+  LOG_CATEGORY,
+  LOG_LEVEL,
 } from './types.js';

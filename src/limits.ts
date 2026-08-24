@@ -14,8 +14,8 @@
 import type {
   GovernorLimits,
   GovernorSnapshot,
-  LimitValue,
   Limits,
+  LimitValue,
   NamespaceLimits,
 } from './types.js';
 
