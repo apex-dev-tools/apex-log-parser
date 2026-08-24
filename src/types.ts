@@ -74,6 +74,58 @@ export interface Limits {
 }
 
 /**
+ * How to format a governor metric's value. `millisecond` and `byte` are CLDR unit identifiers, so
+ * `Intl.NumberFormat(locale, { style: 'unit', unit })` takes them directly. `count` has no unit and
+ * formats as a plain number.
+ */
+export type LimitMetricUnit = 'count' | 'millisecond' | 'byte';
+
+/**
+ * Display metadata for every governor metric, keyed by metric, in `Limits` declaration order. Each
+ * entry restates its own key so an entry stays self-describing once iterated out of the record.
+ *
+ * Keyed by `Limits`, so a new metric does not compile until it states a label and a unit.
+ */
+export type LimitMetricMetadata = {
+  [K in keyof Limits]: { key: K; label: string; unit: LimitMetricUnit };
+};
+
+/** Display metadata for one governor metric. */
+export type LimitMetricMeta = LimitMetricMetadata[keyof Limits];
+
+/** The label and unit for each governor metric. */
+export const LIMIT_METRIC: LimitMetricMetadata = {
+  soqlQueries: { key: 'soqlQueries', label: 'SOQL queries', unit: 'count' },
+  soslQueries: { key: 'soslQueries', label: 'SOSL queries', unit: 'count' },
+  queryRows: { key: 'queryRows', label: 'SOQL query rows', unit: 'count' },
+  dmlStatements: { key: 'dmlStatements', label: 'DML statements', unit: 'count' },
+  publishImmediateDml: {
+    key: 'publishImmediateDml',
+    label: 'Publish immediate DML',
+    unit: 'count',
+  },
+  dmlRows: { key: 'dmlRows', label: 'DML rows', unit: 'count' },
+  cpuTime: { key: 'cpuTime', label: 'CPU time', unit: 'millisecond' },
+  heapSize: { key: 'heapSize', label: 'Heap size', unit: 'byte' },
+  callouts: { key: 'callouts', label: 'Callouts', unit: 'count' },
+  emailInvocations: { key: 'emailInvocations', label: 'Email invocations', unit: 'count' },
+  futureCalls: { key: 'futureCalls', label: 'Future calls', unit: 'count' },
+  queueableJobsAddedToQueue: {
+    key: 'queueableJobsAddedToQueue',
+    label: 'Queueable jobs added to queue',
+    unit: 'count',
+  },
+  mobileApexPushCalls: {
+    key: 'mobileApexPushCalls',
+    label: 'Mobile Apex push calls',
+    unit: 'count',
+  },
+};
+
+/** Readonly array of every metric's metadata, in display order (for iterating, building tables). */
+export const ALL_LIMIT_METRICS: readonly LimitMetricMeta[] = Object.values(LIMIT_METRIC);
+
+/**
  * A single governor limit usage snapshot at a point in time.
  */
 export interface GovernorSnapshot {
