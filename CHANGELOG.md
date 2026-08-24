@@ -15,6 +15,5 @@
 - Managed package namespace detection.
 - Log details: user, timezone and the transaction entry point name.
 - The debug categories and levels the transaction ran under.
-- Bundled database of 299 documented Salesforce debug log event types.
 - Zero runtime dependencies.
 - ESM-only, strict TypeScript.

@@ -25,7 +25,6 @@ SOQL/DML counts.
 - **Per-line limit observations** — each limit line exposed as `{ metric, used, limit }`
 - **SOQL, DML and SOSL counts** aggregated up the tree
 - **Managed package namespace** detection and per-namespace metrics
-- **Event database** of 299 documented Salesforce log event types, bundled as JSON
 - **Zero dependencies**, ESM only
 
 ## Install
@@ -187,23 +186,6 @@ is wasted work.
 parser problem. `logIssues` holds problems in the transaction the log describes, such as a
 truncated log or an unexpected exit.
 
-## Event database
-
-The package bundles a database of 299 Salesforce debug log event types, from official
-documentation and community research. It is data only — the parser does not read it at runtime.
-
-```typescript
-import events from '@apexdevtools/apex-log-parser/data/events.json' with { type: 'json' };
-
-for (const event of events.events) {
-  console.log(event.event, event.category, event.level);
-}
-```
-
-Each entry records the event name, category and minimum log level, its field definitions, whether
-it is officially documented or community-discovered, the Salesforce release that added or
-deprecated it, and where the information came from.
-
 ## FAQ
 
 ### How do I parse a Salesforce Apex debug log in JavaScript or TypeScript?
@@ -216,8 +198,7 @@ typed tree you can walk, filter and analyse. See [Quick start](#quick-start).
 171 event types have a dedicated class, including `METHOD_ENTRY`/`EXIT`,
 `SOQL_EXECUTE_BEGIN`/`END`, `DML_BEGIN`/`END`, `CODE_UNIT_STARTED`/`FINISHED`,
 `FLOW_START_INTERVIEWS_BEGIN`, `CALLOUT_REQUEST`/`RESPONSE`, `EXCEPTION_THROWN` and `FATAL_ERROR`.
-Anything else falls back to a generic line class, so no log line is lost. The bundled
-[event database](#event-database) documents 299 known events.
+Anything else falls back to a generic line class, so no log line is lost.
 
 ### How do I analyse Salesforce governor limits programmatically?
 
