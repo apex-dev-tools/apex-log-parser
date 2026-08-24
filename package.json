@@ -13,12 +13,11 @@
       "types": "./dist/publicTypes.d.ts",
       "import": "./dist/publicTypes.js"
     },
-    "./data/events.json": "./data/salesforce-debug-log-events.json",
     "./package.json": "./package.json"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "data"],
+  "files": ["dist"],
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
