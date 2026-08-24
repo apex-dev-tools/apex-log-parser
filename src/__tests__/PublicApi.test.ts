@@ -11,6 +11,8 @@ import type {
   GovernorSnapshot,
   IssueType,
   LimitMetricKey,
+  LimitMetricMeta,
+  LimitMetricUnit,
   LimitObservation,
   LimitValue,
   Limits,
@@ -46,7 +48,13 @@ const ROOT_EXPORTS = [
   'SOSLExecuteBeginLine',
 ];
 
-const TYPES_RUNTIME_EXPORTS = ['ALL_LOG_CATEGORIES', 'LOG_CATEGORY', 'LOG_LEVEL'];
+const TYPES_RUNTIME_EXPORTS = [
+  'ALL_LIMIT_METRICS',
+  'ALL_LOG_CATEGORIES',
+  'LIMIT_METRIC',
+  'LOG_CATEGORY',
+  'LOG_LEVEL',
+];
 
 // Fails the typecheck, not the test run, if a public type is removed or renamed.
 interface PublicTypeSurface {
@@ -57,6 +65,8 @@ interface PublicTypeSurface {
   governorSnapshot: GovernorSnapshot;
   issueType: IssueType;
   limitMetricKey: LimitMetricKey;
+  limitMetricMeta: LimitMetricMeta;
+  limitMetricUnit: LimitMetricUnit;
   limitObservation: LimitObservation;
   limitValue: LimitValue;
   limits: Limits;
