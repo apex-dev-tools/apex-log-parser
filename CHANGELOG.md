@@ -5,7 +5,7 @@
 ### Minor Changes
 
 - Initial release as a standalone npm package.
-- Parse 200+ Salesforce Apex debug log event types into typed event trees.
+- Parse 299+ Salesforce Apex debug log event types into typed event trees.
 - Hierarchical parent/child event structure with automatic entry/exit matching.
 - Self and total execution time computation (nanosecond precision).
 - Final and peak governor limit tracking with overall and per namespace snapshots.
