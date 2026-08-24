@@ -617,4 +617,4 @@ main().catch((err: Error) => {
 });
 
 // Re-export for testing
-export { parseS1Events, parseS2Events, mergeEvents, generateMarkdown, bumpPatch, getReleaseKey };
+export { bumpPatch, generateMarkdown, getReleaseKey, mergeEvents, parseS1Events, parseS2Events };

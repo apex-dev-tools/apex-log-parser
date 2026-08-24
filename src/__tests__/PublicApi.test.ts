@@ -2,7 +2,6 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import * as root from '../index.js';
-import * as publicTypes from '../publicTypes.js';
 import type {
   CPUType,
   DebugCategory,
@@ -14,8 +13,8 @@ import type {
   LimitMetricMeta,
   LimitMetricUnit,
   LimitObservation,
-  LimitValue,
   Limits,
+  LimitValue,
   LineNumber,
   LogCategory,
   LogEventType,
@@ -29,6 +28,7 @@ import type {
   TruncationRegion,
   UserInfo,
 } from '../publicTypes.js';
+import * as publicTypes from '../publicTypes.js';
 
 // The published surface is a contract with the log-viewer and the MCP server, so a change to it must
 // be deliberate. Object.keys sees runtime bindings only, hence the type positions below.

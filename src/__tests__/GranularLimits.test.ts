@@ -1,8 +1,9 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { parse } from '../index.js';
+
 import type { HeapAllocateLine, LimitUsageLine } from '../index.js';
+import { parse } from '../index.js';
 import { flatten } from './helpers.js';
 
 const CUMULATIVE_BLOCK =

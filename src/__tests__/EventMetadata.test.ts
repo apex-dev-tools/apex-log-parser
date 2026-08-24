@@ -3,9 +3,9 @@
  */
 import eventDatabase from '../../data/salesforce-debug-log-events.json' with { type: 'json' };
 import { ApexLogParser, debugLevelTokenByKey } from '../ApexLogParser.js';
+import { DMLBeginLine, parse } from '../index.js';
 import { BasicExitLine, BasicLogLine } from '../LogEvents.js';
 import { getLogEventClass } from '../LogLineMapping.js';
-import { DMLBeginLine, parse } from '../index.js';
 import type { LogEventType } from '../types.js';
 
 describe('Event debugLevel and debugCategory', () => {

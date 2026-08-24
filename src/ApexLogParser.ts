@@ -4,14 +4,13 @@
 
 import {
   ApexLog,
+  applyFlowDbResiduals,
   CodeUnitStartedLine,
   ExecutionStartedLine,
   type LogEvent,
-  applyFlowDbResiduals,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
 import { deriveGovernorLimits } from './limits.js';
-import { LOG_LEVEL } from './types.js';
 import type {
   DebugLevels,
   GovernorSnapshot,
@@ -23,6 +22,7 @@ import type {
   TruncationRegion,
   UserInfo,
 } from './types.js';
+import { LOG_LEVEL } from './types.js';
 
 const typePattern = /^[A-Z_]*$/,
   settingsPattern = /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+$/m;
