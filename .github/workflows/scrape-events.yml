@@ -67,8 +67,12 @@ jobs:
       - name: Validate the event database
         run: pnpm run validate:data
 
-      # A new event needs a class in src/, so catch a red PR before opening it
-      - name: Verify the package still builds and tests
+      # A new event needs a class in src/, so pnpm run ci goes red exactly when the
+      # scrape found something worth a PR. Record the outcome and keep going, or the
+      # most valuable run of this job would discard its own result.
+      - name: Lint, typecheck and test
+        id: verify
+        continue-on-error: true
         run: pnpm run ci
 
       - name: Check for changes
@@ -83,13 +87,19 @@ jobs:
       - name: Write the report
         env:
           CHANGED: ${{ steps.diff.outputs.changed }}
+          VERIFY: ${{ steps.verify.outcome }}
         run: |
           {
             echo 'Automated update of the debug log event database from the two official'
             echo 'Salesforce sources. Both are read over plain HTTP; see `scripts/scraper.md`.'
             echo
-            echo "Data changed: \`$CHANGED\`"
+            echo "Data changed: \`$CHANGED\`  ·  \`pnpm run ci\`: \`$VERIFY\`"
             echo
+            if [ "$VERIFY" != 'success' ]; then
+              echo '> `pnpm run ci` is red. A newly documented event needs a class in `src/`'
+              echo '> — see "Adding an event type" in `AGENTS.md`. Fix that on this branch.'
+              echo
+            fi
             echo '<details><summary>Scraper output</summary>'
             echo
             echo '```'
@@ -115,3 +125,10 @@ jobs:
           labels: automated,data
           delete-branch: true
           add-paths: data/
+
+      # Re-raise now the PR exists, so the failure is still visible on the run
+      - name: Fail if the checks did not pass
+        if: steps.verify.outcome != 'success'
+        run: |
+          echo '::error::pnpm run ci failed; see the pull request for what the scrape found'
+          exit 1
