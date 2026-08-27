@@ -1,14 +1,15 @@
 /**
  * Scrapes Salesforce documentation to update salesforce-debug-log-events.json
  *
- * Sources:
- *   S1 — Salesforce Developer Docs (public REST API, no auth required)
- *   S2 — Salesforce Help (client-rendered SPA, scraped via Playwright)
+ * Both sources are plain HTTP. No browser, no auth, no session.
+ *   S1 — Salesforce Developer Docs, the get_document_content endpoint
+ *   S2 — Salesforce Help, the Aura ApexActionController endpoint
  *
  * Usage:
- *   pnpm scrape                         # default API version (66.0)
- *   pnpm scrape -- --api-version=65     # specific Salesforce API version
- *   pnpm scrape -- --skip-s2            # skip Playwright scrape (S2)
+ *   pnpm scrape                       # current GA release, discovered from Salesforce
+ *   pnpm scrape -- --api-version=66   # a published release, validated before any fetch
+ *
+ * See scripts/scraper.md for the endpoints and their failure modes.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -16,7 +17,6 @@ import { dirname, join } from 'node:path';
 import { argv, exit } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { parse as parseHtml } from 'node-html-parser';
-import { chromium } from 'playwright';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,11 +75,23 @@ interface CodeUnitTypes {
   types: string[];
 }
 
+interface SourceMeta {
+  name: string;
+  url?: string;
+  type: string;
+  notes?: string;
+  last_checked?: string;
+  doc_version?: string;
+  api_version?: string;
+  release?: string;
+  event_count?: number;
+}
+
 interface EventsJson {
   $schema: string;
   version: string;
   last_updated: string;
-  sources: Record<string, { name: string; url?: string; type: string; notes?: string }>;
+  sources: Record<string, SourceMeta>;
   categories: CategoryMeta[];
   releases: Record<string, ReleaseMeta>;
   log_levels: string[];
@@ -96,42 +108,211 @@ interface ScrapedEvent {
   fields: string[];
 }
 
+/** One entry of the developer docs `available_versions` array. */
+interface DocVersion {
+  version_text: string;
+  release_version: string;
+  doc_version: string;
+}
+
+interface S1Metadata {
+  /** The release Salesforce currently serves as GA. */
+  current: DocVersion;
+  available: DocVersion[];
+}
+
+interface ReleaseIdentity {
+  key: string;
+  meta: ReleaseMeta;
+}
+
+type DisagreementReason = 'only-in-s1' | 'only-in-s2' | 'category' | 'level';
+
+interface Disagreement {
+  event: string;
+  reason: DisagreementReason;
+  s1: string;
+  s2: string;
+}
+
 // ---------------------------------------------------------------------------
-// Category & release helpers
+// HTTP
 // ---------------------------------------------------------------------------
 
-const S1_CATEGORY_MAP: Record<string, string> = {
+/**
+ * Akamai blocks undici's default `User-Agent: node`, and blocks a
+ * browser-impersonating string too. An honest tool name is what passes.
+ */
+const USER_AGENT =
+  'apex-log-parser-scraper/1.0 (+https://github.com/apex-dev-tools/apex-log-parser)';
+
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRY_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetches and parses JSON. Both Salesforce sources answer a failed request with
+ * `200` and no useful body, so an empty response is an error here, not a result.
+ */
+async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
+  let lastStatus = 0;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+    const res = await fetch(url, {
+      ...init,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', ...init?.headers },
+    });
+
+    if (res.status === 403) {
+      throw new Error(
+        `${url} returned 403. Akamai is blocking the request; check the User-Agent, ` +
+          'and never set a browser one. Not retried, because the block is deterministic.',
+      );
+    }
+
+    if (res.ok) {
+      const text = await res.text();
+      if (text.trim() === '') {
+        throw new Error(`${url} returned 200 with an empty body`);
+      }
+      return JSON.parse(text) as unknown;
+    }
+
+    lastStatus = res.status;
+    if (!RETRY_STATUSES.has(res.status) || attempt === RETRY_ATTEMPTS) break;
+
+    const backoff = 1000 * 2 ** (attempt - 1);
+    console.warn(`  ${url} returned ${res.status}, retrying in ${backoff}ms`);
+    await sleep(backoff);
+  }
+
+  throw new Error(`${url} returned ${lastStatus}`);
+}
+
+function asRecord(value: unknown, context: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${context}: expected an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown, context: string): string {
+  if (typeof value !== 'string' || value === '') {
+    throw new Error(`${context}: expected a non-empty string`);
+  }
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// Release identity
+// ---------------------------------------------------------------------------
+
+const SEASON_MONTH: Record<string, string> = { spring: '02', summer: '06', winter: '10' };
+
+/**
+ * Derives the release key from Salesforce's own `version_text`, e.g.
+ * `Summer '26 (API version 67.0)` becomes `summer-26`. A Winter release ships in
+ * the previous calendar year, so its date year is one behind its name.
+ */
+function releaseIdentity(version: DocVersion): ReleaseIdentity {
+  const match = /^(Spring|Summer|Winter) '(\d{2})/.exec(version.version_text);
+  if (!match) {
+    throw new Error(`Could not read a season and year from "${version.version_text}"`);
+  }
+
+  const season = match[1]!.toLowerCase();
+  const year = Number(match[2]!);
+  const month = SEASON_MONTH[season]!;
+  const dateYear = season === 'winter' ? year - 1 : year;
+
+  return {
+    key: `${season}-${match[2]!}`,
+    meta: {
+      label: `${match[1]!} '${match[2]!}`,
+      api_version: version.release_version,
+      date: `20${String(dateYear).padStart(2, '0')}-${month}`,
+    },
+  };
+}
+
+/** Reads a release's `api_version`, which may be a bound such as `<=63.0`. */
+function releaseCovers(apiVersion: string, declared: string): boolean {
+  const match = /^(<=|>=|<|>)?\s*([\d.]+)$/.exec(declared.trim());
+  if (!match) return false;
+
+  const bound = Number(match[2]!);
+  const value = Number(apiVersion);
+  switch (match[1]) {
+    case '<=':
+      return value <= bound;
+    case '>=':
+      return value >= bound;
+    case '<':
+      return value < bound;
+    case '>':
+      return value > bound;
+    default:
+      return value === bound;
+  }
+}
+
+/**
+ * Finds the release key for a version, adding the release when the database does
+ * not know it yet, so `release_added` can never name a missing key.
+ */
+function resolveRelease(
+  version: DocVersion,
+  releases: Record<string, ReleaseMeta>,
+): { key: string; releases: Record<string, ReleaseMeta> } {
+  for (const [key, release] of Object.entries(releases)) {
+    if (releaseCovers(version.release_version, release.api_version)) {
+      return { key, releases };
+    }
+  }
+
+  const identity = releaseIdentity(version);
+  return { key: identity.key, releases: { ...releases, [identity.key]: identity.meta } };
+}
+
+// ---------------------------------------------------------------------------
+// Event table parsing — shared by both sources
+// ---------------------------------------------------------------------------
+
+const CATEGORY_MAP: Record<string, string> = {
   'Apex Code': 'APEX_CODE',
   'Apex Profiling': 'APEX_PROFILING',
   Callout: 'CALLOUT',
   DB: 'DB',
+  Database: 'DB',
   'Data Access': 'DATA_ACCESS',
   NBA: 'NBA',
   System: 'SYSTEM',
   Validation: 'VALIDATION',
   Visualforce: 'VISUALFORCE',
+  Wave: 'WAVE',
   Workflow: 'WORKFLOW',
 };
 
-const S2_CATEGORY_MAP: Record<string, string> = {
-  ...S1_CATEGORY_MAP,
-  Database: 'DB',
-};
+/** Salesforce writes `WARNING` in the table; the log token is `WARN`. */
+const LEVEL_ALIASES: Record<string, string> = { WARNING: 'WARN' };
 
-function docVersionFromApiVersion(apiVersion: number): number {
-  return (apiVersion - 60) * 2 + 248;
-}
+const KNOWN_LEVELS = new Set(['NONE', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'FINE', 'FINER', 'FINEST']);
 
-function getReleaseKey(apiVersion: number, releases: Record<string, ReleaseMeta>): string {
-  for (const [key, release] of Object.entries(releases)) {
-    if (release.api_version.includes(String(apiVersion))) return key;
-  }
-  // Generate key from Salesforce release cycle (3 releases/year starting Spring '24 = 60.0)
-  const offset = Math.round(apiVersion) - 60;
-  const seasonNames = ['spring', 'summer', 'winter'];
-  const season = seasonNames[offset % 3];
-  const year = 2024 + Math.floor(offset / 3);
-  return `${season}-${String(year).slice(2)}`;
+const EVENT_TABLE_HEADERS = [
+  'Event Name',
+  'Fields or Information Logged with Event',
+  'Category Logged',
+  'Level Logged',
+];
+
+/** Below this an apparently successful scrape is treated as a parse failure. */
+const MIN_EVENTS = 150;
+
+function collapse(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 function parseFields(description: string): string[] {
@@ -141,6 +322,337 @@ function parseFields(description: string): string[] {
     .split(', ')
     .map((f) => f.trim())
     .filter(Boolean);
+}
+
+/**
+ * Squeezes a row back to one cell per column.
+ *
+ * Salesforce emits the four CURSOR_* rows with an extra empty cell, and assigns
+ * its column attributes positionally, so `data-title="Category Logged"` lands on
+ * the fields text. Dropping the empty cells restores the real column order —
+ * which is why this reads positions and ignores those attributes entirely.
+ */
+function squeezeRow(cells: string[], width: number): string[] {
+  if (cells.length === width) return cells;
+  if (cells.length < width) {
+    throw new Error(`Row has ${cells.length} cells, expected ${width}: ${cells.join(' | ')}`);
+  }
+
+  const kept = [cells[0]!];
+  const rest = cells.slice(1);
+  const surplus = cells.length - width;
+  let dropped = 0;
+
+  for (const cell of rest) {
+    if (dropped < surplus && cell === '') {
+      dropped++;
+      continue;
+    }
+    kept.push(cell);
+  }
+
+  if (kept.length !== width) {
+    throw new Error(
+      `Row has ${cells.length} cells and only ${dropped} are empty, so it cannot be ` +
+        `read as ${width} columns: ${cells.join(' | ')}`,
+    );
+  }
+  return kept;
+}
+
+function normaliseLevel(raw: string, event: string): string {
+  const token = collapse(raw).split(' ')[0]?.toUpperCase() ?? '';
+  const level = LEVEL_ALIASES[token] ?? token;
+  if (!KNOWN_LEVELS.has(level)) {
+    throw new Error(`${event}: unknown log level "${raw}"`);
+  }
+  return level;
+}
+
+function normaliseCategory(raw: string, event: string): string {
+  const category = CATEGORY_MAP[collapse(raw)];
+  if (!category) {
+    throw new Error(
+      `${event}: unknown log category "${collapse(raw)}". Add it to CATEGORY_MAP and to ` +
+        'the categories list in the event database, then update debugLevelTokenByKey.',
+    );
+  }
+  return category;
+}
+
+/**
+ * Reads the debug log event table. Both sources render the same table from the
+ * same DITA source, but disagree on every attribute and wrapper element, so the
+ * header row is the only reliable anchor.
+ */
+function parseEventTable(html: string, source: string): ScrapedEvent[] {
+  const tables = parseHtml(html)
+    .querySelectorAll('table')
+    .filter((table) => {
+      const headers = table.querySelectorAll('th').map((th) => collapse(th.text));
+      return EVENT_TABLE_HEADERS.every((header, i) => headers[i] === header);
+    });
+
+  if (tables.length !== 1) {
+    throw new Error(
+      `${source}: expected exactly one table headed "${EVENT_TABLE_HEADERS.join(' | ')}", ` +
+        `found ${tables.length}`,
+    );
+  }
+
+  const events: ScrapedEvent[] = [];
+  const seen = new Set<string>();
+
+  for (const row of tables[0]!.querySelectorAll('tr')) {
+    const cells = row.querySelectorAll('td').map((td) => collapse(td.text));
+    if (cells.length === 0) continue;
+
+    // Six rows carry a parenthetical suffix after the name, and repeat an event
+    // that appears elsewhere with a different category. First one wins.
+    const name = /^[A-Z][A-Z0-9_]{2,}/.exec(cells[0]!)?.[0];
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+
+    const [, description, category, level] = squeezeRow(cells, EVENT_TABLE_HEADERS.length) as [
+      string,
+      string,
+      string,
+      string,
+    ];
+
+    events.push({
+      name,
+      category: normaliseCategory(category, name),
+      level: normaliseLevel(level, name),
+      description,
+      fields: parseFields(description),
+    });
+  }
+
+  if (events.length < MIN_EVENTS) {
+    throw new Error(
+      `${source}: parsed only ${events.length} events, expected at least ${MIN_EVENTS}. ` +
+        'The documentation markup has probably changed.',
+    );
+  }
+
+  return events;
+}
+
+// ---------------------------------------------------------------------------
+// S1 — Salesforce Developer Docs
+// ---------------------------------------------------------------------------
+
+const S1_DOC_SET = 'apexcode';
+const S1_PAGE = 'apex_debugging_system_log_console.htm';
+const S1_METADATA_URL = `https://developer.salesforce.com/docs/get_document/atlas.en-us.${S1_DOC_SET}.meta`;
+
+function toDocVersion(value: unknown, context: string): DocVersion {
+  const record = asRecord(value, context);
+  return {
+    version_text: asString(record.version_text, `${context}.version_text`),
+    release_version: asString(record.release_version, `${context}.release_version`),
+    doc_version: asString(record.doc_version, `${context}.doc_version`),
+  };
+}
+
+/** Reads the published releases, so the doc version is discovered and not computed. */
+async function fetchS1Metadata(): Promise<S1Metadata> {
+  const body = asRecord(await fetchJson(S1_METADATA_URL), 'S1 metadata');
+  const available = Array.isArray(body.available_versions) ? body.available_versions : [];
+
+  return {
+    current: toDocVersion(body.version, 'S1 metadata.version'),
+    available: available.map((v, i) => toDocVersion(v, `S1 metadata.available_versions[${i}]`)),
+  };
+}
+
+async function fetchS1Content(docVersion: string): Promise<string> {
+  const url = `https://developer.salesforce.com/docs/get_document_content/${S1_DOC_SET}/${S1_PAGE}/en-us/${docVersion}`;
+  const body = asRecord(await fetchJson(url), `S1 ${docVersion}`);
+  return asString(body.content, `S1 ${docVersion}.content`);
+}
+
+async function fetchS1Events(docVersion: string): Promise<ScrapedEvent[]> {
+  return parseEventTable(await fetchS1Content(docVersion), `S1 ${docVersion}`);
+}
+
+// ---------------------------------------------------------------------------
+// S2 — Salesforce Help
+// ---------------------------------------------------------------------------
+
+const S2_AURA_URL = 'https://help.salesforce.com/s/sfsites/aura';
+const S2_ARTICLE = 'platform.code_setting_debug_log_levels.htm';
+
+/**
+ * Calls a Help site Apex action.
+ *
+ * `aura.token=null` is what makes this work unauthenticated. No `fwuid`, cookies
+ * or CSRF token are needed, so the SPA shell never has to be scraped.
+ */
+async function auraAction(
+  classname: string,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const message = JSON.stringify({
+    actions: [
+      {
+        id: '1;a',
+        descriptor: 'aura://ApexActionController/ACTION$execute',
+        params: { classname, method, params },
+      },
+    ],
+  });
+
+  const body = new URLSearchParams({
+    message,
+    'aura.context': JSON.stringify({ app: 'siteforce:communityApp' }),
+    'aura.token': 'null',
+  });
+
+  const response = asRecord(
+    await fetchJson(S2_AURA_URL, { method: 'POST', body }),
+    `S2 ${classname}.${method}`,
+  );
+
+  const actions = Array.isArray(response.actions) ? response.actions : [];
+  const action = asRecord(actions[0], `S2 ${classname}.${method}: actions[0]`);
+  if (action.state !== 'SUCCESS') {
+    throw new Error(`S2 ${classname}.${method} returned state ${String(action.state)}`);
+  }
+
+  return asRecord(action.returnValue, `S2 ${classname}.${method}.returnValue`).returnValue;
+}
+
+/** The Help site keys its release by doc-set prefix, e.g. `platform`. */
+async function fetchS2Release(): Promise<string> {
+  const prefix = S2_ARTICLE.split('.')[0]!;
+  const releases = asRecord(
+    await auraAction('Help_UserReleaseHelper', 'getData', {}),
+    'S2 release map',
+  );
+  return asString(releases[prefix], `S2 release map.${prefix}`);
+}
+
+/**
+ * Reads the article off a successful response.
+ *
+ * A release the Help site does not publish answers `state: "SUCCESS"` with no
+ * record at all, so the absence of one is the only signal that the release was
+ * wrong.
+ */
+function articleRecord(returned: unknown, context: string): Record<string, unknown> {
+  const record = asRecord(returned, context).record;
+  if (record === undefined) {
+    throw new Error(`${context}: no article record returned. Is the release published?`);
+  }
+  return asRecord(record, `${context}.record`);
+}
+
+/**
+ * Joins a chunked article body.
+ *
+ * `Content__c` on the record is a decoy on a large article — it holds a "cannot
+ * populate" sentence. The body arrives split across `Help_Docs_Cache_Details__r`,
+ * each chunk wrapped in a leading and trailing `.`.
+ */
+function articleHtml(record: Record<string, unknown>, context: string): string {
+  const chunks = record.Help_Docs_Cache_Details__r;
+  const declared = record.Content_Length__c;
+
+  const html =
+    Array.isArray(chunks) && chunks.length > 0
+      ? chunks
+          .map((chunk, i) =>
+            asString(asRecord(chunk, `${context} chunk[${i}]`).Content__c, `${context} chunk[${i}]`)
+              .replace(/^\./, '')
+              .replace(/\.$/, ''),
+          )
+          .join('')
+      : asString(record.Content__c, `${context}.Content__c`);
+
+  if (typeof declared === 'number' && html.length !== declared) {
+    throw new Error(
+      `${context}: joined content is ${html.length} characters, but the record declares ${declared}`,
+    );
+  }
+  return html;
+}
+
+async function fetchS2Content(release: string): Promise<string> {
+  const context = `S2 ${release}`;
+  const returned = await auraAction('Help_ArticleDataController', 'getData', {
+    articleParameters: {
+      urlName: S2_ARTICLE,
+      language: 'en_US',
+      release,
+      requestedArticleType: 'HelpDocs',
+      requestedArticleTypeNumber: '5',
+    },
+  });
+
+  return articleHtml(articleRecord(returned, context), context);
+}
+
+async function fetchS2Events(release: string): Promise<ScrapedEvent[]> {
+  return parseEventTable(await fetchS2Content(release), `S2 ${release}`);
+}
+
+// ---------------------------------------------------------------------------
+// Cross-check
+// ---------------------------------------------------------------------------
+
+/**
+ * Compares the two official sources. Their content is the same table, so a
+ * difference is worth a human's attention — but never a failure, because the
+ * developer docs legitimately lead the Help site.
+ */
+function crossCheck(s1Events: ScrapedEvent[], s2Events: ScrapedEvent[]): Disagreement[] {
+  const s1Map = new Map(s1Events.map((e) => [e.name, e]));
+  const s2Map = new Map(s2Events.map((e) => [e.name, e]));
+  const disagreements: Disagreement[] = [];
+
+  for (const [name, s1] of s1Map) {
+    const s2 = s2Map.get(name);
+    if (!s2) {
+      disagreements.push({ event: name, reason: 'only-in-s1', s1: s1.category, s2: '' });
+      continue;
+    }
+    if (s1.category !== s2.category) {
+      disagreements.push({ event: name, reason: 'category', s1: s1.category, s2: s2.category });
+    }
+    if (s1.level !== s2.level) {
+      disagreements.push({ event: name, reason: 'level', s1: s1.level, s2: s2.level });
+    }
+  }
+
+  for (const [name, s2] of s2Map) {
+    if (!s1Map.has(name)) {
+      disagreements.push({ event: name, reason: 'only-in-s2', s1: '', s2: s2.category });
+    }
+  }
+
+  return disagreements.sort((a, b) => a.event.localeCompare(b.event));
+}
+
+// ---------------------------------------------------------------------------
+// Merge
+// ---------------------------------------------------------------------------
+
+interface MergeResult {
+  data: EventsJson;
+  added: string[];
+  changed: string[];
+  notInS1: string[];
+}
+
+interface ScrapeRun {
+  today: string;
+  releaseKey: string;
+  releases: Record<string, ReleaseMeta>;
+  s1: { docVersion: string; apiVersion: string; events: ScrapedEvent[] } | null;
+  s2: { release: string; events: ScrapedEvent[] } | null;
 }
 
 function bumpPatch(version: string): string {
@@ -153,247 +665,170 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ---------------------------------------------------------------------------
-// S1 — Salesforce Developer Docs
-// ---------------------------------------------------------------------------
+function sameLevel(a: SourceLevel | undefined, b: SourceLevel): boolean {
+  return a?.category === b.category && a?.level === b.level;
+}
 
-async function fetchS1Html(apiVersion: number): Promise<string> {
-  const docVersion = docVersionFromApiVersion(apiVersion);
-  const base =
-    'https://developer.salesforce.com/docs/get_document_content/apexcode/apex_debugging_system_log_console.htm/en-us';
+/** Keeps the written order independent of which source was read first. */
+function sortByKey(levels: Record<string, SourceLevel>): Record<string, SourceLevel> {
+  return Object.fromEntries(Object.entries(levels).sort(([a], [b]) => a.localeCompare(b)));
+}
 
-  for (const v of [docVersion, docVersion - 2]) {
-    const url = `${base}/${v}.0`;
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = (await res.json()) as { content: string };
-      return data.content;
+/**
+ * Records what each source stated about an event.
+ *
+ * `last_verified` moves only when a fact moved, so a scrape against unchanged
+ * documentation leaves every event byte-identical. The check date is recorded once
+ * per source instead, in `sources`.
+ */
+function refreshEntry(entry: EventEntry, run: ScrapeRun): { entry: EventEntry; changed: boolean } {
+  const s1 = run.s1?.events.find((e) => e.name === entry.event);
+  const s2 = run.s2?.events.find((e) => e.name === entry.event);
+  if (!s1 && !s2) return { entry, changed: false };
+
+  const result: EventEntry = { ...entry, source_levels: { ...entry.source_levels } };
+  let changed = false;
+
+  if (s1) {
+    if (!sameLevel(entry.source_levels.S1, s1)) {
+      result.source_levels.S1 = { category: s1.category, level: s1.level };
+      changed = true;
     }
-    console.warn(`  S1: version ${v}.0 returned ${res.status}`);
-  }
-
-  throw new Error('S1: could not fetch content for any doc version');
-}
-
-function parseS1Events(html: string): ScrapedEvent[] {
-  const root = parseHtml(html);
-  const events: ScrapedEvent[] = [];
-  const seen = new Set<string>();
-
-  for (const row of root.querySelectorAll('tr')) {
-    const nameEl = row.querySelector('td[data-title="Event Name"] samp.codeph');
-    if (!nameEl) continue;
-
-    const name = nameEl.text.trim();
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-
-    const categoryRaw = row.querySelector('td[data-title="Category Logged"]')?.text.trim() ?? '';
-    const levelRaw = row.querySelector('td[data-title="Level Logged"]')?.text.trim() ?? '';
-    const descRaw =
-      row
-        .querySelector('td[data-title="Fields or Information Logged with Event"]')
-        ?.text.trim()
-        .replace(/\s+/g, ' ') ?? '';
-
-    const category = S1_CATEGORY_MAP[categoryRaw] ?? categoryRaw.toUpperCase().replace(/\s+/g, '_');
-    const level = levelRaw.split(/\s/)[0] ?? 'INFO';
-
-    events.push({ name, category, level, description: descRaw, fields: parseFields(descRaw) });
-  }
-
-  return events;
-}
-
-async function fetchS1Events(apiVersion: number): Promise<ScrapedEvent[]> {
-  const html = await fetchS1Html(apiVersion);
-  return parseS1Events(html);
-}
-
-// ---------------------------------------------------------------------------
-// S2 — Salesforce Help (Playwright)
-// ---------------------------------------------------------------------------
-
-async function fetchS2Events(): Promise<ScrapedEvent[]> {
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-
-  try {
-    await page.goto(
-      'https://help.salesforce.com/s/articleView?id=platform.code_setting_debug_log_levels.htm&language=en_US&type=5',
-      { waitUntil: 'networkidle', timeout: 30000 },
-    );
-
-    // Accept cookie consent if present
-    const cookieBtn = page.locator(
-      'button:has-text("Accept All"), button:has-text("Accept"), button:has-text("Allow All")',
-    );
-    if ((await cookieBtn.count()) > 0) {
-      await cookieBtn.first().click();
-      await page.waitForTimeout(1000);
+    if (!entry.official) {
+      result.official = true;
+      changed = true;
     }
-
-    // Wait for article body to render
-    await page
-      .waitForSelector('article, .slds-rich-text-editor__output, [data-component-id]', {
-        timeout: 20000,
-      })
-      .catch(() => {
-        /* continue even if selector not found */
-      });
-
-    const html = await page.content();
-    return parseS2Events(html);
-  } finally {
-    await browser.close();
-  }
-}
-
-function parseS2Events(html: string): ScrapedEvent[] {
-  const root = parseHtml(html);
-  const events: ScrapedEvent[] = [];
-  const seen = new Set<string>();
-
-  for (const row of root.querySelectorAll('tr')) {
-    const cells = row.querySelectorAll('td');
-    if (cells.length < 2) continue;
-
-    for (let i = 0; i < cells.length; i++) {
-      const text = cells[i].text.trim();
-      // Match Salesforce event name pattern: ALL_CAPS with underscores
-      if (!/^[A-Z][A-Z0-9_]{2,}$/.test(text) || !text.includes('_')) continue;
-      if (seen.has(text)) continue;
-      seen.add(text);
-
-      const cellTexts = Array.from(cells).map((c) => c.text.trim());
-      let category = '';
-      let level = '';
-
-      for (let j = i + 1; j < cellTexts.length; j++) {
-        const ct = cellTexts[j];
-        if (!level && /^(NONE|ERROR|WARN|INFO|DEBUG|FINE[R]?[S]?T?)/.test(ct)) {
-          level = ct.split(/\s/)[0];
-        }
-        if (!category) {
-          const mapped = S2_CATEGORY_MAP[ct];
-          if (mapped) category = mapped;
-        }
-      }
-
-      if (category || level) {
-        events.push({ name: text, category, level: level || 'INFO', description: '', fields: [] });
-      }
+    if (!entry.sources.includes('S1')) {
+      result.sources = [...entry.sources, 'S1'].sort();
+      changed = true;
+    }
+    // Only fill description/fields if currently empty, to preserve manual curation
+    if (!entry.description && s1.description) {
+      result.description = s1.description;
+      result.fields = s1.fields;
+      changed = true;
     }
   }
 
-  return events;
+  if (s2) {
+    if (!sameLevel(entry.source_levels.S2, s2)) {
+      result.source_levels.S2 = { category: s2.category, level: s2.level };
+      changed = true;
+    }
+    if (!result.sources.includes('S2')) {
+      result.sources = [...result.sources, 'S2'].sort();
+      changed = true;
+    }
+    if (!result.description && s2.description) {
+      result.description = s2.description;
+      result.fields = s2.fields;
+      changed = true;
+    }
+  }
+
+  if (!changed) return { entry, changed: false };
+
+  result.last_verified = run.today;
+  result.source_levels = sortByKey(result.source_levels);
+  return { entry: result, changed: true };
 }
 
-// ---------------------------------------------------------------------------
-// Merge
-// ---------------------------------------------------------------------------
+function newEntry(scraped: ScrapedEvent, run: ScrapeRun, inS2: boolean): EventEntry {
+  const source_levels: Record<string, SourceLevel> = {};
+  if (run.s1?.events.some((e) => e.name === scraped.name)) {
+    source_levels.S1 = { category: scraped.category, level: scraped.level };
+  }
+  if (inS2) {
+    source_levels.S2 = { category: scraped.category, level: scraped.level };
+  }
 
-interface MergeResult {
-  data: EventsJson;
-  added: string[];
-  updated: string[];
-  notInS1: string[];
+  return {
+    event: scraped.name,
+    category: scraped.category,
+    level: scraped.level,
+    fields: scraped.fields,
+    description: scraped.description,
+    sources: Object.keys(source_levels).sort(),
+    official: true,
+    release_added: run.releaseKey,
+    release_deprecated: null,
+    last_verified: run.today,
+    notes: null,
+    truncation_protected: false,
+    source_levels: sortByKey(source_levels),
+  };
 }
 
-function mergeEvents(
-  existing: EventsJson,
-  s1Events: ScrapedEvent[],
-  s2Events: ScrapedEvent[],
-  releaseKey: string,
-): MergeResult {
-  const s1Map = new Map(s1Events.map((e) => [e.name, e]));
-  const s2Map = new Map(s2Events.map((e) => [e.name, e]));
-  const todayStr = today();
+function refreshSources(existing: EventsJson, run: ScrapeRun): Record<string, SourceMeta> {
+  const sources = { ...existing.sources };
 
-  const added: string[] = [];
-  const updated: string[] = [];
+  if (run.s1) {
+    sources.S1 = {
+      ...sources.S1,
+      name: sources.S1?.name ?? 'Salesforce Developer Docs',
+      type: sources.S1?.type ?? 'official',
+      last_checked: run.today,
+      doc_version: run.s1.docVersion,
+      api_version: run.s1.apiVersion,
+      event_count: run.s1.events.length,
+    };
+  }
+
+  if (run.s2) {
+    sources.S2 = {
+      ...sources.S2,
+      name: sources.S2?.name ?? 'Salesforce Help',
+      type: sources.S2?.type ?? 'official',
+      last_checked: run.today,
+      release: run.s2.release,
+      event_count: run.s2.events.length,
+    };
+  }
+
+  return sources;
+}
+
+function mergeEvents(existing: EventsJson, run: ScrapeRun): MergeResult {
+  const changed: string[] = [];
   const notInS1: string[] = [];
 
-  const updatedEvents: EventEntry[] = existing.events.map((entry) => {
-    const s1 = s1Map.get(entry.event);
-    const s2 = s2Map.get(entry.event);
-
-    if (!s1 && entry.sources.includes('S1')) {
-      notInS1.push(entry.event);
+  const events = existing.events.map((entry) => {
+    if (run.s1 && !run.s1.events.some((e) => e.name === entry.event)) {
+      if (entry.sources.includes('S1')) notInS1.push(entry.event);
     }
-
-    if (!s1 && !s2) return entry;
-
-    const result: EventEntry = { ...entry, source_levels: { ...entry.source_levels } };
-
-    if (s1) {
-      result.source_levels.S1 = { category: s1.category, level: s1.level };
-      result.last_verified = todayStr;
-      if (!result.official) result.official = true;
-      if (!entry.sources.includes('S1')) {
-        result.sources = [...entry.sources, 'S1'].sort();
-      }
-      // Only fill description/fields if currently empty (preserve manual curation)
-      if (!entry.description && s1.description) {
-        result.description = s1.description;
-        result.fields = s1.fields;
-      }
-      updated.push(entry.event);
-    }
-
-    if (s2?.category) {
-      result.source_levels.S2 = { category: s2.category, level: s2.level };
-      if (!result.sources.includes('S2')) {
-        result.sources = [...result.sources, 'S2'].sort();
-      }
-    }
-
-    return result;
+    const refreshed = refreshEntry(entry, run);
+    if (refreshed.changed) changed.push(entry.event);
+    return refreshed.entry;
   });
 
-  // Append new events found in S1
-  const existingNames = new Set(existing.events.map((e) => e.event));
-  for (const s1 of s1Events) {
-    if (existingNames.has(s1.name)) continue;
+  const known = new Set(existing.events.map((e) => e.event));
+  const s2Names = new Set(run.s2?.events.map((e) => e.name) ?? []);
+  const added: string[] = [];
 
-    const s2 = s2Map.get(s1.name);
-    const sourceLevels: Record<string, SourceLevel> = {
-      S1: { category: s1.category, level: s1.level },
-    };
-    if (s2?.category) {
-      sourceLevels.S2 = { category: s2.category, level: s2.level };
-    }
-
-    const newEntry: EventEntry = {
-      event: s1.name,
-      category: s1.category,
-      level: s1.level,
-      fields: s1.fields,
-      description: s1.description,
-      sources: s2?.category ? ['S1', 'S2'] : ['S1'],
-      official: true,
-      release_added: releaseKey,
-      release_deprecated: null,
-      last_verified: todayStr,
-      notes: null,
-      truncation_protected: false,
-      source_levels: sourceLevels,
-    };
-    updatedEvents.push(newEntry);
-    added.push(s1.name);
+  for (const scraped of [...(run.s1?.events ?? []), ...(run.s2?.events ?? [])]) {
+    if (known.has(scraped.name)) continue;
+    known.add(scraped.name);
+    events.push(newEntry(scraped, run, s2Names.has(scraped.name)));
+    added.push(scraped.name);
   }
 
-  updatedEvents.sort((a, b) => a.event.localeCompare(b.event));
+  events.sort((a, b) => a.event.localeCompare(b.event));
+
+  const contentChanged = added.length > 0 || changed.length > 0;
+  const releasesChanged =
+    Object.keys(run.releases).length !== Object.keys(existing.releases).length;
 
   return {
     data: {
       ...existing,
-      version: bumpPatch(existing.version),
-      last_updated: todayStr,
-      events: updatedEvents,
+      version: contentChanged ? bumpPatch(existing.version) : existing.version,
+      last_updated: contentChanged || releasesChanged ? run.today : existing.last_updated,
+      sources: refreshSources(existing, run),
+      releases: run.releases,
+      events,
     },
     added,
-    updated,
+    changed,
     notInS1,
   };
 }
@@ -545,64 +980,104 @@ function generateMarkdown(data: EventsJson): string {
 }
 
 // ---------------------------------------------------------------------------
+// Reporting
+// ---------------------------------------------------------------------------
+
+function reportDisagreements(disagreements: Disagreement[]): void {
+  if (disagreements.length === 0) {
+    console.log('  S1 and S2 agree on every event');
+    return;
+  }
+
+  console.log(`  S1 and S2 disagree on ${disagreements.length} entries:`);
+  for (const d of disagreements) {
+    switch (d.reason) {
+      case 'only-in-s1':
+        console.log(`    only in S1: ${d.event}`);
+        break;
+      case 'only-in-s2':
+        console.log(`    only in S2: ${d.event}`);
+        break;
+      default:
+        console.log(`    ${d.reason} differs: ${d.event} — S1 ${d.s1}, S2 ${d.s2}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
-  const args = argv.slice(2);
-  const apiVersionArg = args.find((a) => a.startsWith('--api-version='));
-  const apiVersion = apiVersionArg ? Number.parseFloat(apiVersionArg.split('=')[1]!) : 66.0;
-  const skipS2 = args.includes('--skip-s2');
+function pickDocVersion(metadata: S1Metadata, requested: string | null): DocVersion {
+  if (requested === null) return metadata.current;
 
-  console.log(`Scraping Salesforce debug log events (API ${apiVersion})...`);
-
-  const s2Promise = skipS2
-    ? Promise.resolve<ScrapedEvent[]>([])
-    : fetchS2Events().catch((err: Error) => {
-        console.warn(`  S2 scrape failed: ${err.message}`);
-        console.warn(
-          '  Run "pnpm scrape:install" to install Playwright browsers, or use --skip-s2',
-        );
-        return [] as ScrapedEvent[];
-      });
-
-  const [s1Events, s2Events] = await Promise.all([
-    fetchS1Events(apiVersion).catch((err: Error) => {
-      console.error(`  S1 scrape failed: ${err.message}`);
-      return [] as ScrapedEvent[];
-    }),
-    s2Promise,
-  ]);
-
-  console.log(`  S1: ${s1Events.length} events scraped`);
-  console.log(`  S2: ${s2Events.length} events scraped`);
-
-  if (s1Events.length === 0) {
-    console.error('No events from S1 — aborting to avoid overwriting with empty data.');
-    exit(1);
+  const match = metadata.available.find((v) => releaseCovers(requested, v.release_version));
+  if (!match) {
+    const published = metadata.available.map((v) => v.release_version).join(', ');
+    throw new Error(`API version ${requested} is not published. Available: ${published}`);
   }
+  return match;
+}
+
+async function main(): Promise<void> {
+  const requested =
+    argv
+      .slice(2)
+      .find((a) => a.startsWith('--api-version='))
+      ?.split('=')[1] ?? null;
+  if (requested !== null && !/^\d+(\.\d+)?$/.test(requested)) {
+    throw new Error(`--api-version must be a number, got "${requested}"`);
+  }
+
+  const metadata = await fetchS1Metadata();
+  const version = pickDocVersion(metadata, requested);
+  console.log(`Scraping ${version.version_text}, doc version ${version.doc_version}`);
+
+  const s1Events = await fetchS1Events(version.doc_version);
+  console.log(`  S1: ${s1Events.length} events`);
+
+  // S2 is a cross-check, so a failure there is reported and does not stop the run.
+  const s2 = await (async () => {
+    const release = await fetchS2Release();
+    return { release, events: await fetchS2Events(release) };
+  })().catch((err: Error) => {
+    console.warn(`  S2 scrape failed: ${err.message}`);
+    return null;
+  });
+  if (s2) console.log(`  S2: ${s2.events.length} events, release ${s2.release}`);
+
+  if (s2) reportDisagreements(crossCheck(s1Events, s2.events));
 
   const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../data');
   const jsonPath = join(dataDir, 'salesforce-debug-log-events.json');
   const mdPath = join(dataDir, 'salesforce-debug-log-events.md');
-
   const existing = JSON.parse(readFileSync(jsonPath, 'utf-8')) as EventsJson;
-  const releaseKey = getReleaseKey(apiVersion, existing.releases);
 
-  const { data, added, updated, notInS1 } = mergeEvents(existing, s1Events, s2Events, releaseKey);
+  const release = resolveRelease(version, existing.releases);
+  const { data, added, changed, notInS1 } = mergeEvents(existing, {
+    today: today(),
+    releaseKey: release.key,
+    releases: release.releases,
+    s1: {
+      docVersion: version.doc_version,
+      apiVersion: version.release_version,
+      events: s1Events,
+    },
+    s2,
+  });
 
   writeFileSync(jsonPath, `${JSON.stringify(data, null, 2)}\n`);
   writeFileSync(mdPath, generateMarkdown(data));
 
   console.log('\nResults:');
   console.log(`  Version: ${existing.version} → ${data.version}`);
-  console.log(`  Events updated (S1 data refreshed): ${updated.length}`);
+  console.log(`  Events changed: ${changed.length}`);
   if (added.length > 0) {
     console.log(`  New events added: ${added.length}`);
     for (const name of added) console.log(`    + ${name}`);
   }
   if (notInS1.length > 0) {
-    console.log(`  Events with S1 source but not found in S1 (${notInS1.length}):`);
+    console.log(`  Events with an S1 source but absent from S1 (${notInS1.length}):`);
     for (const name of notInS1) console.log(`    ? ${name}`);
   }
 
@@ -611,10 +1086,26 @@ async function main(): Promise<void> {
   console.log(`  ${mdPath}`);
 }
 
-main().catch((err: Error) => {
-  console.error(err);
-  exit(1);
-});
+// Guarded so the module can be imported by tests without running a scrape
+if (argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err: Error) => {
+    console.error(err.message);
+    exit(1);
+  });
+}
 
-// Re-export for testing
-export { bumpPatch, generateMarkdown, getReleaseKey, mergeEvents, parseS1Events, parseS2Events };
+export type { DocVersion, EventsJson, S1Metadata, ScrapedEvent, ScrapeRun };
+export {
+  articleHtml,
+  articleRecord,
+  bumpPatch,
+  crossCheck,
+  generateMarkdown,
+  mergeEvents,
+  parseEventTable,
+  pickDocVersion,
+  releaseCovers,
+  releaseIdentity,
+  resolveRelease,
+  squeezeRow,
+};
