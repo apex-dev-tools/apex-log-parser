@@ -25,7 +25,7 @@
       "name": "Salesforce Debug Level Page",
       "url": "${org_url}/udd/DebugLevel/editDebugLevel.apexp",
       "type": "official",
-      "notes": "Debug level editor page in a Salesforce org — can be read programmatically"
+      "notes": "Debug level editor page in a Salesforce org. Not read by pnpm scrape; needs an org login"
     },
     "S4": {
       "name": "Apex Log Parser (this project)",
@@ -35,13 +35,13 @@
     "S5": {
       "name": "Manual Testing / Observation",
       "type": "manual",
-      "notes": "Events observed in actual debug logs not documented elsewhere"
+      "notes": "Events observed in actual debug logs not documented elsewhere. Not read by pnpm scrape"
     },
     "S6": {
       "name": "FishOfPrey - Debug Log Events Gist",
       "url": "https://gist.github.com/FishOfPrey/9c6b6d3a6d9e0147143b0c54d615a677",
       "type": "community",
-      "notes": "Compiled from SF docs + manual testing (Summer '18 v43.0)"
+      "notes": "Compiled from SF docs + manual testing (Summer '18 v43.0). Not read by pnpm scrape"
     }
   },
   "categories": [
