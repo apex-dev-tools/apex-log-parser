@@ -6,6 +6,7 @@ import type { DocVersion, S1Metadata, ScrapedEvent, ScrapeRun } from '../scrape.
 import {
   articleHtml,
   articleRecord,
+  checkNotOlder,
   crossCheck,
   mergeEvents,
   parseEventTable,
@@ -398,11 +399,52 @@ describe('mergeEvents', () => {
     expect(data.events.find((e) => e.event === 'ZZZ_HELP_ONLY_EVENT')).toBeUndefined();
   });
 
+  it('reports a contradicted category without overwriting it', () => {
+    const moved = s1Events.map((e) =>
+      e.name === 'SOQL_EXECUTE_BEGIN' ? { ...e, category: 'APEX_CODE' } : e,
+    );
+    const { data, restated } = mergeEvents(database, { ...run, s1: { ...run.s1, events: moved } });
+
+    expect(restated).toContainEqual({
+      event: 'SOQL_EXECUTE_BEGIN',
+      source: 'S1',
+      field: 'category',
+      stored: 'DB',
+      scraped: 'APEX_CODE',
+    });
+
+    const entry = data.events.find((e) => e.event === 'SOQL_EXECUTE_BEGIN');
+    expect(entry?.category).toBe('DB');
+    expect(entry?.source_levels.S1?.category).toBe('APEX_CODE');
+  });
+
+  it('reports nothing restated while the sources say what they said before', () => {
+    // VF_APEX_CALL_* disagree with both sources on purpose; that is not news
+    expect(mergeEvents(database, run).restated).toEqual([]);
+  });
+
   it('leaves the S2 check date stale when the help site could not be read', () => {
     // A stale date is the signal that this run did not reach that source
     const { data } = mergeEvents(database, { ...run, s2: null });
     expect(data.sources.S1?.last_checked).toBe('2099-01-01');
     expect(data.sources.S2?.last_checked).toBe(database.sources.S2?.last_checked);
     expect(data.sources.S2?.last_checked).not.toBe('2099-01-01');
+  });
+});
+
+describe('checkNotOlder', () => {
+  const at = (release: string): DocVersion => ({ ...s1Metadata.version, release_version: release });
+
+  it('allows the recorded release and anything newer', () => {
+    expect(() => checkNotOlder(at('67.0'), database, false)).not.toThrow();
+    expect(() => checkNotOlder(at('68.0'), database, false)).not.toThrow();
+  });
+
+  it('refuses an older release, naming what the database records', () => {
+    expect(() => checkNotOlder(at('66.0'), database, false)).toThrow(/records 67.0/);
+  });
+
+  it('yields to an explicit override', () => {
+    expect(() => checkNotOlder(at('66.0'), database, true)).not.toThrow();
   });
 });

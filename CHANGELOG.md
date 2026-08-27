@@ -8,6 +8,9 @@
   It discovers the release instead of computing it, treats every silent-success response as a
   failure, and rewrites the database byte-identically when nothing changed.
 - Corrected the four `CURSOR_*` events, whose category and level the developer docs mislabel.
+- A scrape reports, without overwriting, any event whose documented category or level has
+  moved away from the recorded one, and refuses to rewrite the database from a release older
+  than the one it holds.
 - No change to the published package: `data/` is not shipped.
 
 ## 0.1.0

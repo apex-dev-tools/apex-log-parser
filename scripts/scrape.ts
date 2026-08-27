@@ -12,7 +12,7 @@
  * See scripts/scraper.md for the endpoints and their failure modes.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { argv, exit } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -661,11 +661,21 @@ function crossCheck(s1Events: ScrapedEvent[], s2Events: ScrapedEvent[]): Disagre
 // Merge
 // ---------------------------------------------------------------------------
 
+/** A source has changed its reading, and it now contradicts a curated field. */
+interface Restatement {
+  event: string;
+  source: string;
+  field: 'category' | 'level';
+  stored: string;
+  scraped: string;
+}
+
 interface MergeResult {
   data: EventsJson;
   added: string[];
   changed: string[];
   notInS1: string[];
+  restated: Restatement[];
 }
 
 interface ScrapeRun {
@@ -747,6 +757,51 @@ function refreshEntry(
   return { entry: { ...candidate, last_verified: today }, changed: true };
 }
 
+/**
+ * Reports where a source has *moved* to contradict the entry's curated `category`
+ * or `level`.
+ *
+ * Those two fields are the ones `EventMetadata.test.ts` and the generated markdown
+ * read, and a scrape deliberately does not overwrite them — they may carry a
+ * correction the documentation does not. So the contradiction is surfaced for a
+ * human instead of being resolved silently either way.
+ *
+ * A standing disagreement is not reported: `VF_APEX_CALL_START` and `_END` are
+ * curated against both sources on purpose, and repeating that every run would
+ * bury a real change. The recorded `source_levels` reading is what makes the
+ * difference visible — a source only counts as having moved once it states
+ * something it did not state before.
+ */
+function restatements(entry: EventEntry, index: SourceIndex): Restatement[] {
+  const found: Restatement[] = [];
+
+  for (const [source, byName] of index) {
+    const scraped = byName.get(entry.event);
+    if (!scraped) continue;
+    const recorded = entry.source_levels[source];
+    if (scraped.category !== entry.category && scraped.category !== recorded?.category) {
+      found.push({
+        event: entry.event,
+        source,
+        field: 'category',
+        stored: entry.category,
+        scraped: scraped.category,
+      });
+    }
+    if (scraped.level !== entry.level && scraped.level !== recorded?.level) {
+      found.push({
+        event: entry.event,
+        source,
+        field: 'level',
+        stored: entry.level,
+        scraped: scraped.level,
+      });
+    }
+  }
+
+  return found;
+}
+
 function newEntry(scraped: ScrapedEvent, index: SourceIndex, run: ScrapeRun): EventEntry {
   const source_levels: Record<string, SourceLevel> = {};
   for (const [id, byName] of index) {
@@ -800,11 +855,13 @@ function mergeEvents(existing: EventsJson, run: ScrapeRun): MergeResult {
   const inS1 = index.get('S1') ?? new Map<string, ScrapedEvent>();
   const changed: string[] = [];
   const notInS1: string[] = [];
+  const restated: Restatement[] = [];
 
   const events = existing.events.map((entry) => {
     if (entry.sources.includes('S1') && !inS1.has(entry.event)) {
       notInS1.push(entry.event);
     }
+    restated.push(...restatements(entry, index));
     const refreshed = refreshEntry(entry, index, run.today);
     if (refreshed.changed) changed.push(entry.event);
     return refreshed.entry;
@@ -838,6 +895,7 @@ function mergeEvents(existing: EventsJson, run: ScrapeRun): MergeResult {
     added,
     changed,
     notInS1,
+    restated,
   };
 }
 
@@ -1027,12 +1085,25 @@ function pickDocVersion(metadata: S1Metadata, requested: string | null): DocVers
   return match;
 }
 
+/**
+ * Refuses to rewrite the database from a release older than the one it already
+ * records, which would restate every event with superseded facts and leave only
+ * `sources.S1.api_version` to say the run went backwards.
+ */
+function checkNotOlder(version: DocVersion, existing: EventsJson, allowOlder: boolean): void {
+  const recorded = existing.sources.S1?.api_version;
+  if (allowOlder || recorded === undefined) return;
+  if (Number(version.release_version) >= Number(recorded)) return;
+
+  throw new Error(
+    `Refusing to scrape API ${version.release_version}: the database records ${recorded}. ` +
+      'Pass --allow-older to overwrite it with the older release.',
+  );
+}
+
 async function main(): Promise<void> {
-  const requested =
-    argv
-      .slice(2)
-      .find((a) => a.startsWith('--api-version='))
-      ?.split('=')[1] ?? null;
+  const args = argv.slice(2);
+  const requested = args.find((a) => a.startsWith('--api-version='))?.split('=')[1] ?? null;
   if (requested !== null && !/^\d+(\.\d+)?$/.test(requested)) {
     throw new Error(`--api-version must be a number, got "${requested}"`);
   }
@@ -1048,6 +1119,7 @@ async function main(): Promise<void> {
 
   const metadata = await fetchS1Metadata();
   const version = pickDocVersion(metadata, requested);
+  checkNotOlder(version, existing, args.includes('--allow-older'));
   console.log(`Scraping ${version.version_text}, doc version ${version.doc_version}`);
 
   const s1Events = parseEventTable(
@@ -1071,7 +1143,7 @@ async function main(): Promise<void> {
   }
 
   const release = resolveRelease(version, existing.releases);
-  const { data, added, changed, notInS1 } = mergeEvents(existing, {
+  const { data, added, changed, notInS1, restated } = mergeEvents(existing, {
     today: today(),
     releaseKey: release.key,
     releases: release.releases,
@@ -1094,14 +1166,25 @@ async function main(): Promise<void> {
     console.log(`  Events with an S1 source but absent from S1 (${notInS1.length}):`);
     for (const name of notInS1) console.log(`    ? ${name}`);
   }
+  if (restated.length > 0) {
+    console.log(`  A source moved against the recorded category or level (${restated.length}).`);
+    console.log('  Those two fields are not overwritten — decide each one by hand:');
+    for (const r of restated) {
+      console.log(
+        `    ! ${r.event} ${r.field}: recorded ${r.stored}, ${r.source} says ${r.scraped}`,
+      );
+    }
+  }
 
   console.log('\nFiles written:');
   console.log(`  ${jsonPath}`);
   console.log(`  ${mdPath}`);
 }
 
-// Guarded so the module can be imported by tests without running a scrape
-if (argv[1] === fileURLToPath(import.meta.url)) {
+// Guarded so the module can be imported by tests without running a scrape.
+// Both sides are realpathed: Node resolves import.meta.url but argv[1] keeps the
+// path as typed, so a symlinked checkout would otherwise make this a silent no-op.
+if (realpathSync(argv[1] ?? '') === realpathSync(fileURLToPath(import.meta.url))) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err));
     exit(1);
@@ -1112,6 +1195,7 @@ export type { DocVersion, EventsJson, S1Metadata, ScrapedEvent, ScrapeRun, Vocab
 export {
   articleHtml,
   articleRecord,
+  checkNotOlder,
   crossCheck,
   mergeEvents,
   parseEventTable,
