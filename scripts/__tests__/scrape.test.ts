@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { DocVersion, EventsJson, S1Metadata, ScrapedEvent } from '../scrape.js';
+import database from '../../data/salesforce-debug-log-events.json' with { type: 'json' };
+import s1Content from '../__fixtures__/s1-content-262.0.json' with { type: 'json' };
+import s1Metadata from '../__fixtures__/s1-metadata.json' with { type: 'json' };
+import s2Article from '../__fixtures__/s2-article-262.0.0.json' with { type: 'json' };
+import type { DocVersion, S1Metadata, ScrapedEvent, ScrapeRun } from '../scrape.js';
 import {
   articleHtml,
   articleRecord,
@@ -13,28 +14,14 @@ import {
   releaseIdentity,
   resolveRelease,
   squeezeRow,
+  vocabulary,
 } from '../scrape.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const fixture = (name: string): unknown =>
-  JSON.parse(readFileSync(join(here, '..', '__fixtures__', name), 'utf-8')) as unknown;
+const vocab = vocabulary(database);
+const s2Record = s2Article.actions[0]!.returnValue.returnValue.record as Record<string, unknown>;
 
-const database = JSON.parse(
-  readFileSync(join(here, '..', '..', 'data', 'salesforce-debug-log-events.json'), 'utf-8'),
-) as EventsJson;
-
-const s1Content = fixture('s1-content-262.0.json') as { content: string };
-const s1Metadata = fixture('s1-metadata.json') as {
-  version: DocVersion;
-  available_versions: DocVersion[];
-};
-const s2Article = fixture('s2-article-262.0.0.json') as {
-  actions: { returnValue: { returnValue: { record: Record<string, unknown> } } }[];
-};
-const s2Record = s2Article.actions[0]!.returnValue.returnValue.record;
-
-const s1Events = parseEventTable(s1Content.content, 'S1');
-const s2Events = parseEventTable(articleHtml(s2Record, 'S2'), 'S2');
+const s1Events = parseEventTable(s1Content.content, 'S1', vocab);
+const s2Events = parseEventTable(articleHtml(s2Record, 'S2'), 'S2', vocab);
 
 const byName = (events: ScrapedEvent[], name: string): ScrapedEvent | undefined =>
   events.find((e) => e.name === name);
@@ -97,7 +84,17 @@ describe('parseEventTable', () => {
 
   it('rejects a document whose event table is gone', () => {
     const stripped = s1Content.content.replace(/<table[\s\S]*?<\/table>/g, '');
-    expect(() => parseEventTable(stripped, 'S1')).toThrow(/exactly one table/);
+    expect(() => parseEventTable(stripped, 'S1', vocab)).toThrow(/exactly one table/);
+  });
+
+  it('rejects a table that has gained a column', () => {
+    // Otherwise the surplus cell is silently squeezed away row by row
+    const widened = s1Content.content.replace(
+      /(<th[^>]*>Level Logged<\/th>)/,
+      '$1<th class="entry">Since</th>',
+    );
+    expect(widened).not.toBe(s1Content.content);
+    expect(() => parseEventTable(widened, 'S1', vocab)).toThrow(/exactly one table/);
   });
 
   it('rejects an unknown category rather than inventing a token', () => {
@@ -106,7 +103,7 @@ describe('parseEventTable', () => {
       'data-title="Category Logged">Apex Code<',
       'data-title="Category Logged">Nonsense Category<',
     );
-    expect(() => parseEventTable(corrupted, 'S1')).toThrow(/unknown log category/);
+    expect(() => parseEventTable(corrupted, 'S1', vocab)).toThrow(/unknown log category/);
   });
 });
 
@@ -242,16 +239,35 @@ describe('resolveRelease', () => {
   };
 
   it('adds the release when the database does not know it, so no key dangles', () => {
-    const resolved = resolveRelease(version, database.releases);
-    expect(resolved.releases[resolved.key]).toBeDefined();
+    const releases = {
+      'pre-summer-26': { label: "Pre-Summer '26", api_version: '<=63.0', date: '2026-02' },
+    };
+    const resolved = resolveRelease(version, releases);
     expect(resolved.key).toBe('summer-26');
+    expect(resolved.releases[resolved.key]).toEqual({
+      label: "Summer '26",
+      api_version: '67.0',
+      date: '2026-06',
+    });
+    expect(resolved.changed).toBe(true);
   });
 
-  it('reuses a release that already covers the version', () => {
+  it('reuses the release the committed database already records', () => {
+    expect(resolveRelease(version, database.releases)).toMatchObject({
+      key: 'summer-26',
+      changed: false,
+    });
+  });
+
+  it('reuses a release that already covers the version, and reports no change', () => {
     const releases = {
       'summer-26': { label: "Summer '26", api_version: '67.0', date: '2026-06' },
     };
-    expect(resolveRelease(version, releases)).toEqual({ key: 'summer-26', releases });
+    expect(resolveRelease(version, releases)).toEqual({
+      key: 'summer-26',
+      releases,
+      changed: false,
+    });
   });
 });
 
@@ -261,9 +277,9 @@ describe('pickDocVersion', () => {
     available: s1Metadata.available_versions,
   };
 
-  it('defaults to the release Salesforce serves as GA, never the preview', () => {
-    expect(pickDocVersion(metadata, null)).toEqual(metadata.current);
+  it('defaults to the GA release, never the preview that leads the list', () => {
     expect(pickDocVersion(metadata, null).version_text).not.toMatch(/preview/);
+    expect(metadata.available[0]?.version_text).toMatch(/preview/);
   });
 
   it('honours a published override', () => {
@@ -276,11 +292,12 @@ describe('pickDocVersion', () => {
 });
 
 describe('mergeEvents', () => {
-  const run = {
+  const run: ScrapeRun = {
     today: '2099-01-01',
     releaseKey: 'summer-26',
     releases: database.releases,
-    s1: { docVersion: '262.0', apiVersion: '67.0', events: s1Events },
+    releasesChanged: false,
+    s1: { version: s1Metadata.version, events: s1Events },
     s2: { release: '262.0.0', events: s2Events },
   };
 
@@ -299,21 +316,19 @@ describe('mergeEvents', () => {
     });
   });
 
-  it('adds no event and changes none against the committed database', () => {
-    const { added, changed } = mergeEvents(database, run);
+  it('leaves the committed database untouched, so only the source dates move', () => {
+    const { data, added, changed } = mergeEvents(database, run);
     expect(added).toEqual([]);
     expect(changed).toEqual([]);
-  });
-
-  it('leaves the version and last_updated alone when no fact moved', () => {
-    const { data } = mergeEvents(database, run);
+    expect(data.events).toEqual(database.events);
     expect(data.version).toBe(database.version);
     expect(data.last_updated).toBe(database.last_updated);
   });
 
-  it('touches no event, so only the source dates move', () => {
-    const { data } = mergeEvents(database, run);
-    expect(data.events).toEqual(database.events);
+  it('moves last_updated when a release was added but no event changed', () => {
+    const { data } = mergeEvents(database, { ...run, releasesChanged: true });
+    expect(data.last_updated).toBe('2099-01-01');
+    expect(data.version).toBe(database.version);
   });
 
   it('is idempotent', () => {

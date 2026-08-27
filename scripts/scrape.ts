@@ -121,19 +121,10 @@ interface S1Metadata {
   available: DocVersion[];
 }
 
-interface ReleaseIdentity {
-  key: string;
-  meta: ReleaseMeta;
-}
-
-type DisagreementReason = 'only-in-s1' | 'only-in-s2' | 'category' | 'level';
-
-interface Disagreement {
-  event: string;
-  reason: DisagreementReason;
-  s1: string;
-  s2: string;
-}
+/** One source stated an event the other did not, or they stated it differently. */
+type Disagreement =
+  | { event: string; reason: 'only-in-s1' | 'only-in-s2' }
+  | { event: string; reason: 'category' | 'level'; s1: string; s2: string };
 
 // ---------------------------------------------------------------------------
 // HTTP
@@ -217,7 +208,7 @@ const SEASON_MONTH: Record<string, string> = { spring: '02', summer: '06', winte
  * `Summer '26 (API version 67.0)` becomes `summer-26`. A Winter release ships in
  * the previous calendar year, so its date year is one behind its name.
  */
-function releaseIdentity(version: DocVersion): ReleaseIdentity {
+function releaseIdentity(version: DocVersion): { key: string; meta: ReleaseMeta } {
   const match = /^(Spring|Summer|Winter) '(\d{2})/.exec(version.version_text);
   if (!match) {
     throw new Error(`Could not read a season and year from "${version.version_text}"`);
@@ -266,40 +257,51 @@ function releaseCovers(apiVersion: string, declared: string): boolean {
 function resolveRelease(
   version: DocVersion,
   releases: Record<string, ReleaseMeta>,
-): { key: string; releases: Record<string, ReleaseMeta> } {
+): { key: string; releases: Record<string, ReleaseMeta>; changed: boolean } {
   for (const [key, release] of Object.entries(releases)) {
     if (releaseCovers(version.release_version, release.api_version)) {
-      return { key, releases };
+      return { key, releases, changed: false };
     }
   }
 
   const identity = releaseIdentity(version);
-  return { key: identity.key, releases: { ...releases, [identity.key]: identity.meta } };
+  return {
+    key: identity.key,
+    releases: { ...releases, [identity.key]: identity.meta },
+    changed: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Event table parsing — shared by both sources
 // ---------------------------------------------------------------------------
 
-const CATEGORY_MAP: Record<string, string> = {
-  'Apex Code': 'APEX_CODE',
-  'Apex Profiling': 'APEX_PROFILING',
-  Callout: 'CALLOUT',
-  DB: 'DB',
-  Database: 'DB',
-  'Data Access': 'DATA_ACCESS',
-  NBA: 'NBA',
-  System: 'SYSTEM',
-  Validation: 'VALIDATION',
-  Visualforce: 'VISUALFORCE',
-  Wave: 'WAVE',
-  Workflow: 'WORKFLOW',
-};
+/** Category labels the documentation spells differently from the database. */
+const CATEGORY_LABEL_ALIASES: Record<string, string> = { DB: 'Database' };
 
 /** Salesforce writes `WARNING` in the table; the log token is `WARN`. */
 const LEVEL_ALIASES: Record<string, string> = { WARNING: 'WARN' };
 
-const KNOWN_LEVELS = new Set(['NONE', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'FINE', 'FINER', 'FINEST']);
+/**
+ * The tokens a scrape is allowed to produce, taken from the event database so
+ * they cannot drift from what the parser and the schema already declare.
+ */
+interface Vocabulary {
+  categoryByLabel: Map<string, string>;
+  levels: Set<string>;
+}
+
+function vocabulary(data: EventsJson): Vocabulary {
+  const categoryByLabel = new Map(data.categories.map((c) => [c.label, c.name]));
+  for (const [docLabel, dbLabel] of Object.entries(CATEGORY_LABEL_ALIASES)) {
+    const name = categoryByLabel.get(dbLabel);
+    if (name === undefined) {
+      throw new Error(`Category alias "${docLabel}" points at unknown label "${dbLabel}"`);
+    }
+    categoryByLabel.set(docLabel, name);
+  }
+  return { categoryByLabel, levels: new Set(data.log_levels) };
+}
 
 const EVENT_TABLE_HEADERS = [
   'Event Name',
@@ -360,21 +362,22 @@ function squeezeRow(cells: string[], width: number): string[] {
   return kept;
 }
 
-function normaliseLevel(raw: string, event: string): string {
+function normaliseLevel(raw: string, event: string, vocab: Vocabulary): string {
   const token = collapse(raw).split(' ')[0]?.toUpperCase() ?? '';
   const level = LEVEL_ALIASES[token] ?? token;
-  if (!KNOWN_LEVELS.has(level)) {
+  if (!vocab.levels.has(level)) {
     throw new Error(`${event}: unknown log level "${raw}"`);
   }
   return level;
 }
 
-function normaliseCategory(raw: string, event: string): string {
-  const category = CATEGORY_MAP[collapse(raw)];
-  if (!category) {
+function normaliseCategory(raw: string, event: string, vocab: Vocabulary): string {
+  const label = collapse(raw);
+  const category = vocab.categoryByLabel.get(label);
+  if (category === undefined) {
     throw new Error(
-      `${event}: unknown log category "${collapse(raw)}". Add it to CATEGORY_MAP and to ` +
-        'the categories list in the event database, then update debugLevelTokenByKey.',
+      `${event}: unknown log category "${label}". Add it to the categories list in the ` +
+        'event database, then update debugLevelTokenByKey and DebugLevels in src/.',
     );
   }
   return category;
@@ -385,12 +388,16 @@ function normaliseCategory(raw: string, event: string): string {
  * same DITA source, but disagree on every attribute and wrapper element, so the
  * header row is the only reliable anchor.
  */
-function parseEventTable(html: string, source: string): ScrapedEvent[] {
+function parseEventTable(html: string, source: string, vocab: Vocabulary): ScrapedEvent[] {
   const tables = parseHtml(html)
     .querySelectorAll('table')
     .filter((table) => {
       const headers = table.querySelectorAll('th').map((th) => collapse(th.text));
-      return EVENT_TABLE_HEADERS.every((header, i) => headers[i] === header);
+      // Length too, so an added column fails here rather than being squeezed away row by row
+      return (
+        headers.length === EVENT_TABLE_HEADERS.length &&
+        EVENT_TABLE_HEADERS.every((header, i) => headers[i] === header)
+      );
     });
 
   if (tables.length !== 1) {
@@ -422,8 +429,8 @@ function parseEventTable(html: string, source: string): ScrapedEvent[] {
 
     events.push({
       name,
-      category: normaliseCategory(category, name),
-      level: normaliseLevel(level, name),
+      category: normaliseCategory(category, name, vocab),
+      level: normaliseLevel(level, name, vocab),
       description,
       fields: parseFields(description),
     });
@@ -471,10 +478,6 @@ async function fetchS1Content(docVersion: string): Promise<string> {
   const url = `https://developer.salesforce.com/docs/get_document_content/${S1_DOC_SET}/${S1_PAGE}/en-us/${docVersion}`;
   const body = asRecord(await fetchJson(url), `S1 ${docVersion}`);
   return asString(body.content, `S1 ${docVersion}.content`);
-}
-
-async function fetchS1Events(docVersion: string): Promise<ScrapedEvent[]> {
-  return parseEventTable(await fetchS1Content(docVersion), `S1 ${docVersion}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -557,19 +560,24 @@ function articleRecord(returned: unknown, context: string): Record<string, unkno
  * populate" sentence. The body arrives split across `Help_Docs_Cache_Details__r`,
  * each chunk wrapped in a leading and trailing `.`.
  */
+function joinChunks(chunks: unknown[], context: string): string {
+  return chunks
+    .map((chunk, i) => {
+      const where = `${context} chunk[${i}]`;
+      return asString(asRecord(chunk, where).Content__c, where)
+        .replace(/^\./, '')
+        .replace(/\.$/, '');
+    })
+    .join('');
+}
+
 function articleHtml(record: Record<string, unknown>, context: string): string {
   const chunks = record.Help_Docs_Cache_Details__r;
   const declared = record.Content_Length__c;
 
   const html =
     Array.isArray(chunks) && chunks.length > 0
-      ? chunks
-          .map((chunk, i) =>
-            asString(asRecord(chunk, `${context} chunk[${i}]`).Content__c, `${context} chunk[${i}]`)
-              .replace(/^\./, '')
-              .replace(/\.$/, ''),
-          )
-          .join('')
+      ? joinChunks(chunks, context)
       : asString(record.Content__c, `${context}.Content__c`);
 
   if (typeof declared === 'number' && html.length !== declared) {
@@ -595,8 +603,21 @@ async function fetchS2Content(release: string): Promise<string> {
   return articleHtml(articleRecord(returned, context), context);
 }
 
-async function fetchS2Events(release: string): Promise<ScrapedEvent[]> {
-  return parseEventTable(await fetchS2Content(release), `S2 ${release}`);
+/**
+ * Fetches the Help article, tolerating a failure to reach it.
+ *
+ * Only the fetch is caught. The parse is left to the caller on purpose: the
+ * parser is shared with S1, so a drift there would fail the next release too and
+ * must not pass as an S2-was-unavailable warning.
+ */
+async function fetchS2(): Promise<{ release: string; html: string } | null> {
+  try {
+    const release = await fetchS2Release();
+    return { release, html: await fetchS2Content(release) };
+  } catch (err) {
+    console.warn(`  S2 fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -616,7 +637,7 @@ function crossCheck(s1Events: ScrapedEvent[], s2Events: ScrapedEvent[]): Disagre
   for (const [name, s1] of s1Map) {
     const s2 = s2Map.get(name);
     if (!s2) {
-      disagreements.push({ event: name, reason: 'only-in-s1', s1: s1.category, s2: '' });
+      disagreements.push({ event: name, reason: 'only-in-s1' });
       continue;
     }
     if (s1.category !== s2.category) {
@@ -627,9 +648,9 @@ function crossCheck(s1Events: ScrapedEvent[], s2Events: ScrapedEvent[]): Disagre
     }
   }
 
-  for (const [name, s2] of s2Map) {
+  for (const name of s2Map.keys()) {
     if (!s1Map.has(name)) {
-      disagreements.push({ event: name, reason: 'only-in-s2', s1: '', s2: s2.category });
+      disagreements.push({ event: name, reason: 'only-in-s2' });
     }
   }
 
@@ -651,8 +672,18 @@ interface ScrapeRun {
   today: string;
   releaseKey: string;
   releases: Record<string, ReleaseMeta>;
-  s1: { docVersion: string; apiVersion: string; events: ScrapedEvent[] } | null;
+  releasesChanged: boolean;
+  s1: { version: DocVersion; events: ScrapedEvent[] };
   s2: { release: string; events: ScrapedEvent[] } | null;
+}
+
+/** Source id to its events by name — one lookup structure for the whole merge. */
+type SourceIndex = Map<string, Map<string, ScrapedEvent>>;
+
+function indexSources(run: ScrapeRun): SourceIndex {
+  const index: SourceIndex = new Map([['S1', new Map(run.s1.events.map((e) => [e.name, e]))]]);
+  if (run.s2) index.set('S2', new Map(run.s2.events.map((e) => [e.name, e])));
+  return index;
 }
 
 function bumpPatch(version: string): string {
@@ -665,10 +696,6 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function sameLevel(a: SourceLevel | undefined, b: SourceLevel): boolean {
-  return a?.category === b.category && a?.level === b.level;
-}
-
 /** Keeps the written order independent of which source was read first. */
 function sortByKey(levels: Record<string, SourceLevel>): Record<string, SourceLevel> {
   return Object.fromEntries(Object.entries(levels).sort(([a], [b]) => a.localeCompare(b)));
@@ -677,69 +704,53 @@ function sortByKey(levels: Record<string, SourceLevel>): Record<string, SourceLe
 /**
  * Records what each source stated about an event.
  *
- * `last_verified` moves only when a fact moved, so a scrape against unchanged
- * documentation leaves every event byte-identical. The check date is recorded once
- * per source instead, in `sources`.
+ * The candidate is built unconditionally and compared as a whole, so a field
+ * added here later cannot forget to report itself. `last_verified` moves only
+ * when something else moved, which is what leaves an unchanged scrape
+ * byte-identical; the check date is recorded once per source, in `sources`.
  */
-function refreshEntry(entry: EventEntry, run: ScrapeRun): { entry: EventEntry; changed: boolean } {
-  const s1 = run.s1?.events.find((e) => e.name === entry.event);
-  const s2 = run.s2?.events.find((e) => e.name === entry.event);
-  if (!s1 && !s2) return { entry, changed: false };
+function refreshEntry(
+  entry: EventEntry,
+  index: SourceIndex,
+  today: string,
+): { entry: EventEntry; changed: boolean } {
+  const stated = [...index].flatMap(([id, byName]) => {
+    const scraped = byName.get(entry.event);
+    return scraped ? [[id, scraped] as const] : [];
+  });
+  if (stated.length === 0) return { entry, changed: false };
 
-  const result: EventEntry = { ...entry, source_levels: { ...entry.source_levels } };
-  let changed = false;
+  const candidate: EventEntry = { ...entry, source_levels: { ...entry.source_levels } };
 
-  if (s1) {
-    if (!sameLevel(entry.source_levels.S1, s1)) {
-      result.source_levels.S1 = { category: s1.category, level: s1.level };
-      changed = true;
+  for (const [id, scraped] of stated) {
+    candidate.source_levels[id] = { category: scraped.category, level: scraped.level };
+    if (!candidate.sources.includes(id)) {
+      candidate.sources = [...candidate.sources, id].sort();
     }
-    if (!entry.official) {
-      result.official = true;
-      changed = true;
-    }
-    if (!entry.sources.includes('S1')) {
-      result.sources = [...entry.sources, 'S1'].sort();
-      changed = true;
-    }
+    // S1 is the authority on whether Salesforce documents an event
+    if (id === 'S1') candidate.official = true;
     // Only fill description/fields if currently empty, to preserve manual curation
-    if (!entry.description && s1.description) {
-      result.description = s1.description;
-      result.fields = s1.fields;
-      changed = true;
+    if (!candidate.description && scraped.description) {
+      candidate.description = scraped.description;
+      candidate.fields = scraped.fields;
     }
   }
 
-  if (s2) {
-    if (!sameLevel(entry.source_levels.S2, s2)) {
-      result.source_levels.S2 = { category: s2.category, level: s2.level };
-      changed = true;
-    }
-    if (!result.sources.includes('S2')) {
-      result.sources = [...result.sources, 'S2'].sort();
-      changed = true;
-    }
-    if (!result.description && s2.description) {
-      result.description = s2.description;
-      result.fields = s2.fields;
-      changed = true;
-    }
-  }
+  candidate.source_levels = sortByKey(candidate.source_levels);
 
+  // Compare with the old date in place, so the date itself never counts as a change
+  const changed =
+    JSON.stringify({ ...candidate, last_verified: entry.last_verified }) !== JSON.stringify(entry);
   if (!changed) return { entry, changed: false };
 
-  result.last_verified = run.today;
-  result.source_levels = sortByKey(result.source_levels);
-  return { entry: result, changed: true };
+  return { entry: { ...candidate, last_verified: today }, changed: true };
 }
 
-function newEntry(scraped: ScrapedEvent, run: ScrapeRun, inS2: boolean): EventEntry {
+function newEntry(scraped: ScrapedEvent, index: SourceIndex, run: ScrapeRun): EventEntry {
   const source_levels: Record<string, SourceLevel> = {};
-  if (run.s1?.events.some((e) => e.name === scraped.name)) {
-    source_levels.S1 = { category: scraped.category, level: scraped.level };
-  }
-  if (inS2) {
-    source_levels.S2 = { category: scraped.category, level: scraped.level };
+  for (const [id, byName] of index) {
+    const stated = byName.get(scraped.name);
+    if (stated) source_levels[id] = { category: stated.category, level: stated.level };
   }
 
   return {
@@ -762,23 +773,18 @@ function newEntry(scraped: ScrapedEvent, run: ScrapeRun, inS2: boolean): EventEn
 function refreshSources(existing: EventsJson, run: ScrapeRun): Record<string, SourceMeta> {
   const sources = { ...existing.sources };
 
-  if (run.s1) {
-    sources.S1 = {
-      ...sources.S1,
-      name: sources.S1?.name ?? 'Salesforce Developer Docs',
-      type: sources.S1?.type ?? 'official',
-      last_checked: run.today,
-      doc_version: run.s1.docVersion,
-      api_version: run.s1.apiVersion,
-      event_count: run.s1.events.length,
-    };
-  }
+  // Spread the stored entry so its key order survives, falling back only when absent
+  sources.S1 = {
+    ...(sources.S1 ?? { name: 'Salesforce Developer Docs', type: 'official' }),
+    last_checked: run.today,
+    doc_version: run.s1.version.doc_version,
+    api_version: run.s1.version.release_version,
+    event_count: run.s1.events.length,
+  };
 
   if (run.s2) {
     sources.S2 = {
-      ...sources.S2,
-      name: sources.S2?.name ?? 'Salesforce Help',
-      type: sources.S2?.type ?? 'official',
+      ...(sources.S2 ?? { name: 'Salesforce Help', type: 'official' }),
       last_checked: run.today,
       release: run.s2.release,
       event_count: run.s2.events.length,
@@ -789,40 +795,41 @@ function refreshSources(existing: EventsJson, run: ScrapeRun): Record<string, So
 }
 
 function mergeEvents(existing: EventsJson, run: ScrapeRun): MergeResult {
+  const index = indexSources(run);
+  const inS1 = index.get('S1');
   const changed: string[] = [];
   const notInS1: string[] = [];
 
   const events = existing.events.map((entry) => {
-    if (run.s1 && !run.s1.events.some((e) => e.name === entry.event)) {
-      if (entry.sources.includes('S1')) notInS1.push(entry.event);
+    if (entry.sources.includes('S1') && !inS1?.has(entry.event)) {
+      notInS1.push(entry.event);
     }
-    const refreshed = refreshEntry(entry, run);
+    const refreshed = refreshEntry(entry, index, run.today);
     if (refreshed.changed) changed.push(entry.event);
     return refreshed.entry;
   });
 
   const known = new Set(existing.events.map((e) => e.event));
-  const s2Names = new Set(run.s2?.events.map((e) => e.name) ?? []);
   const added: string[] = [];
 
-  for (const scraped of [...(run.s1?.events ?? []), ...(run.s2?.events ?? [])]) {
-    if (known.has(scraped.name)) continue;
-    known.add(scraped.name);
-    events.push(newEntry(scraped, run, s2Names.has(scraped.name)));
-    added.push(scraped.name);
+  for (const byName of index.values()) {
+    for (const scraped of byName.values()) {
+      if (known.has(scraped.name)) continue;
+      known.add(scraped.name);
+      events.push(newEntry(scraped, index, run));
+      added.push(scraped.name);
+    }
   }
 
   events.sort((a, b) => a.event.localeCompare(b.event));
 
   const contentChanged = added.length > 0 || changed.length > 0;
-  const releasesChanged =
-    Object.keys(run.releases).length !== Object.keys(existing.releases).length;
 
   return {
     data: {
       ...existing,
       version: contentChanged ? bumpPatch(existing.version) : existing.version,
-      last_updated: contentChanged || releasesChanged ? run.today : existing.last_updated,
+      last_updated: contentChanged || run.releasesChanged ? run.today : existing.last_updated,
       sources: refreshSources(existing, run),
       releases: run.releases,
       events,
@@ -1029,40 +1036,46 @@ async function main(): Promise<void> {
     throw new Error(`--api-version must be a number, got "${requested}"`);
   }
 
-  const metadata = await fetchS1Metadata();
-  const version = pickDocVersion(metadata, requested);
-  console.log(`Scraping ${version.version_text}, doc version ${version.doc_version}`);
-
-  const s1Events = await fetchS1Events(version.doc_version);
-  console.log(`  S1: ${s1Events.length} events`);
-
-  // S2 is a cross-check, so a failure there is reported and does not stop the run.
-  const s2 = await (async () => {
-    const release = await fetchS2Release();
-    return { release, events: await fetchS2Events(release) };
-  })().catch((err: Error) => {
-    console.warn(`  S2 scrape failed: ${err.message}`);
-    return null;
-  });
-  if (s2) console.log(`  S2: ${s2.events.length} events, release ${s2.release}`);
-
-  if (s2) reportDisagreements(crossCheck(s1Events, s2.events));
-
   const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../data');
   const jsonPath = join(dataDir, 'salesforce-debug-log-events.json');
   const mdPath = join(dataDir, 'salesforce-debug-log-events.md');
   const existing = JSON.parse(readFileSync(jsonPath, 'utf-8')) as EventsJson;
+  const vocab = vocabulary(existing);
+
+  // The two sources are independent, so start S2 before awaiting S1
+  const s2Fetch = fetchS2();
+
+  const metadata = await fetchS1Metadata();
+  const version = pickDocVersion(metadata, requested);
+  console.log(`Scraping ${version.version_text}, doc version ${version.doc_version}`);
+
+  const s1Events = parseEventTable(
+    await fetchS1Content(version.doc_version),
+    `S1 ${version.doc_version}`,
+    vocab,
+  );
+  console.log(`  S1: ${s1Events.length} events`);
+
+  const fetched = await s2Fetch;
+  const s2 = fetched
+    ? {
+        release: fetched.release,
+        events: parseEventTable(fetched.html, `S2 ${fetched.release}`, vocab),
+      }
+    : null;
+
+  if (s2) {
+    console.log(`  S2: ${s2.events.length} events, release ${s2.release}`);
+    reportDisagreements(crossCheck(s1Events, s2.events));
+  }
 
   const release = resolveRelease(version, existing.releases);
   const { data, added, changed, notInS1 } = mergeEvents(existing, {
     today: today(),
     releaseKey: release.key,
     releases: release.releases,
-    s1: {
-      docVersion: version.doc_version,
-      apiVersion: version.release_version,
-      events: s1Events,
-    },
+    releasesChanged: release.changed,
+    s1: { version, events: s1Events },
     s2,
   });
 
@@ -1088,19 +1101,17 @@ async function main(): Promise<void> {
 
 // Guarded so the module can be imported by tests without running a scrape
 if (argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((err: Error) => {
-    console.error(err.message);
+  main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err));
     exit(1);
   });
 }
 
-export type { DocVersion, EventsJson, S1Metadata, ScrapedEvent, ScrapeRun };
+export type { DocVersion, EventsJson, S1Metadata, ScrapedEvent, ScrapeRun, Vocabulary };
 export {
   articleHtml,
   articleRecord,
-  bumpPatch,
   crossCheck,
-  generateMarkdown,
   mergeEvents,
   parseEventTable,
   pickDocVersion,
@@ -1108,4 +1119,5 @@ export {
   releaseIdentity,
   resolveRelease,
   squeezeRow,
+  vocabulary,
 };
