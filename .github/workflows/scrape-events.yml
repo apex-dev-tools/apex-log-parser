@@ -2,18 +2,21 @@ name: Scrape Debug Log Events
 
 on:
   schedule:
-    # 1st of each month at 09:00 UTC
-    - cron: '0 9 1 * *'
+    # The month after each Salesforce release, so the docs have turned over
+    - cron: '0 9 1 3,7,11 *'
   workflow_dispatch:
     inputs:
       api_version:
-        description: 'Salesforce API version (e.g. 66)'
+        description: 'Salesforce API version (e.g. 67). Leave empty for the current GA release.'
         required: false
-        default: '66'
 
 # Least-privilege default; the scrape job is elevated to open a PR.
 permissions:
   contents: read
+
+env:
+  # Reused so the seed step and the PR step cannot drift apart
+  BRANCH: auto/scrape-debug-log-events
 
 jobs:
   scrape:
@@ -27,24 +30,46 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # Needed so the seed step below can read the open PR branch
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browser
-        run: pnpm scrape:install
+      # Build on the open PR when one is unmerged, so a missed merge does not
+      # relabel release_added or discard hand-curated descriptions and notes.
+      - name: Seed from the open PR branch
+        run: |
+          if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+            echo "Seeding data/ from origin/$BRANCH"
+            git checkout "origin/$BRANCH" -- data/
+          else
+            echo "No open branch; starting from the base branch"
+          fi
 
       - name: Run scraper
         # Pass the dispatch input via env (not inline ${{ }}) to avoid shell injection.
         env:
-          API_VERSION: ${{ github.event.inputs.api_version || '66' }}
-        run: pnpm scrape -- --api-version="$API_VERSION"
+          API_VERSION: ${{ github.event.inputs.api_version }}
+        run: |
+          if [ -n "$API_VERSION" ]; then
+            pnpm scrape -- --api-version="$API_VERSION" | tee scrape.log
+          else
+            pnpm scrape | tee scrape.log
+          fi
+
+      - name: Validate the event database
+        run: pnpm run validate:data
+
+      # A new event needs a class in src/, so catch a red PR before opening it
+      - name: Verify the package still builds and tests
+        run: pnpm run ci
 
       - name: Check for changes
         id: diff
@@ -55,21 +80,38 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create pull request
+      - name: Write the report
+        env:
+          CHANGED: ${{ steps.diff.outputs.changed }}
+        run: |
+          {
+            echo 'Automated update of the debug log event database from the two official'
+            echo 'Salesforce sources. Both are read over plain HTTP; see `scripts/scraper.md`.'
+            echo
+            echo "Data changed: \`$CHANGED\`"
+            echo
+            echo '<details><summary>Scraper output</summary>'
+            echo
+            echo '```'
+            cat scrape.log
+            echo '```'
+            echo
+            echo '</details>'
+            echo
+            echo 'A source disagreement is expected: the developer docs lead the Help site.'
+            echo 'Check any new or removed event, and any category or level that moved.'
+          } > pr-body.md
+          cat pr-body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update the pull request
         if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore(data): update debug log events'
-          branch: auto/scrape-debug-log-events
+          branch: ${{ env.BRANCH }}
           title: 'chore(data): update debug log events [auto]'
-          body: |
-            Automated update of `data/salesforce-debug-log-events.json` and `data/salesforce-debug-log-events.md` from official Salesforce documentation.
-
-            Sources scraped:
-            - S1: Salesforce Developer Docs (REST API)
-            - S2: Salesforce Help (Playwright)
-
-            Review the diff carefully before merging, especially any new or removed events.
+          body-path: pr-body.md
           labels: automated,data
           delete-branch: true
+          add-paths: data/
