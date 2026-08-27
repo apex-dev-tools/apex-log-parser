@@ -50,6 +50,12 @@
     }
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!**/data/**/*.json"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/data/**/*.json",
+      "!**/scripts/__fixtures__"
+    ]
   }
 }

@@ -1,0 +1,30 @@
+{
+  "actions": [
+    {
+      "state": "SUCCESS",
+      "returnValue": {
+        "returnValue": {
+          "release-notes": "264.0.0",
+          "sf": "254.9.0",
+          "sfdo": "262.0.0",
+          "ind": "262.0.0",
+          "cc": "262.0.0",
+          "sales": "262.0.0",
+          "ai": "262.0.0",
+          "analytics": "262.0.0",
+          "c360": "220.21.0",
+          "xcloud": "262.0.0",
+          "data": "262.0.0",
+          "einstein": "220.21.0",
+          "experience": "262.0.0",
+          "platform": "262.0.0",
+          "slack": "262.0.0",
+          "service": "262.0.0",
+          "mktg": "262.0.0",
+          "commerce": "262.0.0"
+        },
+        "cacheable": true
+      }
+    }
+  ]
+}
