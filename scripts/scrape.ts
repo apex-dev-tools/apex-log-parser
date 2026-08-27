@@ -727,8 +727,9 @@ function refreshEntry(
     if (!candidate.sources.includes(id)) {
       candidate.sources = [...candidate.sources, id].sort();
     }
-    // S1 is the authority on whether Salesforce documents an event
-    if (id === 'S1') candidate.official = true;
+    // The index holds only official sources, and the schema defines `official` as
+    // "appears in official Salesforce documentation (S1 or S2)"
+    candidate.official = true;
     // Only fill description/fields if currently empty, to preserve manual curation
     if (!candidate.description && scraped.description) {
       candidate.description = scraped.description;
@@ -796,12 +797,12 @@ function refreshSources(existing: EventsJson, run: ScrapeRun): Record<string, So
 
 function mergeEvents(existing: EventsJson, run: ScrapeRun): MergeResult {
   const index = indexSources(run);
-  const inS1 = index.get('S1');
+  const inS1 = index.get('S1') ?? new Map<string, ScrapedEvent>();
   const changed: string[] = [];
   const notInS1: string[] = [];
 
   const events = existing.events.map((entry) => {
-    if (entry.sources.includes('S1') && !inS1?.has(entry.event)) {
+    if (entry.sources.includes('S1') && !inS1.has(entry.event)) {
       notInS1.push(entry.event);
     }
     const refreshed = refreshEntry(entry, index, run.today);
@@ -809,16 +810,16 @@ function mergeEvents(existing: EventsJson, run: ScrapeRun): MergeResult {
     return refreshed.entry;
   });
 
+  // Only S1 introduces an event. The Help site lags it and is a cross-check, so an
+  // S2-only name is reported by crossCheck for a human, never added as official.
   const known = new Set(existing.events.map((e) => e.event));
   const added: string[] = [];
 
-  for (const byName of index.values()) {
-    for (const scraped of byName.values()) {
-      if (known.has(scraped.name)) continue;
-      known.add(scraped.name);
-      events.push(newEntry(scraped, index, run));
-      added.push(scraped.name);
-    }
+  for (const scraped of inS1.values()) {
+    if (known.has(scraped.name)) continue;
+    known.add(scraped.name);
+    events.push(newEntry(scraped, index, run));
+    added.push(scraped.name);
   }
 
   events.sort((a, b) => a.event.localeCompare(b.event));

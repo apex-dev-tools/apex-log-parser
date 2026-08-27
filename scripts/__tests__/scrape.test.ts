@@ -380,6 +380,24 @@ describe('mergeEvents', () => {
     expect(notInS1).toContain('BULK_HEAP_ALLOCATE');
   });
 
+  it('never appends an event only the help site lists', () => {
+    // S2 lags S1, so a name there and not here is a cross-check signal, not an event
+    const ghost: ScrapedEvent = {
+      name: 'ZZZ_HELP_ONLY_EVENT',
+      category: 'DB',
+      level: 'INFO',
+      description: 'Only on the help site',
+      fields: ['Only on the help site'],
+    };
+    const { data, added } = mergeEvents(database, {
+      ...run,
+      s2: { release: '262.0.0', events: [...s2Events, ghost] },
+    });
+
+    expect(added).toEqual([]);
+    expect(data.events.find((e) => e.event === 'ZZZ_HELP_ONLY_EVENT')).toBeUndefined();
+  });
+
   it('leaves the S2 check date stale when the help site could not be read', () => {
     // A stale date is the signal that this run did not reach that source
     const { data } = mergeEvents(database, { ...run, s2: null });
