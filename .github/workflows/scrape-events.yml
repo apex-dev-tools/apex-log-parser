@@ -58,18 +58,24 @@ jobs:
         env:
           API_VERSION: ${{ github.event.inputs.api_version }}
         run: |
+          # pipefail, or tee's success would mask a failed scrape and the job would
+          # go green having changed nothing — the exact silent success being removed
+          set -o pipefail
           if [ -n "$API_VERSION" ]; then
             pnpm scrape -- --api-version="$API_VERSION" | tee scrape.log
           else
             pnpm scrape | tee scrape.log
           fi
 
+      # Both gates record their outcome and keep going, so the report below still
+      # reaches the run summary. The last step re-raises either failure.
+      # A new event needs a class in src/, so pnpm run ci goes red exactly when the
+      # scrape found something worth a PR — the most valuable run of this job.
       - name: Validate the event database
+        id: validate
+        continue-on-error: true
         run: pnpm run validate:data
 
-      # A new event needs a class in src/, so pnpm run ci goes red exactly when the
-      # scrape found something worth a PR. Record the outcome and keep going, or the
-      # most valuable run of this job would discard its own result.
       - name: Lint, typecheck and test
         id: verify
         continue-on-error: true
@@ -87,14 +93,20 @@ jobs:
       - name: Write the report
         env:
           CHANGED: ${{ steps.diff.outputs.changed }}
+          VALIDATE: ${{ steps.validate.outcome }}
           VERIFY: ${{ steps.verify.outcome }}
         run: |
           {
             echo 'Automated update of the debug log event database from the two official'
             echo 'Salesforce sources. Both are read over plain HTTP; see `scripts/scraper.md`.'
             echo
-            echo "Data changed: \`$CHANGED\`  ·  \`pnpm run ci\`: \`$VERIFY\`"
+            echo "Data changed: \`$CHANGED\`  ·  \`pnpm run ci\`: \`$VERIFY\`  ·  schema: \`$VALIDATE\`"
             echo
+            if [ "$VALIDATE" != 'success' ]; then
+              echo '> `pnpm run validate:data` is red, so the file does not match its schema.'
+              echo '> Fix `data/salesforce-debug-log-events.schema.json` or the scraper before merging.'
+              echo
+            fi
             if [ "$VERIFY" != 'success' ]; then
               echo '> `pnpm run ci` is red. A newly documented event needs a class in `src/`'
               echo '> — see "Adding an event type" in `AGENTS.md`. Fix that on this branch.'
@@ -126,9 +138,13 @@ jobs:
           delete-branch: true
           add-paths: data/
 
-      # Re-raise now the PR exists, so the failure is still visible on the run
+      # Re-raise now the report and the PR exist, so the failure stays visible
       - name: Fail if the checks did not pass
-        if: steps.verify.outcome != 'success'
+        if: steps.validate.outcome != 'success' || steps.verify.outcome != 'success'
+        env:
+          VALIDATE: ${{ steps.validate.outcome }}
+          VERIFY: ${{ steps.verify.outcome }}
         run: |
-          echo '::error::pnpm run ci failed; see the pull request for what the scrape found'
+          [ "$VALIDATE" = 'success' ] || echo '::error::pnpm run validate:data failed; the event database does not match its schema'
+          [ "$VERIFY" = 'success' ] || echo '::error::pnpm run ci failed; see the pull request for what the scrape found'
           exit 1
