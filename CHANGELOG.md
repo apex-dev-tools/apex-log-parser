@@ -13,6 +13,10 @@
 - A scrape reports, without overwriting, any event whose documented category or level has
   moved away from the recorded one, and refuses to rewrite the database from a release older
   than the one it holds.
+- The scrape workflow declares what runs; `scripts/ci/` decides what happens. The scraper
+  writes a run record, so the pull request body is rendered from data instead of pasted from
+  stdout, and the job's logic is covered by tests. `pnpm run ci` now typechecks `scripts/`.
+- The workflow is callable with `workflow_call`. See `.github/workflows/README.md`.
 - No change to the published package: `data/` is not shipped.
 
 ## 0.1.0
