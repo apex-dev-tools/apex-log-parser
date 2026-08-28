@@ -40,93 +40,141 @@ function failed(gates: Gates): (keyof Gates)[] {
   return (Object.keys(gates) as (keyof Gates)[]).filter((k) => gates[k] !== 'success');
 }
 
-function list(heading: string, items: string[]): string[] {
-  if (items.length === 0) return [];
-  return [`**${heading}** (${items.length})`, '', ...items.map((i) => `- ${i}`), ''];
+const SOURCE_NAME = { S1: 'the developer docs', S2: 'the Help article' } as const;
+
+function sourceName(id: string): string {
+  return SOURCE_NAME[id as keyof typeof SOURCE_NAME] ?? id;
 }
 
-function describeDisagreements(report: ScrapeReport): string[] {
-  if (report.s2Count === null)
-    return ['The Help site could not be read, so nothing was compared.', ''];
-  if (report.disagreements.length === 0) return ['Both sources state the same events.', ''];
+/**
+ * Everything a reader has to act on, in the words of the action to take.
+ *
+ * A scrape never overwrites a curated `category` or `level`, and it cannot know
+ * whether an event has left the documentation for good, so both are decisions
+ * rather than results.
+ */
+function decisions(report: ScrapeReport, gates: Gates): string[] {
+  const items = failed(gates).map((gate) => GATE_ADVICE[gate]);
 
-  const lines = [`**Source disagreement** (${report.disagreements.length})`, ''];
-  for (const d of report.disagreements) {
-    switch (d.reason) {
-      case 'only-in-s1':
-        lines.push(`- only in the developer docs: \`${d.event}\``);
-        break;
-      case 'only-in-s2':
-        lines.push(`- only on the Help site: \`${d.event}\``);
-        break;
-      default:
-        lines.push(`- \`${d.event}\` ${d.reason}: docs say ${d.s1}, Help says ${d.s2}`);
-    }
+  for (const event of report.notInS1) {
+    items.push(
+      `\`${event}\` is recorded against the developer docs but is no longer listed there. ` +
+        'Check whether Salesforce removed it, and set `release_deprecated` if so.',
+    );
   }
-  lines.push('');
-  lines.push('The developer docs lead the Help site, so names only in the docs are expected.');
-  lines.push('');
-  return lines;
+
+  for (const r of report.restated) {
+    items.push(
+      `\`${r.event}\` ${r.field}: recorded as ${r.stored} here, but now ${r.scraped} in ` +
+        `${sourceName(r.source)}. The scrape left the recorded value alone — decide which is right.`,
+    );
+  }
+
+  return items;
+}
+
+function changes(report: ScrapeReport): string[] {
+  const version =
+    report.versionBefore === report.versionAfter
+      ? `${report.versionBefore} (unchanged)`
+      : `${report.versionBefore} → ${report.versionAfter}`;
+
+  const added =
+    report.added.length === 0
+      ? 'none'
+      : `${report.added.length}, tagged for release \`${report.releaseKey}\` — ` +
+        report.added.map((e) => `\`${e}\``).join(', ');
+
+  return [
+    '## Changes to `data/`',
+    '',
+    '| | |',
+    '| --- | --- |',
+    `| Database version | ${version} |`,
+    `| New events | ${added} |`,
+    `| Events with a changed category or level | ${report.changed.length || 'none'} |`,
+    '',
+  ];
+}
+
+function sources(report: ScrapeReport): string[] {
+  return [
+    '## Sources read',
+    '',
+    '| Source | Version | Events listed |',
+    '| --- | --- | --- |',
+    `| Developer docs | doc ${report.docVersion}, API ${report.apiVersion} | ${report.s1Count} |`,
+    report.s2Count === null
+      ? '| Help article | not read on this run | — |'
+      : `| Help article | ${report.s2Release} | ${report.s2Count} |`,
+    '',
+  ];
+}
+
+/**
+ * The standing difference between the two sources, folded away.
+ *
+ * Salesforce documents a new event in the developer docs first, so a handful of
+ * names sit in one list and not the other for a release or two. That is expected
+ * and permanent, and left in the open it buries everything worth reading.
+ */
+function differences(report: ScrapeReport): string[] {
+  if (report.s2Count === null) {
+    return ['The Help article could not be read, so the two sources were not compared.', ''];
+  }
+  if (report.disagreements.length === 0) return ['Both sources list the same events.', ''];
+
+  const group = (heading: string, items: string[]): string[] =>
+    items.length === 0 ? [] : [`**${heading} (${items.length})**`, '', ...items, ''];
+
+  const onlyIn = (reason: 'only-in-s1' | 'only-in-s2'): string[] =>
+    report.disagreements.filter((d) => d.reason === reason).map((d) => `- \`${d.event}\``);
+
+  // flatMap, so the reason narrows to the variant that carries both readings
+  const moved = report.disagreements.flatMap((d) =>
+    d.reason === 'category' || d.reason === 'level'
+      ? [`- \`${d.event}\` ${d.reason}: developer docs ${d.s1}, Help article ${d.s2}`]
+      : [],
+  );
+
+  return [
+    '<details>',
+    `<summary>The two sources differ on ${report.disagreements.length} events</summary>`,
+    '',
+    'Salesforce documents a new event in the developer docs first; the Help article catches',
+    'up a release or two later. A difference here is expected and needs no action. It is',
+    'listed so that an event genuinely withdrawn, or a level that genuinely moved, is not',
+    'missed.',
+    '',
+    ...group('Only in the developer docs', onlyIn('only-in-s1')),
+    ...group('Only in the Help article', onlyIn('only-in-s2')),
+    ...group('Different category or level', moved),
+    '</details>',
+    '',
+  ];
 }
 
 /** Pure, so the body a run would open can be asserted offline. */
 export function renderReport(report: ScrapeReport, gates: Gates): string {
+  const needed = decisions(report, gates);
+
   const lines = [
-    'Automated update of the debug log event database from the two official Salesforce',
-    'sources, both read over plain HTTP. See `scripts/scraper.md`.',
-    '',
-    `Data changed: \`${report.dataChanged}\` · \`pnpm run ci\`: \`${gates.verify}\`` +
-      ` · schema: \`${gates.validate}\``,
+    'Automated refresh of the debug log event database, read from both official Salesforce',
+    'sources over plain HTTP. See `scripts/scraper.md`.',
     '',
   ];
 
-  for (const gate of failed(gates)) {
-    lines.push(`> ${GATE_ADVICE[gate]}`, '');
+  if (needed.length === 0) {
+    lines.push('**Nothing here needs a decision** — routine refresh.', '');
+  } else {
+    lines.push('## Needs a decision', '', ...needed.map((item) => `- ${item}`), '');
   }
 
-  lines.push('## Sources', '');
-  lines.push(
-    `- Developer docs: doc version ${report.docVersion}, API ${report.apiVersion},` +
-      ` ${report.s1Count} events`,
-  );
-  lines.push(
-    report.s2Count === null
-      ? '- Help site: not read on this run'
-      : `- Help site: release ${report.s2Release}, ${report.s2Count} events`,
-  );
-  lines.push('');
-
-  lines.push('## Result', '');
-  lines.push(`- Database version: ${report.versionBefore} → ${report.versionAfter}`);
-  lines.push(`- Release for a new event: \`${report.releaseKey}\``);
-  lines.push(`- Events with a changed fact: ${report.changed.length}`);
-  lines.push('');
-
-  lines.push(
-    ...list(
-      'New events',
-      report.added.map((e) => `\`${e}\``),
-    ),
-  );
-  lines.push(
-    ...list(
-      'Recorded against the developer docs but no longer listed there',
-      report.notInS1.map((e) => `\`${e}\``),
-    ),
-  );
-  lines.push(
-    ...list(
-      'A source moved against a curated category or level',
-      report.restated.map(
-        (r) => `\`${r.event}\` ${r.field}: recorded ${r.stored}, ${r.source} now says ${r.scraped}`,
-      ),
-    ),
-  );
-  if (report.restated.length > 0) {
-    lines.push('Those two fields are not overwritten by a scrape. Decide each one by hand.', '');
-  }
-
-  lines.push(...describeDisagreements(report));
+  lines.push(...changes(report));
+  lines.push(...sources(report));
+  lines.push(...differences(report));
+  lines.push('---', '');
+  lines.push(`Checks — tests: \`${gates.verify}\` · schema: \`${gates.validate}\``);
 
   // Every block ends with one blank line and none is ever pushed empty, so the
   // joined text needs no blank-run cleanup — only the trailing one removed

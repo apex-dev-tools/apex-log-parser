@@ -37,6 +37,7 @@ request body and the job summary from that record, so no step parses stdout.
 | `delete-branch: true` | Deletes only after merge or close, so the next run starts clean. |
 | Two gates recorded, not fatal | `pnpm run ci` goes red exactly when the scrape found a new event, which is the run most worth a pull request. |
 | Failure raised last | The report and the pull request exist first, so the evidence survives. |
+| Pull request only from the default branch | `create-pull-request` cuts its branch from the ref the workflow ran on. Cut from anywhere else, the pull request's merge base is wrong and its diff replays that branch. |
 | Inputs reach scripts as env | Never interpolated into a shell. |
 | `permissions` at job level | Least privilege by default; only this job may write. |
 
