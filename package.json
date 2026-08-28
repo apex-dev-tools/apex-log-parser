@@ -21,20 +21,24 @@
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "ci": "biome check . && tsc --noEmit && vitest run",
+    "ci": "biome check . && tsc --noEmit && tsc -p tsconfig.scripts.json && vitest run",
     "version:packages": "changeset version && biome check --write package.json",
     "prepublishOnly": "pnpm run build",
     "scrape": "tsx scripts/scrape.ts",
-    "validate:data": "tsx scripts/validate-data.ts"
+    "validate:data": "tsx scripts/validate-data.ts",
+    "ci:seed": "tsx scripts/ci/seed.ts",
+    "ci:report": "tsx scripts/ci/report.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
     "@changesets/cli": "^3.0.1",
+    "@types/node": "^26.4.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "node-html-parser": "^9.0.1",

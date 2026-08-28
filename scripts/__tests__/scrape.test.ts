@@ -1,11 +1,19 @@
-import database from '../../data/salesforce-debug-log-events.json' with { type: 'json' };
+import databaseJson from '../../data/salesforce-debug-log-events.json' with { type: 'json' };
 import s1Content from '../__fixtures__/s1-content-262.0.json' with { type: 'json' };
 import s1Metadata from '../__fixtures__/s1-metadata.json' with { type: 'json' };
-import s2Article from '../__fixtures__/s2-article-262.0.0.json' with { type: 'json' };
-import type { DocVersion, S1Metadata, ScrapedEvent, ScrapeRun } from '../scrape.js';
+import s2ArticleJson from '../__fixtures__/s2-article-262.0.0.json' with { type: 'json' };
+import type {
+  DocVersion,
+  EventsJson,
+  ReportInput,
+  S1Metadata,
+  ScrapedEvent,
+  ScrapeRun,
+} from '../scrape.js';
 import {
   articleHtml,
   articleRecord,
+  buildReport,
   checkNotOlder,
   crossCheck,
   mergeEvents,
@@ -18,8 +26,17 @@ import {
   vocabulary,
 } from '../scrape.js';
 
+// A JSON literal's inferred type cannot satisfy an index signature under
+// noUncheckedIndexedAccess, so state the shape once here
+const database = databaseJson as unknown as EventsJson;
+
 const vocab = vocabulary(database);
-const s2Record = s2Article.actions[0]!.returnValue.returnValue.record as Record<string, unknown>;
+// The captured payload is deeply optional to TypeScript; state the one path the
+// tests read
+const s2Article = s2ArticleJson as unknown as {
+  actions: { returnValue: { returnValue: { record: Record<string, unknown> } } }[];
+};
+const s2Record = s2Article.actions[0]!.returnValue.returnValue.record;
 
 const s1Events = parseEventTable(s1Content.content, 'S1', vocab);
 const s2Events = parseEventTable(articleHtml(s2Record, 'S2'), 'S2', vocab);
@@ -446,5 +463,49 @@ describe('checkNotOlder', () => {
 
   it('yields to an explicit override', () => {
     expect(() => checkNotOlder(at('66.0'), database, true)).not.toThrow();
+  });
+});
+
+describe('buildReport', () => {
+  const input: ReportInput = {
+    version: s1Metadata.version,
+    releaseKey: 'summer-26',
+    s1Count: 185,
+    s2: { release: '262.0.0', events: s2Events },
+    disagreements: [{ event: 'ONLY_DOCS', reason: 'only-in-s1' }],
+    versionBefore: '3.0.2',
+    versionAfter: '3.0.3',
+    dataChanged: true,
+    merge: { added: ['ZZZ_NEW'], changed: ['SOQL_EXECUTE_BEGIN'], notInS1: [], restated: [] },
+  };
+
+  it('states what only the scrape knows, and passes the merge lists through', () => {
+    expect(buildReport(input)).toEqual({
+      docVersion: '262.0',
+      apiVersion: '67.0',
+      releaseKey: 'summer-26',
+      s2Release: '262.0.0',
+      s1Count: 185,
+      s2Count: 179,
+      versionBefore: '3.0.2',
+      versionAfter: '3.0.3',
+      dataChanged: true,
+      added: ['ZZZ_NEW'],
+      changed: ['SOQL_EXECUTE_BEGIN'],
+      notInS1: [],
+      restated: [],
+      disagreements: [{ event: 'ONLY_DOCS', reason: 'only-in-s1' }],
+    });
+  });
+
+  it('reports the help site as absent rather than as zero events', () => {
+    const report = buildReport({ ...input, s2: null });
+    expect(report.s2Release).toBeNull();
+    expect(report.s2Count).toBeNull();
+  });
+
+  it('reports no change when nothing was written, even with a release added', () => {
+    const report = buildReport({ ...input, dataChanged: false });
+    expect(report.dataChanged).toBe(false);
   });
 });

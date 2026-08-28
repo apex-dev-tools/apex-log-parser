@@ -2,21 +2,33 @@ name: Scrape Debug Log Events
 
 on:
   schedule:
-    # The month after each Salesforce release, so the docs have turned over
     - cron: '0 9 1 3,7,11 *'
   workflow_dispatch:
     inputs:
       api_version:
-        description: 'Salesforce API version (e.g. 67). Leave empty for the current GA release.'
+        description: 'Salesforce API version (e.g. 67). Empty means the current GA release.'
         required: false
+        type: string
+  workflow_call:
+    inputs:
+      api_version:
+        description: 'Salesforce API version. Empty means the current GA release.'
+        required: false
+        type: string
+      branch:
+        description: 'Branch the automation opens its pull request on. Empty means auto/scrape-debug-log-events.'
+        required: false
+        type: string
+    outputs:
+      changed:
+        description: 'Whether data/ changed on this run.'
+        value: ${{ jobs.scrape.outputs.changed }}
+      pull_request:
+        description: 'Number of the pull request opened or updated, empty when none.'
+        value: ${{ jobs.scrape.outputs.pull_request }}
 
-# Least-privilege default; the scrape job is elevated to open a PR.
 permissions:
   contents: read
-
-env:
-  # Reused so the seed step and the PR step cannot drift apart
-  BRANCH: auto/scrape-debug-log-events
 
 jobs:
   scrape:
@@ -25,12 +37,17 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      changed: ${{ steps.report.outputs.changed }}
+      pull_request: ${{ steps.pr.outputs.pull-request-number }}
+    env:
+      SEED_BRANCH: ${{ inputs.branch || 'auto/scrape-debug-log-events' }}
+      SCRAPE_API_VERSION: ${{ inputs.api_version }}
 
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # Needed so the seed step below can read the open PR branch
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
@@ -42,35 +59,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Build on the open PR when one is unmerged, so a missed merge does not
-      # relabel release_added or discard hand-curated descriptions and notes.
-      - name: Seed from the open PR branch
-        run: |
-          if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
-            echo "Seeding data/ from origin/$BRANCH"
-            git checkout "origin/$BRANCH" -- data/
-          else
-            echo "No open branch; starting from the base branch"
-          fi
+      - run: pnpm run ci:seed
 
-      - name: Run scraper
-        # Pass the dispatch input via env (not inline ${{ }}) to avoid shell injection.
-        env:
-          API_VERSION: ${{ github.event.inputs.api_version }}
-        run: |
-          # pipefail, or tee's success would mask a failed scrape and the job would
-          # go green having changed nothing — the exact silent success being removed
-          set -o pipefail
-          if [ -n "$API_VERSION" ]; then
-            pnpm scrape -- --api-version="$API_VERSION" | tee scrape.log
-          else
-            pnpm scrape | tee scrape.log
-          fi
+      - run: pnpm scrape -- --report="$RUNNER_TEMP/scrape-run.json"
 
-      # Both gates record their outcome and keep going, so the report below still
-      # reaches the run summary. The last step re-raises either failure.
-      # A new event needs a class in src/, so pnpm run ci goes red exactly when the
-      # scrape found something worth a PR — the most valuable run of this job.
       - name: Validate the event database
         id: validate
         continue-on-error: true
@@ -81,70 +73,27 @@ jobs:
         continue-on-error: true
         run: pnpm run ci
 
-      - name: Check for changes
-        id: diff
-        run: |
-          if git diff --quiet data/; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Write the report
+      - name: Report
+        id: report
         env:
-          CHANGED: ${{ steps.diff.outputs.changed }}
-          VALIDATE: ${{ steps.validate.outcome }}
-          VERIFY: ${{ steps.verify.outcome }}
-        run: |
-          {
-            echo 'Automated update of the debug log event database from the two official'
-            echo 'Salesforce sources. Both are read over plain HTTP; see `scripts/scraper.md`.'
-            echo
-            echo "Data changed: \`$CHANGED\`  ·  \`pnpm run ci\`: \`$VERIFY\`  ·  schema: \`$VALIDATE\`"
-            echo
-            if [ "$VALIDATE" != 'success' ]; then
-              echo '> `pnpm run validate:data` is red, so the file does not match its schema.'
-              echo '> Fix `data/salesforce-debug-log-events.schema.json` or the scraper before merging.'
-              echo
-            fi
-            if [ "$VERIFY" != 'success' ]; then
-              echo '> `pnpm run ci` is red. A newly documented event needs a class in `src/`'
-              echo '> — see "Adding an event type" in `AGENTS.md`. Fix that on this branch.'
-              echo
-            fi
-            echo '<details><summary>Scraper output</summary>'
-            echo
-            echo '```'
-            cat scrape.log
-            echo '```'
-            echo
-            echo '</details>'
-            echo
-            echo 'A source disagreement is expected: the developer docs lead the Help site.'
-            echo 'Check any new or removed event, and any category or level that moved.'
-          } > pr-body.md
-          cat pr-body.md >> "$GITHUB_STEP_SUMMARY"
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: pnpm run ci:report -- --report="$RUNNER_TEMP/scrape-run.json" --out="$RUNNER_TEMP/pr-body.md"
 
       - name: Create or update the pull request
-        if: steps.diff.outputs.changed == 'true'
+        id: pr
+        if: steps.report.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore(data): update debug log events'
-          branch: ${{ env.BRANCH }}
+          branch: ${{ env.SEED_BRANCH }}
           title: 'chore(data): update debug log events [auto]'
-          body-path: pr-body.md
+          body-path: ${{ runner.temp }}/pr-body.md
           labels: automated,data
           delete-branch: true
           add-paths: data/
 
-      # Re-raise now the report and the PR exist, so the failure stays visible
-      - name: Fail if the checks did not pass
-        if: steps.validate.outcome != 'success' || steps.verify.outcome != 'success'
-        env:
-          VALIDATE: ${{ steps.validate.outcome }}
-          VERIFY: ${{ steps.verify.outcome }}
-        run: |
-          [ "$VALIDATE" = 'success' ] || echo '::error::pnpm run validate:data failed; the event database does not match its schema'
-          [ "$VERIFY" = 'success' ] || echo '::error::pnpm run ci failed; see the pull request for what the scrape found'
-          exit 1
+      - name: Raise a recorded failure
+        if: steps.report.outputs.ok != 'true'
+        run: exit 1

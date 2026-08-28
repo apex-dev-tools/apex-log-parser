@@ -33,6 +33,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
       - run: pnpm run typecheck
+      - run: pnpm run typecheck:scripts
       - run: pnpm run test
       # tsdown 0.22 needs Node ^22.18 || >=24.11, but the library itself still supports 20.
       # Lint, typecheck and test cover every version; the bundle only needs building once.

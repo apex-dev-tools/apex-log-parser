@@ -6,17 +6,23 @@
  *   S2 — Salesforce Help, the Aura ApexActionController endpoint
  *
  * Usage:
- *   pnpm scrape                       # current GA release, discovered from Salesforce
- *   pnpm scrape -- --api-version=66   # a published release, validated before any fetch
+ *   pnpm scrape                            # current GA release, discovered from Salesforce
+ *   pnpm scrape -- --api-version=66        # a published release, validated before any fetch
+ *   pnpm scrape -- --allow-older           # permit a release older than the recorded one
+ *   pnpm scrape -- --report=run.json       # also write the run record, for scripts/ci/report.ts
+ *
+ * SCRAPE_API_VERSION is read when --api-version is absent, so a CI input never
+ * reaches a shell.
  *
  * See scripts/scraper.md for the endpoints and their failure modes.
  */
 
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { argv, exit } from 'node:process';
+import { argv, env } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { parse as parseHtml } from 'node-html-parser';
+import { flag, runIfMain } from './cli.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -687,6 +693,63 @@ interface ScrapeRun {
   s2: { release: string; events: ScrapedEvent[] } | null;
 }
 
+/**
+ * What one run found, as data rather than prose.
+ *
+ * The console output is the human view of the same facts. This is the machine
+ * view, so a caller — `scripts/ci/report.ts` — never parses stdout.
+ */
+interface ScrapeReport {
+  docVersion: string;
+  apiVersion: string;
+  releaseKey: string;
+  s2Release: string | null;
+  s1Count: number;
+  s2Count: number | null;
+  versionBefore: string;
+  versionAfter: string;
+  /** Whether either file in data/ actually changed on disk. */
+  dataChanged: boolean;
+  added: string[];
+  changed: string[];
+  notInS1: string[];
+  restated: Restatement[];
+  disagreements: Disagreement[];
+}
+
+/** Everything the report needs that only the scrape itself knows. */
+interface ReportInput {
+  version: DocVersion;
+  releaseKey: string;
+  s1Count: number;
+  s2: { release: string; events: ScrapedEvent[] } | null;
+  disagreements: Disagreement[];
+  versionBefore: string;
+  versionAfter: string;
+  dataChanged: boolean;
+  merge: Pick<MergeResult, 'added' | 'changed' | 'notInS1' | 'restated'>;
+}
+
+/** Pure, so the record a run would emit can be asserted without a scrape. */
+function buildReport(input: ReportInput): ScrapeReport {
+  return {
+    docVersion: input.version.doc_version,
+    apiVersion: input.version.release_version,
+    releaseKey: input.releaseKey,
+    s2Release: input.s2?.release ?? null,
+    s1Count: input.s1Count,
+    s2Count: input.s2?.events.length ?? null,
+    versionBefore: input.versionBefore,
+    versionAfter: input.versionAfter,
+    dataChanged: input.dataChanged,
+    added: input.merge.added,
+    changed: input.merge.changed,
+    notInS1: input.merge.notInS1,
+    restated: input.merge.restated,
+    disagreements: input.disagreements,
+  };
+}
+
 /** Source id to its events by name — one lookup structure for the whole merge. */
 type SourceIndex = Map<string, Map<string, ScrapedEvent>>;
 
@@ -1101,9 +1164,23 @@ function checkNotOlder(version: DocVersion, existing: EventsJson, allowOlder: bo
   );
 }
 
-async function main(): Promise<void> {
+/**
+ * Writes only when the bytes differ, and reports whether they did.
+ *
+ * This is the answer to "is there anything to commit", given by the program that
+ * built the content. The workflow used to ask git the same question instead.
+ */
+function writeIfDifferent(path: string, content: string): boolean {
+  if (existsSync(path) && readFileSync(path, 'utf-8') === content) return false;
+  writeFileSync(path, content);
+  return true;
+}
+
+async function main(): Promise<ScrapeReport> {
   const args = argv.slice(2);
-  const requested = args.find((a) => a.startsWith('--api-version='))?.split('=')[1] ?? null;
+  const reportPath = flag(args, '--report');
+  // An empty value means "current GA", so a CI input can be passed unconditionally
+  const requested = (flag(args, '--api-version') ?? env.SCRAPE_API_VERSION ?? '') || null;
   if (requested !== null && !/^\d+(\.\d+)?$/.test(requested)) {
     throw new Error(`--api-version must be a number, got "${requested}"`);
   }
@@ -1137,9 +1214,10 @@ async function main(): Promise<void> {
       }
     : null;
 
+  const disagreements = s2 ? crossCheck(s1Events, s2.events) : [];
   if (s2) {
     console.log(`  S2: ${s2.events.length} events, release ${s2.release}`);
-    reportDisagreements(crossCheck(s1Events, s2.events));
+    reportDisagreements(disagreements);
   }
 
   const release = resolveRelease(version, existing.releases);
@@ -1152,8 +1230,23 @@ async function main(): Promise<void> {
     s2,
   });
 
-  writeFileSync(jsonPath, `${JSON.stringify(data, null, 2)}\n`);
-  writeFileSync(mdPath, generateMarkdown(data));
+  const jsonWritten = writeIfDifferent(jsonPath, `${JSON.stringify(data, null, 2)}\n`);
+  const mdWritten = writeIfDifferent(mdPath, generateMarkdown(data));
+
+  const report = buildReport({
+    version,
+    releaseKey: release.key,
+    s1Count: s1Events.length,
+    s2,
+    disagreements,
+    versionBefore: existing.version,
+    versionAfter: data.version,
+    dataChanged: jsonWritten || mdWritten,
+    merge: { added, changed, notInS1, restated },
+  });
+  if (reportPath !== null) {
+    writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  }
 
   console.log('\nResults:');
   console.log(`  Version: ${existing.version} → ${data.version}`);
@@ -1176,33 +1269,43 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('\nFiles written:');
+  console.log(`\nFiles ${report.dataChanged ? 'written' : 'already up to date'}:`);
   console.log(`  ${jsonPath}`);
   console.log(`  ${mdPath}`);
+  if (reportPath !== null) console.log(`  ${reportPath}`);
+
+  return report;
 }
 
-// Guarded so the module can be imported by tests without running a scrape.
-// Both sides are realpathed: Node resolves import.meta.url but argv[1] keeps the
-// path as typed, so a symlinked checkout would otherwise make this a silent no-op.
-if (realpathSync(argv[1] ?? '') === realpathSync(fileURLToPath(import.meta.url))) {
-  main().catch((err: unknown) => {
-    console.error(err instanceof Error ? err.message : String(err));
-    exit(1);
-  });
-}
+runIfMain(import.meta.url, main);
 
-export type { DocVersion, EventsJson, S1Metadata, ScrapedEvent, ScrapeRun, Vocabulary };
+export type {
+  Disagreement,
+  DocVersion,
+  EventsJson,
+  ReportInput,
+  Restatement,
+  S1Metadata,
+  ScrapedEvent,
+  ScrapeReport,
+  ScrapeRun,
+  Vocabulary,
+};
 export {
   articleHtml,
   articleRecord,
+  buildReport,
   checkNotOlder,
   crossCheck,
+  generateMarkdown,
   mergeEvents,
   parseEventTable,
   pickDocVersion,
   releaseCovers,
   releaseIdentity,
+  reportDisagreements,
   resolveRelease,
   squeezeRow,
   vocabulary,
+  writeIfDifferent,
 };

@@ -6,3 +6,8 @@ coverage/
 .claude/
 *.tgz
 package/
+
+# Scrape workflow artefacts. biome lints the working tree, so a run record
+# left here would fail the gate it feeds.
+scrape-run.json
+pr-body.md
