@@ -1,5 +1,20 @@
 # @apexdevtools/apex-log-parser
 
+## Unreleased
+
+### Internal
+
+- The event scraper reads both official Salesforce sources over plain HTTP, so Playwright is gone.
+  It discovers the release instead of computing it, treats every silent-success response as a
+  failure, and rewrites the database byte-identically when nothing changed.
+- The shared table parser reads the four `CURSOR_*` rows correctly. The developer docs give them
+  a fifth, empty cell, which shifted every later column; the committed data was already right,
+  so a successful run no longer damages it.
+- A scrape reports, without overwriting, any event whose documented category or level has
+  moved away from the recorded one, and refuses to rewrite the database from a release older
+  than the one it holds.
+- No change to the published package: `data/` is not shipped.
+
 ## 0.1.0
 
 ### Minor Changes

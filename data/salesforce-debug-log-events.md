@@ -1,7 +1,7 @@
 # Salesforce Debug Log Events Reference
 
 **Source:** [Working with Logs in the Developer Console](https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_debugging_system_log_console.htm)
-**Date Extracted:** 2026-04-14
+**Date Extracted:** 2026-08-27
 **Total Events:** 185 (official), 299 (including unofficial)
 
 ## Log Structure

@@ -30,13 +30,14 @@
     "version:packages": "changeset version && biome check --write package.json",
     "prepublishOnly": "pnpm run build",
     "scrape": "tsx scripts/scrape.ts",
-    "scrape:install": "playwright install chromium --with-deps"
+    "validate:data": "tsx scripts/validate-data.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
     "@changesets/cli": "^3.0.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "node-html-parser": "^9.0.1",
-    "playwright": "^1.62.1",
     "tsdown": "^0.22.14",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",

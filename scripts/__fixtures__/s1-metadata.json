@@ -1,0 +1,238 @@
+{
+  "version": {
+    "version_text": "Summer '26 (API version 67.0)",
+    "release_version": "67.0",
+    "doc_version": "262.0",
+    "version_url": "atlas.en-us.apexcode.meta"
+  },
+  "available_versions": [
+    {
+      "version_text": "Winter '27 preview (API version 68.0)",
+      "release_version": "68.0",
+      "doc_version": "264.0",
+      "version_url": "atlas.en-us.264.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '26 (API version 67.0)",
+      "release_version": "67.0",
+      "doc_version": "262.0",
+      "version_url": "atlas.en-us.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '26 (API version 66.0)",
+      "release_version": "66.0",
+      "doc_version": "260.0",
+      "version_url": "atlas.en-us.260.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '26 (API version 65.0)",
+      "release_version": "65.0",
+      "doc_version": "258.0",
+      "version_url": "atlas.en-us.258.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '25 (API version 64.0)",
+      "release_version": "64.0",
+      "doc_version": "256.0",
+      "version_url": "atlas.en-us.256.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '25 (API version 63.0)",
+      "release_version": "63.0",
+      "doc_version": "254.0",
+      "version_url": "atlas.en-us.254.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '25 (API version 62.0)",
+      "release_version": "62.0",
+      "doc_version": "252.0",
+      "version_url": "atlas.en-us.252.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '24 (API version 61.0)",
+      "release_version": "61.0",
+      "doc_version": "250.0",
+      "version_url": "atlas.en-us.250.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '24 (API version 60.0)",
+      "release_version": "60.0",
+      "doc_version": "248.0",
+      "version_url": "atlas.en-us.248.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '24 (API version 59.0)",
+      "release_version": "59.0",
+      "doc_version": "246.0",
+      "version_url": "atlas.en-us.246.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '23 (API version 58.0)",
+      "release_version": "58.0",
+      "doc_version": "244.0",
+      "version_url": "atlas.en-us.244.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '23 (API version 57.0)",
+      "release_version": "57.0",
+      "doc_version": "242.0",
+      "version_url": "atlas.en-us.242.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '23 (API version 56.0)",
+      "release_version": "56.0",
+      "doc_version": "240.0",
+      "version_url": "atlas.en-us.240.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '22 (API version 55.0)",
+      "release_version": "55.0",
+      "doc_version": "238.0",
+      "version_url": "atlas.en-us.238.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '22 (API version 54.0)",
+      "release_version": "54.0",
+      "doc_version": "236.0",
+      "version_url": "atlas.en-us.236.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '22 (API version 53.0)",
+      "release_version": "53.0",
+      "doc_version": "234.0",
+      "version_url": "atlas.en-us.234.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '21 (API version 52.0)",
+      "release_version": "52.0",
+      "doc_version": "232.0",
+      "version_url": "atlas.en-us.232.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '21 (API version 51.0)",
+      "release_version": "51.0",
+      "doc_version": "230.0",
+      "version_url": "atlas.en-us.230.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '21 (API version 50.0)",
+      "release_version": "50.0",
+      "doc_version": "228.0",
+      "version_url": "atlas.en-us.228.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '20 (API version 49.0)",
+      "release_version": "49.0",
+      "doc_version": "226.0",
+      "version_url": "atlas.en-us.226.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '20 (API version 48.0)",
+      "release_version": "48.0",
+      "doc_version": "224.0",
+      "version_url": "atlas.en-us.224.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '20 (API version 47.0)",
+      "release_version": "47.0",
+      "doc_version": "222.0",
+      "version_url": "atlas.en-us.222.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '19 (API version 46.0)",
+      "release_version": "46.0",
+      "doc_version": "220.0",
+      "version_url": "atlas.en-us.220.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '19 (API version 45.0)",
+      "release_version": "45.0",
+      "doc_version": "218.0",
+      "version_url": "atlas.en-us.218.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '19 (API version 44.0)",
+      "release_version": "44.0",
+      "doc_version": "216.0",
+      "version_url": "atlas.en-us.216.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '18 (API version 43.0)",
+      "release_version": "43.0",
+      "doc_version": "214.0",
+      "version_url": "atlas.en-us.214.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '18 (API version 42.0)",
+      "release_version": "42.0",
+      "doc_version": "212.0",
+      "version_url": "atlas.en-us.212.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '18 (API version 41.0)",
+      "release_version": "41.0",
+      "doc_version": "210.0",
+      "version_url": "atlas.en-us.210.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '17 (API version 40.0)",
+      "release_version": "40.0",
+      "doc_version": "208.0",
+      "version_url": "atlas.en-us.208.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '17 (API version 39.0)",
+      "release_version": "39.0",
+      "doc_version": "206.0",
+      "version_url": "atlas.en-us.206.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '17 (API version 38.0)",
+      "release_version": "38.0",
+      "doc_version": "204.0",
+      "version_url": "atlas.en-us.204.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '16 (API version 37.0)",
+      "release_version": "37.0",
+      "doc_version": "202.0",
+      "version_url": "atlas.en-us.202.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '16 (API version 36.0)",
+      "release_version": "36.0",
+      "doc_version": "200.0",
+      "version_url": "atlas.en-us.200.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '16 (API version 35.0)",
+      "release_version": "35.0",
+      "doc_version": "198.0",
+      "version_url": "atlas.en-us.198.0.apexcode.meta"
+    },
+    {
+      "version_text": "Summer '15 (API version 34.0)",
+      "release_version": "34.0",
+      "doc_version": "196.0",
+      "version_url": "atlas.en-us.196.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '15 (API version 33.0)",
+      "release_version": "33.0",
+      "doc_version": "194.0",
+      "version_url": "atlas.en-us.194.0.apexcode.meta"
+    },
+    {
+      "version_text": "Winter '15 (API version 32.0)",
+      "release_version": "32.0",
+      "doc_version": "192.0",
+      "version_url": "atlas.en-us.192.0.apexcode.meta"
+    },
+    {
+      "version_text": "Spring '14 (API version 30.0)",
+      "release_version": "30.0",
+      "doc_version": "188.0",
+      "version_url": "atlas.en-us.188.0.apexcode.meta"
+    }
+  ]
+}

@@ -1,24 +1,31 @@
 {
   "$schema": "./salesforce-debug-log-events.schema.json",
-  "version": "3.0.1",
-  "last_updated": "2026-04-14",
+  "version": "3.0.2",
+  "last_updated": "2026-08-27",
   "sources": {
     "S1": {
       "name": "Salesforce Developer Docs - Debug Log Console",
       "url": "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_debugging_system_log_console.htm",
-      "type": "official"
+      "type": "official",
+      "last_checked": "2026-08-27",
+      "doc_version": "262.0",
+      "api_version": "67.0",
+      "event_count": 185
     },
     "S2": {
       "name": "Salesforce Help - Debug Log Levels",
       "url": "https://help.salesforce.com/s/articleView?id=platform.code_setting_debug_log_levels.htm",
       "type": "official",
-      "notes": "Client-rendered SPA — use Playwright MCP to accept cookies then extract page text content"
+      "notes": "Client-rendered SPA — read via the Aura endpoint over plain HTTP, see scripts/scraper.md",
+      "last_checked": "2026-08-27",
+      "release": "262.0.0",
+      "event_count": 179
     },
     "S3": {
       "name": "Salesforce Debug Level Page",
       "url": "${org_url}/udd/DebugLevel/editDebugLevel.apexp",
       "type": "official",
-      "notes": "Debug level editor page in a Salesforce org — can be read programmatically"
+      "notes": "Debug level editor page in a Salesforce org. Not read by pnpm scrape; needs an org login"
     },
     "S4": {
       "name": "Apex Log Parser (this project)",
@@ -28,13 +35,13 @@
     "S5": {
       "name": "Manual Testing / Observation",
       "type": "manual",
-      "notes": "Events observed in actual debug logs not documented elsewhere"
+      "notes": "Events observed in actual debug logs not documented elsewhere. Not read by pnpm scrape"
     },
     "S6": {
       "name": "FishOfPrey - Debug Log Events Gist",
       "url": "https://gist.github.com/FishOfPrey/9c6b6d3a6d9e0147143b0c54d615a677",
       "type": "community",
-      "notes": "Compiled from SF docs + manual testing (Summer '18 v43.0)"
+      "notes": "Compiled from SF docs + manual testing (Summer '18 v43.0). Not read by pnpm scrape"
     }
   },
   "categories": [
@@ -110,6 +117,11 @@
       "label": "Pre-Summer '26",
       "api_version": "<=63.0",
       "date": "2026-02"
+    },
+    "summer-26": {
+      "label": "Summer '26",
+      "api_version": "67.0",
+      "date": "2026-06"
     }
   },
   "log_levels": [
@@ -649,16 +661,21 @@
       "description": "Line number, code unit name, such as MyTrigger on Account trigger event BeforeInsert for [new], and: For Apex methods, the namespace (if applicable), class name, and method name; for example, YourNamespace.YourClass.yourMethod() or YourClass.yourMethod() For Apex triggers, a typeRef; for example, __sfdc_trigger/YourNamespace.YourTrigger or __sfdc_trigger/YourTrigger",
       "sources": [
         "S1",
+        "S2",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": true,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "ERROR"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "ERROR"
         }
@@ -676,16 +693,21 @@
       "description": "Line number, code unit name, such as MyTrigger on Account trigger event BeforeInsert for [new], and: For Apex methods, the namespace (if applicable), class name, and method name; for example, YourNamespace.YourClass.yourMethod() or YourClass.yourMethod() For Apex triggers, a typeRef; for example, __sfdc_trigger/YourTrigger",
       "sources": [
         "S1",
+        "S2",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": true,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "ERROR"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "ERROR"
         }
@@ -979,17 +1001,22 @@
       "description": "Line number and SOQL query This event occurs when you call Database.getCursor() or Database.getPaginationCursor().",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "DB",
+          "level": "INFO"
+        },
+        "S2": {
           "category": "DB",
           "level": "INFO"
         },
@@ -1011,17 +1038,22 @@
       "description": "Line number, query ID, and number of rows in the result set This event occurs when a cursor or pagination cursor is created.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "DB",
+          "level": "INFO"
+        },
+        "S2": {
           "category": "DB",
           "level": "INFO"
         },
@@ -1044,17 +1076,22 @@
       "description": "Line number, query ID, cursor offset position, and number of rows fetched This event occurs when you call Cursor.fetch().",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "DB",
+          "level": "INFO"
+        },
+        "S2": {
           "category": "DB",
           "level": "INFO"
         },
@@ -1077,17 +1114,22 @@
       "description": "Line number, query ID, cursor offset position, and number of rows on the current page This event occurs when you call PaginationCursor.fetchPage().",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "DB",
+          "level": "INFO"
+        },
+        "S2": {
           "category": "DB",
           "level": "INFO"
         },
@@ -2275,6 +2317,7 @@
       "description": "Incremented usage toward a limit for this bulk element. Each event displays the usage for one of these limits.SOQL queries SOQL query rows SOSL queries DML statements DML rows CPU time in ms Heap size in bytes Callouts Email invocations Future calls Jobs in queue Push notifications",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -2282,11 +2325,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "WORKFLOW",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "WORKFLOW",
           "level": "FINER"
         },
@@ -2680,13 +2727,13 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
           "category": "WORKFLOW",
-          "level": "WARNING"
+          "level": "WARN"
         },
         "S2": {
           "category": "WORKFLOW",
@@ -2712,6 +2759,7 @@
       "description": "Incremented usage toward a limit for this element. Each event displays the usage for one of these limits. SOQL queries SOQL query rows SOSL queries DML statements DML rows CPU time in ms Heap size in bytes Callouts Email invocations Future calls Jobs in queue Push notifications",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -2719,11 +2767,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "WORKFLOW",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "WORKFLOW",
           "level": "FINER"
         },
@@ -2770,17 +2822,22 @@
       "description": "Usage toward a limit when the interview finishes. Each event displays the usage for one of these limits.SOQL queries SOQL query rows SOSL queries DML statements DML rows CPU time in ms Heap size in bytes Callouts Email invocations Future calls Jobs in queue Push notifications",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "WORKFLOW",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "WORKFLOW",
           "level": "FINER"
         },
@@ -2885,6 +2942,7 @@
       "description": "Interview ID, index, and value The index is the position in the collection variable for the item that the loop is operating on.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -2892,11 +2950,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "WORKFLOW",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "WORKFLOW",
           "level": "FINER"
         },
@@ -3086,6 +3148,7 @@
       "description": "Usage toward a limit at the interview’s start time. Each event displays the usage for one of these limits.SOQL queries SOQL query rows SOSL queries DML statements DML rows CPU time in ms Heap size in bytes Callouts Email invocations Future calls Jobs in queue Push notifications",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -3093,11 +3156,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "WORKFLOW",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "WORKFLOW",
           "level": "FINER"
         },
@@ -3979,6 +4046,7 @@
       "description": "Namespace and these limits:Number of SOQL queries Number of query rows Number of SOSL queries Number of DML statements Number of DML rows Number of code statements Maximum heap size Number of callouts Number of Email Invocations Number of fields describes Number of record type describes Number of child relationships describes Number of picklist describes Number of future calls Number of find similar calls Number of System.runAs() invocations",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -3986,11 +4054,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_PROFILING",
+          "level": "FINEST"
+        },
+        "S2": {
           "category": "APEX_PROFILING",
           "level": "FINEST"
         },
@@ -4145,6 +4217,7 @@
       "description": "Line number, the Lightning Platform ID of the class, and method signature (with namespace, if applicable)For constructors, this information is logged: line number and class name.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -4152,11 +4225,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": true,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "FINE"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "FINE"
         },
@@ -4180,17 +4257,22 @@
       "description": "Named Credential Id, Named Credential Name, Endpoint, Method, External Credential Type, Http Header Authorization, Request Size bytes, and Retry on 401.If using an outbound network connection, these fields are also logged: Outbound Network Connection Id, Outbound Network Connection Name, Outbound Network Connection Status, Host Type, Host Region, and Private Connect Outbound Hourly Data Usage Percent.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "CALLOUT",
+          "level": "INFO"
+        },
+        "S2": {
           "category": "CALLOUT",
           "level": "INFO"
         },
@@ -4245,17 +4327,22 @@
       "description": "Named Credential Id, Named Credential Name, Status Code, Response Size bytes, Overall Callout Time ms, and Connect Time ms.If using an outbound network connection, these fields are also logged: Outbound Network Connection Id, Outbound Network Connection Name, and Private Connect Outbound Hourly Data Usage Percent.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "CALLOUT",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "CALLOUT",
           "level": "FINER"
         },
@@ -5104,6 +5191,7 @@
       "description": "App namespace, app name This event occurs when Apex code is trying to send a notification to an app that doesn't exist in the org, or isn’t push-enabled.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -5111,11 +5199,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "ERROR"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "ERROR"
         },
@@ -5141,6 +5233,7 @@
       "description": "App namespace, app name This event indicates that the certificate is invalid. For example, it’s expired.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -5148,11 +5241,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "ERROR"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "ERROR"
         },
@@ -5199,6 +5296,7 @@
       "description": "App namespace, app name, service type (Apple or Android GCM), user ID, device, payload (substring), payload length. This event occurs when a notification payload is too long.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -5206,11 +5304,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "ERROR"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "ERROR"
         },
@@ -5252,6 +5354,7 @@
       "description": "App namespace, app name This event occurs when none of the users we’re trying to send notifications to have devices registered.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -5259,11 +5362,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "DEBUG"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "DEBUG"
         },
@@ -5287,6 +5394,7 @@
       "description": "This event occurs when push notifications aren’t enabled in your org.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -5294,11 +5402,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "INFO"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "INFO"
         },
@@ -5327,6 +5439,7 @@
       "description": "App namespace, app name, service type (Apple or Android GCM), user ID, device, payload (substring) This event records that a notification was accepted for sending. We don’t guarantee delivery of the notification.",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -5334,11 +5447,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_CODE",
+          "level": "DEBUG"
+        },
+        "S2": {
           "category": "APEX_CODE",
           "level": "DEBUG"
         },
@@ -6672,6 +6789,7 @@
       "description": "Frame number and variable list of the form: Variable number | Value. For example:var1:50 var2:'Hello World'",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -6679,11 +6797,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_PROFILING",
+          "level": "FINE"
+        },
+        "S2": {
           "category": "APEX_PROFILING",
           "level": "FINE"
         },
@@ -6747,6 +6869,7 @@
       "description": "Variable list of the form: Variable number | Value. For example:var1:50 var2:'Hello World'",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -6754,11 +6877,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "APEX_PROFILING",
+          "level": "FINE"
+        },
+        "S2": {
           "category": "APEX_PROFILING",
           "level": "FINE"
         },
@@ -10200,16 +10327,21 @@
       "description": "For OData adapters, the POST body and the name and evaluated formula for custom HTTP headers",
       "sources": [
         "S1",
+        "S2",
         "S4"
       ],
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": "Experience Cloud Data Service detail; category/level inferred from S4 (similar to XDS_REQUEST_DETAIL/XDS_RESPONSE_DETAIL)",
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "CALLOUT",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "CALLOUT",
           "level": "FINER"
         }
@@ -10259,6 +10391,7 @@
       "description": "External data source, external object, request details, number of returned records, and system usage",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -10266,11 +10399,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "CALLOUT",
+          "level": "INFO"
+        },
+        "S2": {
           "category": "CALLOUT",
           "level": "INFO"
         },
@@ -10295,6 +10432,7 @@
       "description": "Truncated response from the external system, including returned records",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -10302,11 +10440,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "CALLOUT",
+          "level": "FINER"
+        },
+        "S2": {
           "category": "CALLOUT",
           "level": "FINER"
         },
@@ -10330,6 +10472,7 @@
       "description": "Error message",
       "sources": [
         "S1",
+        "S2",
         "S3",
         "S4",
         "S6"
@@ -10337,11 +10480,15 @@
       "official": true,
       "release_added": "pre-summer-26",
       "release_deprecated": null,
-      "last_verified": "2026-04-14",
+      "last_verified": "2026-08-27",
       "notes": null,
       "truncation_protected": false,
       "source_levels": {
         "S1": {
+          "category": "CALLOUT",
+          "level": "ERROR"
+        },
+        "S2": {
           "category": "CALLOUT",
           "level": "ERROR"
         },
