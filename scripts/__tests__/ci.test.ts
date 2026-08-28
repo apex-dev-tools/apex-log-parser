@@ -121,70 +121,117 @@ describe('actions', () => {
 });
 
 describe('renderReport', () => {
-  it('states both sources and the quiet result', () => {
+  const busy: ScrapeReport = {
+    ...quiet,
+    dataChanged: true,
+    versionAfter: '3.0.3',
+    added: ['ZZZ_NEW'],
+    changed: ['SOQL_EXECUTE_BEGIN'],
+    notInS1: ['OLD_EVENT'],
+    restated: [
+      {
+        event: 'VF_APEX_CALL_END',
+        source: 'S1',
+        field: 'category',
+        stored: 'VISUALFORCE',
+        scraped: 'APEX_CODE',
+      },
+    ],
+    disagreements: [
+      { event: 'ONLY_DOCS', reason: 'only-in-s1' },
+      { event: 'ONLY_HELP', reason: 'only-in-s2' },
+      { event: 'MOVED', reason: 'level', s1: 'INFO', s2: 'FINE' },
+    ],
+  };
+
+  it('says up front when nothing needs a decision', () => {
     const body = renderReport(quiet, pass);
-    expect(body).toContain('doc version 262.0, API 67.0, 185 events');
-    expect(body).toContain('release 262.0.0, 179 events');
-    expect(body).toContain('Data changed: `false`');
-    expect(body).toContain('Both sources state the same events.');
+    expect(body).toContain('**Nothing here needs a decision**');
+    expect(body).not.toContain('## Needs a decision');
     expect(body.endsWith('\n')).toBe(true);
   });
 
-  it('names a failing gate and what to do about it', () => {
-    const body = renderReport(quiet, { validate: 'success', verify: 'failure' });
-    expect(body).toContain('`pnpm run ci`: `failure`');
-    expect(body).toContain('needs a class in `src/`');
-    expect(body).not.toContain('does not match its schema');
+  it('states what was read and what changed', () => {
+    const body = renderReport(quiet, pass);
+    expect(body).toContain('| Developer docs | doc 262.0, API 67.0 | 185 |');
+    expect(body).toContain('| Help article | 262.0.0 | 179 |');
+    expect(body).toContain('| Database version | 3.0.2 (unchanged) |');
+    expect(body).toContain('| New events | none |');
+    expect(body).toContain('Checks — tests: `success` · schema: `success`');
   });
 
-  it('names a failing schema check', () => {
+  it('puts a failing gate under the decisions, with what to do', () => {
+    const body = renderReport(quiet, { validate: 'success', verify: 'failure' });
+    expect(body).toContain('## Needs a decision');
+    expect(body).toContain('needs a class in `src/`');
+    expect(body).toContain('Checks — tests: `failure`');
+    expect(body).not.toContain('does not match its schema');
+    expect(body).not.toContain('Nothing here needs a decision');
+  });
+
+  it('puts a failing schema check under the decisions', () => {
     const body = renderReport(quiet, { validate: 'failure', verify: 'success' });
     expect(body).toContain('does not match its schema');
   });
 
-  it('lists new events, absences, restatements and disagreements', () => {
-    const body = renderReport(
-      {
-        ...quiet,
-        dataChanged: true,
-        versionAfter: '3.0.3',
-        added: ['ZZZ_NEW'],
-        changed: ['SOQL_EXECUTE_BEGIN'],
-        notInS1: ['OLD_EVENT'],
-        restated: [
-          {
-            event: 'VF_APEX_CALL_END',
-            source: 'S1',
-            field: 'category',
-            stored: 'VISUALFORCE',
-            scraped: 'APEX_CODE',
-          },
-        ],
-        disagreements: [
-          { event: 'ONLY_DOCS', reason: 'only-in-s1' },
-          { event: 'MOVED', reason: 'level', s1: 'INFO', s2: 'FINE' },
-        ],
-      },
-      pass,
+  it('asks for a decision on an absence and on a contradicted value', () => {
+    const body = renderReport(busy, pass);
+    expect(body).toContain('`OLD_EVENT` is recorded against the developer docs');
+    expect(body).toContain('set `release_deprecated`');
+    expect(body).toContain(
+      '`VF_APEX_CALL_END` category: recorded as VISUALFORCE here, but now APEX_CODE in ' +
+        'the developer docs',
     );
-
-    expect(body).toContain('3.0.2 → 3.0.3');
-    expect(body).toContain('- `ZZZ_NEW`');
-    expect(body).toContain('Events with a changed fact: 1');
-    expect(body).toContain('- `OLD_EVENT`');
-    expect(body).toContain('recorded VISUALFORCE, S1 now says APEX_CODE');
-    expect(body).toContain('only in the developer docs: `ONLY_DOCS`');
-    expect(body).toContain('`MOVED` level: docs say INFO, Help says FINE');
+    expect(body).toContain('decide which is right');
   });
 
-  it('says the help site was not read, rather than claiming agreement', () => {
+  it('reports a new event with the release it is tagged for', () => {
+    const body = renderReport(busy, pass);
+    expect(body).toContain('| New events | 1, tagged for release `summer-26` — `ZZZ_NEW` |');
+    expect(body).toContain('| Database version | 3.0.2 → 3.0.3 |');
+    expect(body).toContain('| Events with a changed category or level | 1 |');
+  });
+
+  it('folds the source differences away, grouped and explained', () => {
+    const body = renderReport(busy, pass);
+    expect(body).toContain('<summary>The two sources differ on 3 events</summary>');
+    expect(body).toContain('catches');
+    expect(body).toContain('expected and needs no action');
+    expect(body).toContain('**Only in the developer docs (1)**');
+    expect(body).toContain('- `ONLY_DOCS`');
+    expect(body).toContain('**Only in the Help article (1)**');
+    expect(body).toContain('- `ONLY_HELP`');
+    expect(body).toContain('**Different category or level (1)**');
+    expect(body).toContain('- `MOVED` level: developer docs INFO, Help article FINE');
+    expect(body).toContain('</details>');
+  });
+
+  it('states agreement plainly when there is nothing to fold away', () => {
+    const body = renderReport({ ...quiet, disagreements: [] }, pass);
+    expect(body).toContain('Both sources list the same events.');
+    expect(body).not.toContain('<details>');
+  });
+
+  it('says the help article was not read, rather than claiming agreement', () => {
     const body = renderReport({ ...quiet, s2Release: null, s2Count: null }, pass);
-    expect(body).toContain('Help site: not read on this run');
-    expect(body).toContain('could not be read');
+    expect(body).toContain('| Help article | not read on this run | — |');
+    expect(body).toContain('could not be read, so the two sources were not compared');
+    expect(body).not.toContain('list the same events');
+  });
+
+  it('uses only ## headings, never a bold line standing in for one', () => {
+    for (const body of [renderReport(quiet, pass), renderReport(busy, pass)]) {
+      const headingish = body
+        .split('\n')
+        .filter((l) => l.startsWith('**') && l.endsWith('**') && !l.includes('('));
+      expect(headingish).toEqual([]);
+    }
   });
 
   it('leaves no run of blank lines', () => {
     expect(renderReport(quiet, pass)).not.toMatch(/\n\n\n/);
+    expect(renderReport(busy, pass)).not.toMatch(/\n\n\n/);
+    expect(renderReport(busy, { validate: 'failure', verify: 'failure' })).not.toMatch(/\n\n\n/);
   });
 });
 
