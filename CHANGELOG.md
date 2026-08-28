@@ -17,6 +17,11 @@
   writes a run record, so the pull request body is rendered from data instead of pasted from
   stdout, and the job's logic is covered by tests. `pnpm run ci` now typechecks `scripts/`.
 - The workflow is callable with `workflow_call`. See `.github/workflows/README.md`.
+- The scrape pull request leads with whatever needs a decision, and folds the standing
+  difference between the two sources away with an explanation of why it is expected.
+- The pull request is opened only from the default branch. `create-pull-request` cuts its
+  branch from the ref the workflow ran on, so a dispatch from anywhere else produced a pull
+  request with the wrong merge base.
 - No change to the published package: `data/` is not shipped.
 
 ## 0.1.0
