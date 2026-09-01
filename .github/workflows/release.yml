@@ -36,6 +36,8 @@ jobs:
           # which expands the short arrays Biome keeps inline. The script reformats after.
           version-script: pnpm run version:packages
           publish-script: pnpm changeset publish
+          pr-title: "chore(release): version packages"
+          commit-message: "chore(release): version packages"
         env:
           # v2 reads the repository token from its `github-token` input, which already
           # defaults to the workflow token, so only npm auth is passed here.

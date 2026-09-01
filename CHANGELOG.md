@@ -22,6 +22,8 @@
 - The pull request is opened only from the default branch. `create-pull-request` cuts its
   branch from the ref the workflow ran on, so a dispatch from anywhere else produced a pull
   request with the wrong merge base.
+- The release pull request and its commit are titled `chore(release): version packages`, so a
+  squash merge lands a conventional commit on `main`.
 - No change to the published package: `data/` is not shipped.
 
 ## 0.1.0
