@@ -76,6 +76,8 @@ the same change: it pins the two runtime lists, and pins the types through an in
   midnight, and the `cpuTime` limit is milliseconds. State the unit on any new field.
 - Report what the log stated. Never substitute a default for a value the log did not give — use
   `null` or leave the field absent, so a caller can tell "not stated" from "zero".
+- Comment only what the code cannot say: a non-obvious why, a real gotcha, or a required
+  public API doc. One line. Never restate the code or narrate the change that added it.
 - Conventional commits, one concern per commit.
 - `CHANGELOG.md` is hand-written. Add a bullet there; do not add a changeset.
 
