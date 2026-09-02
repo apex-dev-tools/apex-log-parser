@@ -39,3 +39,17 @@ jobs:
       # Lint, typecheck and test cover every version; the bundle only needs building once.
       - if: matrix.node-version == 24
         run: pnpm run build
+
+  # The one check the main ruleset requires. A matrix leg's name carries its Node version,
+  # so requiring the legs themselves would break on every change to the matrix.
+  ci:
+    needs: check
+    # Without this the job is skipped when a leg fails, and a skipped required check passes.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULT: ${{ needs.check.result }}
+        run: |
+          echo "check: $RESULT"
+          [ "$RESULT" = 'success' ] || exit 1
