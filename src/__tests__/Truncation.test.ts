@@ -7,12 +7,12 @@ describe('truncation', () => {
   it('reports every skipped region, not just the first', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.first()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
       '*** Skipped 22,606,355 bytes of detailed log\n' +
-      '15:20:52.222 (400)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.first()\n' +
-      '15:20:52.222 (600)|METHOD_ENTRY|[190]|01p4J00000FpS6u|CODAUnitOfWork.second()\n' +
+      '15:20:52.222 (400)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
+      '15:20:52.222 (600)|METHOD_ENTRY|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
       '*** Skipped 1,000 bytes of detailed log\n' +
-      '15:20:52.222 (800)|METHOD_EXIT|[190]|01p4J00000FpS6u|CODAUnitOfWork.second()\n' +
+      '15:20:52.222 (800)|METHOD_EXIT|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -29,12 +29,12 @@ describe('truncation', () => {
   it('bounds each skipped region at the point trust resumes', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.first()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
       '*** Skipped 500 bytes of detailed log\n' +
       '15:20:52.222 (500)|HEAP_ALLOCATE|[52]|Bytes:3\n' +
-      '15:20:52.222 (800)|METHOD_ENTRY|[190]|01p4J00000FpS6u|CODAUnitOfWork.second()\n' +
-      '15:20:52.222 (900)|METHOD_EXIT|[190]|01p4J00000FpS6u|CODAUnitOfWork.second()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.first()\n' +
+      '15:20:52.222 (800)|METHOD_ENTRY|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
+      '15:20:52.222 (900)|METHOD_EXIT|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const region = parse(log).truncation.regions[0];
@@ -48,7 +48,7 @@ describe('truncation', () => {
   it('reports a max-size region and the event the log stopped inside', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********\n';
 
     const apexLog = parse(log);
@@ -61,7 +61,7 @@ describe('truncation', () => {
     expect(apexLog.truncation.totalSkippedBytes).toBe(0);
     // Both frames the log stopped inside, innermost first.
     expect(apexLog.truncatedEvents.map((event) => event.text)).toEqual([
-      'CODAUnitOfWork.getNextIdInternal()',
+      'UnitOfWork.getNextIdInternal()',
       'EXECUTION_STARTED',
     ]);
   });
@@ -69,10 +69,10 @@ describe('truncation', () => {
   it('keeps both skips when two skip lines follow the same event', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '*** Skipped 500 bytes of detailed log\n' +
       '*** Skipped 700 bytes of detailed log\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -98,8 +98,8 @@ describe('truncation', () => {
   it('reports no truncation for a complete log', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
