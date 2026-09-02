@@ -1535,7 +1535,7 @@ export class ExecutionStartedLine extends DurationLogEvent {
 export class EnteringManagedPackageLine extends DurationLogEvent {
   debugCategory: DebugCategory = 'apexCode';
   debugLevel: LogLevel = LOG_LEVEL.Fine;
-  // The text is a bare namespace token (`c2g`, `dlrs`, `java__util`), so say
+  // The text is a bare namespace token (`ns`, `dlrs`, `java__util`), so say
   // what it is.
   suffix = ' (managed package)';
   constructor(parser: ApexLogParser, parts: string[]) {

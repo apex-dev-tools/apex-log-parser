@@ -31,16 +31,16 @@ describe('parseObjectNamespace tests', () => {
 
 describe('parseVfNamespace tests', () => {
   it('Should consider no separator to be unmanaged', () => {
-    expect(parseVfNamespace('VF: /apex/CashMatching')).toEqual('default');
+    expect(parseVfNamespace('VF: /apex/MyPage')).toEqual('default');
   });
   it('Should consider no slashes to be unmanaged', () => {
-    expect(parseVfNamespace('VF: pse__ProjectBilling')).toEqual('default');
+    expect(parseVfNamespace('VF: ns__MyPage')).toEqual('default');
   });
   it('Should consider one slash to be unmanaged', () => {
-    expect(parseVfNamespace('VF: /pse__ProjectBilling')).toEqual('default');
+    expect(parseVfNamespace('VF: /ns__MyPage')).toEqual('default');
   });
   it('Should accept properly formatted namespaces', () => {
-    expect(parseVfNamespace('VF: /apex/pse__ProjectBilling')).toEqual('pse');
+    expect(parseVfNamespace('VF: /apex/ns__MyPage')).toEqual('ns');
   });
 });
 
@@ -58,7 +58,7 @@ describe('parseLine tests', () => {
   });
 
   const line =
-    '15:20:52.222 (6574780)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()';
+    '15:20:52.222 (6574780)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()';
   const log2 = parse(line);
 
   it('Should return an object with meta as prototype', () => {
@@ -195,10 +195,10 @@ describe('Invalid Debug Lines tests', () => {
 describe('parseLog tests', () => {
   it('Should parse between EXECUTION_STARTED and EXECUTION_FINISHED and return an iterator', async () => {
     const log =
-      '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|0050W000006W3LM|user@example.com|Greenwich Mean Time|GMT+01:00\n' +
+      '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Greenwich Mean Time|GMT+01:00\n' +
       '09:18:22.6 (6574780)|EXECUTION_STARTED\n' +
-      '09:18:22.6 (6586704)|CODE_UNIT_STARTED|[EXTERNAL]|066d0000002m8ij|pse.VFRemote: pse.SenchaTCController invoke(saveTimecard)\n' +
-      '09:19:13.82 (51592737891)|CODE_UNIT_FINISHED|pse.VFRemote: pse.SenchaTCController invoke(saveTimecard)\n' +
+      '09:18:22.6 (6586704)|CODE_UNIT_STARTED|[EXTERNAL]|066d0000002m8ij|ns.VFRemote: ns.MyController invoke(save)\n' +
+      '09:19:13.82 (51592737891)|CODE_UNIT_FINISHED|ns.VFRemote: ns.MyController invoke(save)\n' +
       '09:19:13.82 (51595120059)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -216,11 +216,11 @@ describe('parseLog tests', () => {
     // path, a bare namespace, a flow label — so the suffix does the naming.
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n' +
-      '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|01q000000000001|__sfdc_trigger/c2g/CODAInvoice\n' +
-      '09:18:22.6 (300)|ENTERING_MANAGED_PKG|c2g\n' +
+      '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|01q000000000001|__sfdc_trigger/ns/Invoice\n' +
+      '09:18:22.6 (300)|ENTERING_MANAGED_PKG|ns\n' +
       '09:18:22.6 (400)|FLOW_START_INTERVIEW_BEGIN|91080693a3c1|Account Before Save LC\n' +
       '09:18:22.6 (500)|FLOW_START_INTERVIEW_END|91080693a3c1|Account Before Save LC\n' +
-      '09:18:22.6 (600)|CODE_UNIT_FINISHED|__sfdc_trigger/c2g/CODAInvoice\n' +
+      '09:18:22.6 (600)|CODE_UNIT_FINISHED|__sfdc_trigger/ns/Invoice\n' +
       '09:18:22.6 (700)|EXECUTION_FINISHED\n';
 
     const suffixes = new Map(
@@ -234,10 +234,10 @@ describe('parseLog tests', () => {
 
   it('Should parse between EXECUTION_STARTED and EXECUTION_FINISHED for CRLF (\r\n)', async () => {
     const log =
-      '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|0050W000006W3LM|user@example.com|Greenwich Mean Time|GMT+01:00\r\n' +
+      '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Greenwich Mean Time|GMT+01:00\r\n' +
       '09:18:22.6 (6574780)|EXECUTION_STARTED\r\n' +
-      '09:18:22.6 (6586704)|CODE_UNIT_STARTED|[EXTERNAL]|066d0000002m8ij|pse.VFRemote: pse.SenchaTCController invoke(saveTimecard)\r\n' +
-      '09:19:13.82 (51592737891)|CODE_UNIT_FINISHED|pse.VFRemote: pse.SenchaTCController invoke(saveTimecard)\r\n' +
+      '09:18:22.6 (6586704)|CODE_UNIT_STARTED|[EXTERNAL]|066d0000002m8ij|ns.VFRemote: ns.MyController invoke(save)\r\n' +
+      '09:19:13.82 (51592737891)|CODE_UNIT_FINISHED|ns.VFRemote: ns.MyController invoke(save)\r\n' +
       '09:19:13.82 (51595120059)|EXECUTION_FINISHED\r\n';
 
     const apexLog = parse(log);
@@ -253,7 +253,7 @@ describe('parseLog tests', () => {
   it('Should handle partial logs', async () => {
     const log =
       '09:18:22.6 (6574780)|EXECUTION_STARTED\n' +
-      '09:18:22.6 (6586704)|CODE_UNIT_STARTED|[EXTERNAL]|066d0000002m8ij|pse.VFRemote: pse.SenchaTCController invoke(saveTimecard)\n';
+      '09:18:22.6 (6586704)|CODE_UNIT_STARTED|[EXTERNAL]|066d0000002m8ij|ns.VFRemote: ns.MyController invoke(save)\n';
 
     const apexLog = parse(log);
 
@@ -267,9 +267,9 @@ describe('parseLog tests', () => {
   it('Should detect skipped log entries', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '*** Skipped 22606355 bytes of detailed log\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -281,8 +281,8 @@ describe('parseLog tests', () => {
   it('Should detect truncated logs', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********\n';
 
     const apexLog = parse(log);
@@ -296,30 +296,30 @@ describe('parseLog tests', () => {
   it('Should detect exceptions', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
-      '16:16:04.97 (1000)|EXCEPTION_THROWN|[60]|System.LimitException: c2g:Too many SOQL queries: 101\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '16:16:04.97 (1000)|EXCEPTION_THROWN|[60]|System.LimitException: ns:Too many SOQL queries: 101\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
 
     expect(apexLog.children.length).toBe(1);
     expect(apexLog.logIssues[0]?.summary).toBe(
-      'System.LimitException: c2g:Too many SOQL queries: 101',
+      'System.LimitException: ns:Too many SOQL queries: 101',
     );
     expect(apexLog.logIssues[0]?.type).toBe('error');
   });
   it('Should detect fatal errors', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
-      '16:16:04.97 (1000)|FATAL_ERROR|System.LimitException: c2g:Too many SOQL queries: 101\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '16:16:04.97 (1000)|FATAL_ERROR|System.LimitException: ns:Too many SOQL queries: 101\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
 
     expect(apexLog.children.length).toBe(1);
     expect(apexLog.logIssues[0]?.summary).toBe(
-      'System.LimitException: c2g:Too many SOQL queries: 101',
+      'System.LimitException: ns:Too many SOQL queries: 101',
     );
     expect(apexLog.logIssues[0]?.type).toBe('fatal');
     expect(apexLog.logIssues[0]?.description).toBe('');
@@ -329,8 +329,8 @@ describe('parseLog tests', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
       '16:16:04.97 (1000)|FATAL_ERROR|System.LimitException: Apex CPU time limit exceeded\n\n' +
-      'Class.pse.JSONUtils.removeNamespaceFromKeys: line 32, column 1\n' +
-      'Class.pse.ExtendedSObject.marshall: line 186, column 1\n' +
+      'Class.ns.MyClass.myMethod: line 32, column 1\n' +
+      'Class.ns.MyOtherClass.myOtherMethod: line 186, column 1\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -338,8 +338,8 @@ describe('parseLog tests', () => {
     const fatal = apexLog.logIssues.find((issue) => issue.type === 'fatal');
     expect(fatal?.summary).toBe('System.LimitException: Apex CPU time limit exceeded');
     expect(fatal?.description).toBe(
-      'Class.pse.JSONUtils.removeNamespaceFromKeys: line 32, column 1\n' +
-        'Class.pse.ExtendedSObject.marshall: line 186, column 1',
+      'Class.ns.MyClass.myMethod: line 32, column 1\n' +
+        'Class.ns.MyOtherClass.myOtherMethod: line 186, column 1',
     );
   });
 
@@ -359,7 +359,7 @@ describe('parseLog tests', () => {
 
   it('Exception summary keeps the full first line without truncation', async () => {
     const message =
-      'System.LimitException: Update failed. First exception on row 0 with id aCC3Y000000TNpbWAG; ' +
+      'System.LimitException: Update failed. First exception on row 0 with id a00000000000004AAA; ' +
       'first error: CANNOT_EXECUTE_FLOW_TRIGGER, this message runs well past the old 99 character cap';
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
@@ -374,12 +374,12 @@ describe('parseLog tests', () => {
   it('Skipped-Lines endTime resolves to the next entry event, ignoring detail lines', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '*** Skipped 22606355 bytes of detailed log\n' +
       '15:20:52.222 (500)|HEAP_ALLOCATE|[52]|Bytes:3\n' +
-      '15:20:52.222 (800)|METHOD_ENTRY|[190]|01p4J00000FpS6u|CODAUnitOfWork.other()\n' +
-      '15:20:52.222 (900)|METHOD_EXIT|[190]|01p4J00000FpS6u|CODAUnitOfWork.other()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (800)|METHOD_ENTRY|[190]|01p4J00000FpS6u|UnitOfWork.other()\n' +
+      '15:20:52.222 (900)|METHOD_EXIT|[190]|01p4J00000FpS6u|UnitOfWork.other()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -392,7 +392,7 @@ describe('parseLog tests', () => {
   it('Max-Size-reached endTime resolves to the next event when one follows', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********\n' +
       '16:16:04.97 (1000)|FATAL_ERROR|System.LimitException: Apex CPU time limit exceeded\n';
 
@@ -406,8 +406,8 @@ describe('parseLog tests', () => {
   it('Max-Size-reached endTime falls back to the log end when nothing follows', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********\n';
 
     const apexLog = parse(log);
@@ -419,9 +419,9 @@ describe('parseLog tests', () => {
   it('Collects exception events (EXCEPTION_THROWN and FATAL_ERROR)', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '16:16:04.97 (500)|EXCEPTION_THROWN|[60]|System.NullPointerException: boom\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '16:16:04.97 (1500)|FATAL_ERROR|System.LimitException: Apex CPU time limit exceeded\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
@@ -433,9 +433,9 @@ describe('parseLog tests', () => {
   it('thrownCount is seeded on the exception leaf and rolled up as total on the method', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '16:16:04.97 (500)|EXCEPTION_THROWN|[60]|System.NullPointerException: boom\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -604,8 +604,8 @@ describe('parseLog tests', () => {
   it('Methods should have line-numbers', async () => {
     const log =
       '09:18:22.6 (0)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (1)|METHOD_ENTRY|[185]|Id1|CODAUnitOfWork.getNextIdInternal()\n' +
-      '15:20:52.222 (2)|METHOD_EXIT|[185]|Id1|CODAUnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1)|METHOD_ENTRY|[185]|Id1|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (2)|METHOD_EXIT|[185]|Id1|UnitOfWork.getNextIdInternal()\n' +
       '15:20:52.222 (3)|METHOD_ENTRY|[EXTERNAL]|Id2|MyClass.MyMethod2()\n' +
       '15:20:52.222 (4)|METHOD_EXIT|[EXTERNAL]|Id2|MyClass.MyMethod2()\n' +
       '09:19:13.82 (5)|EXECUTION_FINISHED\n';
@@ -659,9 +659,9 @@ describe('parseLog tests', () => {
   it('Flow Value Assignemnt can handle multiple lines', async () => {
     const log =
       '09:18:22.6 (6574780)|EXECUTION_STARTED\n' +
-      '09:18:22.670 (1372614277)|FLOW_VALUE_ASSIGNMENT|91080693a3c13822bcdbdd838a5180aed7a0e-5f03|myVariable_old|{Id=a6U6T000001DypKUAS, OwnerId=005d0000003141tAAA, IsDeleted=false, Name=TR-001752, CurrencyIsoCode=USD, RecordTypeId=012d0000000T5CLAA0, CreatedDate=2022-05-06 11:40:47, CreatedById=005d0000003141tAAA, LastModifiedDate=2022-05-06 11:40:47, LastModifiedById=005d0000003141tAAA, SystemModstamp=2022-05-06 11:40:47, LastViewedDate=null, LastReferencedDate=null, SCMC__Carrier_Service__c=null, SCMC__Carrier__c=null, SCMC__Destination_Location__c=null, SCMC__Destination_Ownership__c=null, SCMC__Destination_Warehouse__c=a6Y6T000001Ib9ZUAS, SCMC__Notes__c=TVPs To Amazon Europe Spain, SCMC__Override_Ship_To_Address__c=null, SCMC__Pickup_Address__c=null, SCMC__Pickup_Required__c=false, SCMC__Reason_Code__c=a5i0W000001Ydw3QAC, SCMC__Requested_Delivery_Date__c=null, SCMC__Revision__c=0, SCMC__Ship_To_City__c=null, SCMC__Ship_To_Country__c=null, SCMC__Ship_To_Line_1__c=null, SCMC__Ship_To_Line_2__c=null, SCMC__Ship_To_Name__c=null, SCMC__Ship_To_State_Province__c=null, SCMC__Ship_To_Zip_Postal_Code__c=null, SCMC__Shipment_Date__c=null, SCMC__Shipment_Required__c=true, SCMC__Shipment_Status__c=Open, SCMC__Source_Location__c=null, SCMC__Source_Ownership__c=null, SCMC__Source_Warehouse__c=a6Y6T000001IS9fUAG, SCMC__Status__c=New, SCMC__Tracking_Number__c=null, SCMC__Number_Of_Transfer_Lines__c=0, Created_Date__c=2022-05-06 11:40:47, Shipment_Instructions__c=1Z V8F 767 681769 7682\n' +
-      '1Z V8F 767 68 3968 7204\n' +
-      '1Z VSF 767 68 0562 3292}\n' +
+      '09:18:22.670 (1372614277)|FLOW_VALUE_ASSIGNMENT|91080693a3c13822bcdbdd838a5180aed7a0e-5f03|myVariable_old|{Id=a00000000000000AAA, OwnerId=005000000000000AAA, IsDeleted=false, Name=TR-000001, CurrencyIsoCode=USD, RecordTypeId=012000000000000AAA, CreatedDate=2022-05-06 11:40:47, CreatedById=005000000000000AAA, LastModifiedDate=2022-05-06 11:40:47, LastModifiedById=005000000000000AAA, SystemModstamp=2022-05-06 11:40:47, LastViewedDate=null, LastReferencedDate=null, ns__Carrier_Service__c=null, ns__Carrier__c=null, ns__Destination_Location__c=null, ns__Destination_Ownership__c=null, ns__Destination_Warehouse__c=a00000000000001AAA, ns__Notes__c=Notes text, ns__Override_Ship_To_Address__c=null, ns__Pickup_Address__c=null, ns__Pickup_Required__c=false, ns__Reason_Code__c=a00000000000002AAA, ns__Requested_Delivery_Date__c=null, ns__Revision__c=0, ns__Ship_To_City__c=null, ns__Ship_To_Country__c=null, ns__Ship_To_Line_1__c=null, ns__Ship_To_Line_2__c=null, ns__Ship_To_Name__c=null, ns__Ship_To_State_Province__c=null, ns__Ship_To_Zip_Postal_Code__c=null, ns__Shipment_Date__c=null, ns__Shipment_Required__c=true, ns__Shipment_Status__c=Open, ns__Source_Location__c=null, ns__Source_Ownership__c=null, ns__Source_Warehouse__c=a00000000000003AAA, ns__Status__c=New, ns__Tracking_Number__c=null, ns__Number_Of_Transfer_Lines__c=0, Created_Date__c=2022-05-06 11:40:47, Shipment_Instructions__c=1Z 000 000 000000 0001\n' +
+      '1Z 000 000 00 0000 0002\n' +
+      '1Z 000 000 00 0000 0003}\n' +
       '09:19:13.82 (51595120059)|EXECUTION_FINISHED';
 
     const apexLog = parse(log);
@@ -672,9 +672,9 @@ describe('parseLog tests', () => {
     const flowLine = execEvent.children[0];
     expect(flowLine?.type).toBe('FLOW_VALUE_ASSIGNMENT');
     expect(flowLine?.text).toBe(
-      'myVariable_old {Id=a6U6T000001DypKUAS, OwnerId=005d0000003141tAAA, IsDeleted=false, Name=TR-001752, CurrencyIsoCode=USD, RecordTypeId=012d0000000T5CLAA0, CreatedDate=2022-05-06 11:40:47, CreatedById=005d0000003141tAAA, LastModifiedDate=2022-05-06 11:40:47, LastModifiedById=005d0000003141tAAA, SystemModstamp=2022-05-06 11:40:47, LastViewedDate=null, LastReferencedDate=null, SCMC__Carrier_Service__c=null, SCMC__Carrier__c=null, SCMC__Destination_Location__c=null, SCMC__Destination_Ownership__c=null, SCMC__Destination_Warehouse__c=a6Y6T000001Ib9ZUAS, SCMC__Notes__c=TVPs To Amazon Europe Spain, SCMC__Override_Ship_To_Address__c=null, SCMC__Pickup_Address__c=null, SCMC__Pickup_Required__c=false, SCMC__Reason_Code__c=a5i0W000001Ydw3QAC, SCMC__Requested_Delivery_Date__c=null, SCMC__Revision__c=0, SCMC__Ship_To_City__c=null, SCMC__Ship_To_Country__c=null, SCMC__Ship_To_Line_1__c=null, SCMC__Ship_To_Line_2__c=null, SCMC__Ship_To_Name__c=null, SCMC__Ship_To_State_Province__c=null, SCMC__Ship_To_Zip_Postal_Code__c=null, SCMC__Shipment_Date__c=null, SCMC__Shipment_Required__c=true, SCMC__Shipment_Status__c=Open, SCMC__Source_Location__c=null, SCMC__Source_Ownership__c=null, SCMC__Source_Warehouse__c=a6Y6T000001IS9fUAG, SCMC__Status__c=New, SCMC__Tracking_Number__c=null, SCMC__Number_Of_Transfer_Lines__c=0, Created_Date__c=2022-05-06 11:40:47, Shipment_Instructions__c=1Z V8F 767 681769 7682\n' +
-        '1Z V8F 767 68 3968 7204\n' +
-        '1Z VSF 767 68 0562 3292}',
+      'myVariable_old {Id=a00000000000000AAA, OwnerId=005000000000000AAA, IsDeleted=false, Name=TR-000001, CurrencyIsoCode=USD, RecordTypeId=012000000000000AAA, CreatedDate=2022-05-06 11:40:47, CreatedById=005000000000000AAA, LastModifiedDate=2022-05-06 11:40:47, LastModifiedById=005000000000000AAA, SystemModstamp=2022-05-06 11:40:47, LastViewedDate=null, LastReferencedDate=null, ns__Carrier_Service__c=null, ns__Carrier__c=null, ns__Destination_Location__c=null, ns__Destination_Ownership__c=null, ns__Destination_Warehouse__c=a00000000000001AAA, ns__Notes__c=Notes text, ns__Override_Ship_To_Address__c=null, ns__Pickup_Address__c=null, ns__Pickup_Required__c=false, ns__Reason_Code__c=a00000000000002AAA, ns__Requested_Delivery_Date__c=null, ns__Revision__c=0, ns__Ship_To_City__c=null, ns__Ship_To_Country__c=null, ns__Ship_To_Line_1__c=null, ns__Ship_To_Line_2__c=null, ns__Ship_To_Name__c=null, ns__Ship_To_State_Province__c=null, ns__Ship_To_Zip_Postal_Code__c=null, ns__Shipment_Date__c=null, ns__Shipment_Required__c=true, ns__Shipment_Status__c=Open, ns__Source_Location__c=null, ns__Source_Ownership__c=null, ns__Source_Warehouse__c=a00000000000003AAA, ns__Status__c=New, ns__Tracking_Number__c=null, ns__Number_Of_Transfer_Lines__c=0, Created_Date__c=2022-05-06 11:40:47, Shipment_Instructions__c=1Z 000 000 000000 0001\n' +
+        '1Z 000 000 00 0000 0002\n' +
+        '1Z 000 000 00 0000 0003}',
     );
   });
 
@@ -715,7 +715,7 @@ describe('parseLog tests', () => {
 
   it('should parse SOQL lines', async () => {
     const log =
-      '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|0050W000006W3LM|user@example.com|Greenwich Mean Time|GMT+01:00\r\n' +
+      '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Greenwich Mean Time|GMT+01:00\r\n' +
       '09:18:22.6 (6574780)|EXECUTION_STARTED\r\n' +
       '06:22:49.429 (15821966627)|SOQL_EXECUTE_BEGIN|[895]|Aggregations:2|SELECT Id FROM MySObject__c WHERE Id = :recordId\n' +
       '06:22:49.429 (15861642580)|SOQL_EXECUTE_EXPLAIN|[895]|TableScan on MySObject__c : [MyField__c, AnotherField__c], cardinality: 2, sobjectCardinality: 2, relativeCost 1.3\n' +
@@ -997,7 +997,7 @@ describe('getRootMethod tests', () => {
 describe('Log Settings tests', () => {
   const log =
     '43.0 APEX_CODE,FINE;APEX_PROFILING,NONE;CALLOUT,NONE;DB,INFO;NBA,NONE;SYSTEM,NONE;VALIDATION,INFO;VISUALFORCE,NONE;WAVE,NONE;WORKFLOW,INFO\n' +
-    '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|0050W000006W3LM|partner.nisar.ahmed@philips.com.m2odryrun1|Greenwich Mean Time|GMTZ\n' +
+    '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com.sandbox|Greenwich Mean Time|GMTZ\n' +
     '09:18:22.6 (6574780)|EXECUTION_STARTED';
 
   const apexLog = parse(log);
@@ -1641,10 +1641,10 @@ describe('Aggregating Totals', () => {
       '01:02:03.04 (16)|SOSL_EXECUTE_END|[1]|Rows:250',
       "01:02:03.04 (17)|SOSL_EXECUTE_BEGIN|[1]|FIND 'hello*' IN ALL FIELDS RETURNING account(Id, Name)",
       '01:02:03.04 (18)|SOSL_EXECUTE_END|[1]|Rows:150',
-      '01:02:03.04 (19)|EXCEPTION_THROWN|[60]|System.LimitException: c2g:Too many SOQL queries: 101',
+      '01:02:03.04 (19)|EXCEPTION_THROWN|[60]|System.LimitException: ns:Too many SOQL queries: 101',
       '01:02:03.04 (20)|METHOD_EXIT|[1]|a00000000000000|ns.MyClass.sosl()',
-      '01:02:03.04 (21)|EXCEPTION_THROWN|[60]|System.LimitException: c2g:Too many SOQL queries: 101',
-      '01:02:03.04 (22)|EXCEPTION_THROWN|[60]|System.LimitException: c2g:Too many SOQL queries: 101',
+      '01:02:03.04 (21)|EXCEPTION_THROWN|[60]|System.LimitException: ns:Too many SOQL queries: 101',
+      '01:02:03.04 (22)|EXCEPTION_THROWN|[60]|System.LimitException: ns:Too many SOQL queries: 101',
       '01:02:03.04 (23)|METHOD_EXIT|[1]|a00000000000000|ns.MyClass.myMethod()',
       '01:02:03.04 (24)|EXECUTION_FINISHED',
     ];
