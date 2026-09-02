@@ -76,8 +76,7 @@ the same change: it pins the two runtime lists, and pins the types through an in
   midnight, and the `cpuTime` limit is milliseconds. State the unit on any new field.
 - Report what the log stated. Never substitute a default for a value the log did not give — use
   `null` or leave the field absent, so a caller can tell "not stated" from "zero".
-- Comment only what the code cannot say: a non-obvious why, a real gotcha, or a required
-  public API doc. One line. Never restate the code or narrate the change that added it.
+- Comment the why, not the what. In doubt, none. One line. Public API takes a doc block.
 - Never paste a log from an org. Fixtures use `ns`, `MyClass`, `user@example.com` and ids
   zero-filled after the key prefix (`005000000000AAA`).
 - Conventional commits, one concern per commit.

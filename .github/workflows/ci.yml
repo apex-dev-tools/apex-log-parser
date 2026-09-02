@@ -39,3 +39,11 @@ jobs:
       # Lint, typecheck and test cover every version; the bundle only needs building once.
       - if: matrix.node-version == 24
         run: pnpm run build
+
+  ci:
+    needs: check
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.check.result != 'success'
+        run: exit 1
