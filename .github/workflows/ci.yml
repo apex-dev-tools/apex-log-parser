@@ -45,8 +45,5 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - env:
-          RESULT: ${{ needs.check.result }}
-        run: |
-          echo "check: $RESULT"
-          [ "$RESULT" = 'success' ] || exit 1
+      - if: needs.check.result != 'success'
+        run: exit 1
