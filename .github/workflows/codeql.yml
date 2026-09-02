@@ -20,13 +20,7 @@ permissions:
 jobs:
   analyze:
     name: Analyze
-    # TEMPORARY: code scanning needs Advanced Security on a private repository, so every run
-    # fails. Delete the visibility term below once this repository is public, where CodeQL is
-    # free. github.event.repository is undocumented for schedule events, so that term also
-    # skips the weekly run; push and pull_request still scan.
-    if: >-
-      github.repository == 'apex-dev-tools/apex-log-parser' &&
-      github.event.repository.visibility == 'public'
+    if: github.repository == 'apex-dev-tools/apex-log-parser'
     runs-on: ubuntu-latest
     permissions:
       security-events: write
