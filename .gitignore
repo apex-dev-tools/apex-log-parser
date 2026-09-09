@@ -3,7 +3,7 @@ dist/
 *.tsbuildinfo
 .DS_Store
 coverage/
-.claude/
+.claude/settings.local.json
 *.tgz
 package/
 

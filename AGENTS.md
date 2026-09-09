@@ -80,26 +80,10 @@ the same change: it pins the two runtime lists, and pins the types through an in
 - Never paste a log from an org. Fixtures use `ns`, `MyClass`, `user@example.com` and ids
   zero-filled after the key prefix (`005000000000AAA`).
 - Conventional commits, one concern per commit.
-- Add a changeset (`pnpm changeset`) for any change a consumer of the published package can see.
-  Changesets writes `CHANGELOG.md` at release time; do not edit that file by hand.
-
-## Issues and pull requests
-
-Use the repo's templates: `.github/ISSUE_TEMPLATE/` holds `bug_report.yml`, `feature_request.yml`
-and `chore.yml`, and `.github/PULL_REQUEST_TEMPLATE.md` is the pull request body.
-
-Only the web UI applies them for you. Filing any other way — a CLI, an MCP server, the REST API —
-files whatever body you pass, with no warning, so the issue lands with no type, no title prefix and
-a free-form body. Read the form and build the body to match it.
-
-- A form's front matter is the instruction set: `title:` is the prefix the title starts with,
-  `type:` is the issue type, `labels:` are the labels, and every body field's `label:` is an `###`
-  heading in the body, in the form's order. A `validations: required` field must be answered.
-- Fill in every section of the pull request template. Tick only what you ran; a box left unticked
-  needs one line saying why.
-- Already filed without the template: edit it in place. The number is already referenced from
-  branches, commits and the changelog, so never close and refile.
-- Check afterwards that the title, type and labels took.
+- Add a changeset for any change a consumer can see. Changesets writes `CHANGELOG.md`; never
+  edit it by hand.
+- File issues and pull requests through the repo's templates in `.github/`. Fix one filed without a
+  template in place; never close and refile.
 
 ## Adding an event type
 
