@@ -23,6 +23,7 @@ import type {
   UserInfo,
 } from './types.js';
 import { LOG_LEVEL } from './types.js';
+import { utf8ByteLength } from './utf8.js';
 
 const typePattern = /^[A-Z_]*$/,
   settingsPattern = /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+$/m;
@@ -217,7 +218,7 @@ export class ApexLogParser {
   private parseLog(debugLog: string): ApexLog {
     const lineGenerator = this.generateLogLines(debugLog);
     const apexLog = this.toLogTree(lineGenerator);
-    apexLog.size = debugLog.length;
+    apexLog.size = utf8ByteLength(debugLog);
     apexLog.debugLevels = this.getDebugLevels(debugLog);
     apexLog.userInfo = parseUserInfo(debugLog);
     apexLog.entryPoint = findEntryPoint(apexLog);
