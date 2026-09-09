@@ -96,6 +96,8 @@ the same change: it pins the two runtime lists, and pins the types through an in
    or `basicLogEvents` / `basicExitLogEvents` for a generic one. `getLogEventClass` returns `null`
    for an unregistered name, so the class never dispatches.
 4. `data/salesforce-debug-log-events.json` — via `pnpm scrape`, once Salesforce documents it.
+5. An event stating a heap byte delta calls `seedHeapLeaf` in its constructor. Parsing `Bytes:N`
+   alone keeps it out of every heap rollup.
 
 `EventMetadata.test.ts` enforces steps 2 to 4 against the data JSON: every documented event resolves
 to a class, each own-class event's `debugCategory` token equals the database category, only the
@@ -113,8 +115,8 @@ itself.
 - `aggregateTotals` sums each counter by hand, deepest depth first. A new `SelfTotal` field rolls up
   only once it is added to that loop.
 - `duration.self` is a subtraction: the parent starts at its total and each child's total comes off.
-- `heapPeak` composes by max, not sum. `heapAllocated.self` and `heapGross.self` take from leaf
-  allocation events only.
+- `heapPeak` composes by max, not sum. `heapAllocated.self` and `heapGross.self` take from the
+  leaf events that call `seedHeapLeaf`: `HEAP_ALLOCATE`, `BULK_HEAP_ALLOCATE`, `HEAP_DEALLOCATE`.
 - `eventIndex` is the stable id. `timestamp` is not unique.
 
 ## Limits

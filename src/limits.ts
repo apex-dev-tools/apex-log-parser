@@ -128,8 +128,8 @@ function heapOnly(used: number): Limits {
  * namespace states a cumulative total each time, so its last snapshot is its final figure, and the
  * combined figure at any timepoint carries every other namespace forward.
  *
- * `heapPeak` is folded into the combined peak because it comes from the `HEAP_ALLOCATE` events, not
- * from a snapshot: an observed block states heap as 0, so it is the only heap figure most logs give.
+ * `heapPeak` is folded into the combined peak because it comes from the heap events, not from a
+ * snapshot: an observed block states heap as 0, so it is the only heap figure most logs give.
  */
 export function deriveGovernorLimits(
   snapshots: GovernorSnapshot[],

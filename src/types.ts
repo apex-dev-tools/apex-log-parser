@@ -165,8 +165,8 @@ export interface GovernorLimits {
    * carrying every namespace's last value forward. Higher than `final` whenever a counter falls,
    * which real logs do - so `peak` is the figure to check against a ceiling.
    *
-   * `heapSize` also folds in `ApexLog.heapPeak`, computed from `HEAP_ALLOCATE` events. That is the
-   * only heap figure most logs give: an observed cumulative block always states heap as 0.
+   * `heapSize` also folds in `ApexLog.heapPeak`, computed from the heap events. That is the only
+   * heap figure most logs give: an observed cumulative block always states heap as 0.
    */
   peak: Limits;
   /** Per namespace, keyed by the namespace the block declared, in first-reported order. */

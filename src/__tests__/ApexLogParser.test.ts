@@ -537,21 +537,22 @@ describe('parseLog tests', () => {
     expect(apexLog.governorLimits.peak.heapSize.used).toBe(5000000);
   });
 
-  it('net, gross and peak are distinct for an allocate-then-free method', async () => {
-    // One method allocates 5MB then frees it: net nets to 0 ("no big deal"), but gross shows
-    // the 5MB churn and peak shows the 5MB transiently held.
+  it.each([
+    ['a negative HEAP_ALLOCATE', '15:20:52.222 (220)|HEAP_ALLOCATE|[1]|Bytes:-1000000\n'],
+    ['HEAP_DEALLOCATE', '15:20:52.222 (220)|HEAP_DEALLOCATE|[14]|Bytes:1000000\n'],
+  ])('net, gross and peak are distinct when a method frees with %s', (_name, freeLine) => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
       '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pM|M.a()\n' +
-      '15:20:52.222 (210)|HEAP_ALLOCATE|[1]|Bytes:5000000\n' +
-      '15:20:52.222 (220)|HEAP_ALLOCATE|[1]|Bytes:-5000000\n' +
+      '15:20:52.222 (210)|HEAP_ALLOCATE|[1]|Bytes:1000000\n' +
+      freeLine +
       '15:20:52.222 (230)|METHOD_EXIT|[1]|01pM|M.a()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const method = parse(log).children[0]!.children[0]!;
-    expect(method.heapAllocated.total).toBe(0); // net: allocated then freed
-    expect(method.heapGross.total).toBe(5000000); // churn
-    expect(method.heapPeak).toBe(5000000); // transiently held
+    expect(method.heapAllocated).toEqual({ self: 0, total: 0 }); // net: allocated then freed
+    expect(method.heapGross).toEqual({ self: 1000000, total: 1000000 }); // churn
+    expect(method.heapPeak).toBe(1000000); // transiently held
   });
 
   it('BULK_HEAP_ALLOCATE feeds net/gross/peak the same as HEAP_ALLOCATE', async () => {
@@ -566,6 +567,47 @@ describe('parseLog tests', () => {
     expect(method.heapAllocated).toEqual({ self: 1000, total: 1000 });
     expect(method.heapGross).toEqual({ self: 1000, total: 1000 });
     expect(method.heapPeak).toBe(1000);
+  });
+
+  it('a later peak is measured from the level a HEAP_DEALLOCATE left, not the unfreed one', () => {
+    // Unfreed, the second allocation would peak at 1,000,500 rather than its own 500.
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pA|A.first()\n' +
+      '15:20:52.222 (210)|HEAP_ALLOCATE|[13]|Bytes:1000000\n' +
+      '15:20:52.222 (220)|HEAP_DEALLOCATE|[14]|Bytes:1000000\n' +
+      '15:20:52.222 (230)|METHOD_EXIT|[1]|01pA|A.first()\n' +
+      '15:20:52.222 (300)|METHOD_ENTRY|[2]|01pB|B.second()\n' +
+      '15:20:52.222 (310)|HEAP_ALLOCATE|[20]|Bytes:500\n' +
+      '15:20:52.222 (320)|METHOD_EXIT|[2]|01pB|B.second()\n' +
+      '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+
+    const apexLog = parse(log);
+    const second = apexLog.children[0]!.children.find((child) => child.text === 'B.second()')!;
+
+    expect(second.heapPeak).toBe(500);
+    expect(apexLog.heapPeak).toBe(1000000);
+    expect(apexLog.governorLimits.peak.heapSize.used).toBe(1000000);
+  });
+
+  it('a free the log never matched with an allocation does not suppress later peaks', () => {
+    // A skipped block can drop the allocation and keep the free, leaving the running heap in debt.
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pA|A.freeOnly()\n' +
+      '15:20:52.222 (210)|HEAP_DEALLOCATE|[14]|Bytes:1000000\n' +
+      '15:20:52.222 (220)|METHOD_EXIT|[1]|01pA|A.freeOnly()\n' +
+      '15:20:52.222 (300)|METHOD_ENTRY|[2]|01pB|B.second()\n' +
+      '15:20:52.222 (310)|HEAP_ALLOCATE|[20]|Bytes:500\n' +
+      '15:20:52.222 (320)|METHOD_EXIT|[2]|01pB|B.second()\n' +
+      '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+
+    const apexLog = parse(log);
+    const second = apexLog.children[0]!.children.find((child) => child.text === 'B.second()')!;
+
+    expect(second.heapPeak).toBe(500);
+    expect(apexLog.heapPeak).toBe(500);
+    expect(apexLog.governorLimits.peak.heapSize.used).toBe(500);
   });
 
   it('governorLimits.peak.heapSize.used is the max of the reported peak and the computed peak', () => {

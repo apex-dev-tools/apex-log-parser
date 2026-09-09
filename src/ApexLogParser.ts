@@ -188,7 +188,7 @@ export class ApexLogParser {
   reasons: Set<string> = new Set<string>();
   lastTimestamp = 0;
   discontinuity = false;
-  /** Running live heap (signed HEAP_ALLOCATE deltas) maintained in log order. */
+  /** Running live heap (signed allocation deltas) maintained in log order. */
   runningHeap = 0;
   namespaces: Set<string> = new Set<string>();
   /** Every event created during this parse, indexed by `LogEvent.eventIndex`. */
@@ -311,8 +311,10 @@ export class ApexLogParser {
    * then rolled up (by max) to the enclosing methods in {@link aggregateTotals}.
    */
   trackHeapAllocation(bytes: number): number {
-    this.runningHeap += bytes;
-    return Math.max(0, this.runningHeap);
+    // The total is clamped, not just the return: a skipped block can drop an allocation and keep
+    // its free, and the debt would otherwise swallow every later allocation in the transaction.
+    this.runningHeap = Math.max(0, this.runningHeap + bytes);
+    return this.runningHeap;
   }
 
   private parseLine(line: string, lastEntry: LogEvent | null): LogEvent | null {
@@ -634,8 +636,8 @@ export class ApexLogParser {
           parent.heapAllocated.total += child.heapAllocated.total;
           parent.heapGross.total += child.heapGross.total;
           // Direct/self heap: attribute only leaf allocation children (HEAP_ALLOCATE /
-          // BULK_HEAP_ALLOCATE, which are not `isParent`) to the enclosing method, so
-          // `.self` = bytes allocated by this method's own body, excluding sub-methods.
+          // BULK_HEAP_ALLOCATE / HEAP_DEALLOCATE, which are not `isParent`) to the enclosing
+          // method, so `.self` = bytes allocated by this method's own body, excluding sub-methods.
           if (!child.isParent) {
             parent.heapAllocated.self += child.heapAllocated.self;
             parent.heapGross.self += child.heapGross.self;
