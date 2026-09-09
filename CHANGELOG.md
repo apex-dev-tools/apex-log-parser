@@ -1,31 +1,5 @@
 # @apexdevtools/apex-log-parser
 
-## Unreleased
-
-### Internal
-
-- The event scraper reads both official Salesforce sources over plain HTTP, so Playwright is gone.
-  It discovers the release instead of computing it, treats every silent-success response as a
-  failure, and rewrites the database byte-identically when nothing changed.
-- The shared table parser reads the four `CURSOR_*` rows correctly. The developer docs give them
-  a fifth, empty cell, which shifted every later column; the committed data was already right,
-  so a successful run no longer damages it.
-- A scrape reports, without overwriting, any event whose documented category or level has
-  moved away from the recorded one, and refuses to rewrite the database from a release older
-  than the one it holds.
-- The scrape workflow declares what runs; `scripts/ci/` decides what happens. The scraper
-  writes a run record, so the pull request body is rendered from data instead of pasted from
-  stdout, and the job's logic is covered by tests. `pnpm run ci` now typechecks `scripts/`.
-- The workflow is callable with `workflow_call`. See `.github/workflows/README.md`.
-- The scrape pull request leads with whatever needs a decision, and folds the standing
-  difference between the two sources away with an explanation of why it is expected.
-- The pull request is opened only from the default branch. `create-pull-request` cuts its
-  branch from the ref the workflow ran on, so a dispatch from anywhere else produced a pull
-  request with the wrong merge base.
-- The release pull request and its commit are titled `chore(release): version packages`, so a
-  squash merge lands a conventional commit on `main`.
-- No change to the published package: `data/` is not shipped.
-
 ## 0.1.0
 
 ### Minor Changes

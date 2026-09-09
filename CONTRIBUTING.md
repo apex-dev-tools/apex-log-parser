@@ -36,8 +36,8 @@ pnpm run ci           # Full check: lint + typecheck + test
 2. **Write code** following the existing patterns
 3. **Add tests** for new functionality
 4. **Run `pnpm run ci`** to verify everything passes
-5. **Add a `CHANGELOG.md` bullet** if your change affects the published package. The changelog is
-   hand-written for now; do not add a changeset.
+5. **Add a changeset** (`pnpm changeset`) if your change affects the published package. Changesets
+   writes `CHANGELOG.md` at release time; do not edit that file by hand.
 6. **Open a PR** against `main`
 
 ## Commit Conventions
@@ -88,7 +88,7 @@ scripts/              # Internal tooling (the scraper)
 Releases are automated with [Changesets](https://github.com/changesets/changesets):
 
 1. Merged PRs that include a changeset accumulate on `main`.
-2. The [`release` workflow](./.github/workflows/release.yml) opens (or updates) a **Version Packages** PR that bumps the version. It does not write `CHANGELOG.md` — that stays hand-written.
+2. The [`release` workflow](./.github/workflows/release.yml) opens (or updates) a **Version Packages** PR that bumps the version and writes `CHANGELOG.md` from the accumulated changesets.
 3. Merging that PR publishes to npm (with provenance) via the `NPM_TOKEN` secret.
 
 ## Questions?
