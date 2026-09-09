@@ -7,10 +7,8 @@ on:
       - '**/*.md'
       - '**/*.txt'
   pull_request:
+    # No path filter: the ruleset requires the CodeQL check on every pull request.
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.txt'
   schedule:
     - cron: '26 5 * * 3' # weekly, Wednesday 05:26 UTC
 

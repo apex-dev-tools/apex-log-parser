@@ -82,6 +82,24 @@ the same change: it pins the two runtime lists, and pins the types through an in
 - Conventional commits, one concern per commit.
 - `CHANGELOG.md` is hand-written. Add a bullet there; do not add a changeset.
 
+## Issues and pull requests
+
+Use the repo's templates: `.github/ISSUE_TEMPLATE/` holds `bug_report.yml`, `feature_request.yml`
+and `chore.yml`, and `.github/PULL_REQUEST_TEMPLATE.md` is the pull request body.
+
+Only the web UI applies them for you. Filing any other way — a CLI, an MCP server, the REST API —
+files whatever body you pass, with no warning, so the issue lands with no type, no title prefix and
+a free-form body. Read the form and build the body to match it.
+
+- A form's front matter is the instruction set: `title:` is the prefix the title starts with,
+  `type:` is the issue type, `labels:` are the labels, and every body field's `label:` is an `###`
+  heading in the body, in the form's order. A `validations: required` field must be answered.
+- Fill in every section of the pull request template. Tick only what you ran; a box left unticked
+  needs one line saying why.
+- Already filed without the template: edit it in place. The number is already referenced from
+  branches, commits and the changelog, so never close and refile.
+- Check afterwards that the title, type and labels took.
+
 ## Adding an event type
 
 1. `src/types.ts` — add the name to `_logEventNames`. `LogEventType` derives from it.
