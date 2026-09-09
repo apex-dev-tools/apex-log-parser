@@ -80,7 +80,8 @@ the same change: it pins the two runtime lists, and pins the types through an in
 - Never paste a log from an org. Fixtures use `ns`, `MyClass`, `user@example.com` and ids
   zero-filled after the key prefix (`005000000000AAA`).
 - Conventional commits, one concern per commit.
-- `CHANGELOG.md` is hand-written. Add a bullet there; do not add a changeset.
+- Add a changeset (`pnpm changeset`) for any change a consumer of the published package can see.
+  Changesets writes `CHANGELOG.md` at release time; do not edit that file by hand.
 
 ## Issues and pull requests
 
