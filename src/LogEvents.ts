@@ -401,7 +401,8 @@ export class ApexLog extends LogEvent {
   cpuType: CPUType = '';
 
   /**
-   * The size of the log, in bytes
+   * The size of the log, in UTF-8 bytes. Not the string length: a non-ASCII character costs more
+   * than one byte.
    */
   public size = 0;
 

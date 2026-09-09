@@ -15,6 +15,7 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `src/LogLineMapping.ts` — event name to class. Every name is registered here.
 - `src/types.ts` — types and their const companions, public and internal together.
 - `src/limits.ts` — governor limit parsing and aggregation.
+- `src/utf8.ts` — UTF-8 byte length, for `ApexLog.size`. Internal; not on either entry point.
 - `src/index.ts` — root entry point. Runtime values only.
 - `src/publicTypes.ts` — the `/types` entry point. Public types and their const companions only.
 - `src/__tests__/` — vitest suites. `helpers.ts` holds shared fixtures.
@@ -71,7 +72,8 @@ the same change: it pins the two runtime lists, and pins the types through an in
   no `node:*` and reads no files at runtime. `tsconfig.scripts.json` adds `node` for `scripts/`
   only. A test may statically import the data JSON, as
   `EventMetadata.test.ts` does; `tsconfig.build.json` excludes the tests, so `rootDir` still holds
-  for the build.
+  for the build. A WHATWG global `src/` needs is declared in the module that uses it, as
+  `utf8.ts` declares `TextEncoder`. Never widen `lib` to `DOM` for one type.
 - Event times are nanoseconds and heap figures are bytes. `ApexLog.startTime` is milliseconds since
   midnight, and the `cpuTime` limit is milliseconds. State the unit on any new field.
 - Report what the log stated. Never substitute a default for a value the log did not give — use
