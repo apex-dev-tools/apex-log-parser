@@ -1,5 +1,12 @@
 # @apexdevtools/apex-log-parser
 
+## 0.1.1
+
+### Patch Changes
+
+- 556d741: Apply `HEAP_DEALLOCATE` events to correctly reduce the aggregated heap total (#73)
+- c59d755: Count `ApexLog.size` in UTF-8 bytes, logs with non-ASCII characters previously reported fewer bytes (#70)
+
 ## 0.1.0
 
 ### Minor Changes
