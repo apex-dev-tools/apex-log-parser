@@ -14,6 +14,9 @@ import {
 import { parseObjectNamespace, parseRows, parseVfNamespace } from '../LogEvents.js';
 import { lineTypeMap } from '../LogLineMapping.js';
 
+const childByText = (node: LogEvent, text: string): LogEvent =>
+  node.children.find((child) => child.text === text)!;
+
 class DummyLine extends LogEvent {
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
@@ -503,10 +506,9 @@ describe('parseLog tests', () => {
 
     const apexLog = parse(log);
     const root = apexLog.children[0]!.children[0]!;
-    const byText = (text: string) => root.children.find((child) => child.text === text)!;
-    const stats = byText('Stats.compute()');
-    const load = byText('Data.load()');
-    const render = byText('View.render()');
+    const stats = childByText(root, 'Stats.compute()');
+    const load = childByText(root, 'Data.load()');
+    const render = childByText(root, 'View.render()');
 
     // Signed net allocation is unchanged: Data keeps +5MB, View frees -5MB, the rest net 0.
     expect(load.heapAllocated.total).toBe(5000000);
@@ -537,28 +539,45 @@ describe('parseLog tests', () => {
     expect(apexLog.governorLimits.peak.heapSize.used).toBe(5000000);
   });
 
-  it('net, gross and peak are distinct for an allocate-then-free method', async () => {
-    // One method allocates 5MB then frees it: net nets to 0 ("no big deal"), but gross shows
-    // the 5MB churn and peak shows the 5MB transiently held.
+  it.each([
+    ['a negative HEAP_ALLOCATE', '15:20:52.222 (220)|HEAP_ALLOCATE|[1]|Bytes:-1000000\n'],
+    ['HEAP_DEALLOCATE', '15:20:52.222 (220)|HEAP_DEALLOCATE|[14]|Bytes:1000000\n'],
+  ])('net, gross and peak are distinct when a method frees with %s', (_name, freeLine) => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
       '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pM|M.a()\n' +
-      '15:20:52.222 (210)|HEAP_ALLOCATE|[1]|Bytes:5000000\n' +
-      '15:20:52.222 (220)|HEAP_ALLOCATE|[1]|Bytes:-5000000\n' +
+      '15:20:52.222 (210)|HEAP_ALLOCATE|[1]|Bytes:1000000\n' +
+      freeLine +
       '15:20:52.222 (230)|METHOD_EXIT|[1]|01pM|M.a()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const method = parse(log).children[0]!.children[0]!;
-    expect(method.heapAllocated.total).toBe(0); // net: allocated then freed
-    expect(method.heapGross.total).toBe(5000000); // churn
-    expect(method.heapPeak).toBe(5000000); // transiently held
+    expect(method.heapAllocated).toEqual({ self: 0, total: 0 }); // net: allocated then freed
+    expect(method.heapGross).toEqual({ self: 1000000, total: 1000000 }); // churn
+    expect(method.heapPeak).toBe(1000000); // transiently held
   });
 
-  it('BULK_HEAP_ALLOCATE feeds net/gross/peak the same as HEAP_ALLOCATE', async () => {
+  it('a zero-byte HEAP_DEALLOCATE states positive zero', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
       '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pM|M.a()\n' +
-      '15:20:52.222 (210)|BULK_HEAP_ALLOCATE|Bytes:1000\n' +
+      '15:20:52.222 (210)|HEAP_DEALLOCATE|[14]|Bytes:0\n' +
+      '15:20:52.222 (220)|METHOD_EXIT|[1]|01pM|M.a()\n' +
+      '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+
+    // `toBe` compares with `Object.is`, so it fails on -0.
+    const free = parse(log).children[0]!.children[0]!.children[0]!;
+    expect(free.heapAllocated.total).toBe(0);
+  });
+
+  it.each([
+    ['BULK_HEAP_ALLOCATE', '15:20:52.222 (210)|BULK_HEAP_ALLOCATE|Bytes:1000\n'],
+    ['a negative HEAP_DEALLOCATE', '15:20:52.222 (210)|HEAP_DEALLOCATE|[14]|Bytes:-1000\n'],
+  ])('feeds net/gross/peak the same as a positive HEAP_ALLOCATE: %s', (_name, leafLine) => {
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pM|M.a()\n' +
+      leafLine +
       '15:20:52.222 (220)|METHOD_EXIT|[1]|01pM|M.a()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
@@ -566,6 +585,30 @@ describe('parseLog tests', () => {
     expect(method.heapAllocated).toEqual({ self: 1000, total: 1000 });
     expect(method.heapGross).toEqual({ self: 1000, total: 1000 });
     expect(method.heapPeak).toBe(1000);
+  });
+
+  it.each([
+    ['a matched free', '15:20:52.222 (210)|HEAP_ALLOCATE|[13]|Bytes:1000000\n', 1000000],
+    ['a free with no allocation, which a skipped block can leave behind', '', 500],
+  ])('a later peak is measured from the level the free left: %s', (_name, allocLine, rootPeak) => {
+    // Without the free applied, B's own 500 would read as a peak of 1,000,500.
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pA|A.first()\n' +
+      allocLine +
+      '15:20:52.222 (220)|HEAP_DEALLOCATE|[14]|Bytes:1000000\n' +
+      '15:20:52.222 (230)|METHOD_EXIT|[1]|01pA|A.first()\n' +
+      '15:20:52.222 (300)|METHOD_ENTRY|[2]|01pB|B.second()\n' +
+      '15:20:52.222 (310)|HEAP_ALLOCATE|[20]|Bytes:500\n' +
+      '15:20:52.222 (320)|METHOD_EXIT|[2]|01pB|B.second()\n' +
+      '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+
+    const apexLog = parse(log);
+    const second = childByText(apexLog.children[0]!, 'B.second()');
+
+    expect(second.heapPeak).toBe(500);
+    expect(apexLog.heapPeak).toBe(rootPeak);
+    expect(apexLog.governorLimits.peak.heapSize.used).toBe(rootPeak);
   });
 
   it('governorLimits.peak.heapSize.used is the max of the reported peak and the computed peak', () => {
