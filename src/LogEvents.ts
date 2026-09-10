@@ -256,11 +256,11 @@ export abstract class LogEvent {
   };
 
   /**
-   * Signed NET heap bytes (alloc − free) from `HEAP_ALLOCATE`, `BULK_HEAP_ALLOCATE` and
-   * `HEAP_DEALLOCATE`: `+` grows the heap, `−` is net cleanup, `~0` is neutral ("allocated then
-   * freed — no lasting footprint"). A `HEAP_DEALLOCATE`, or a negative `HEAP_ALLOCATE`, frees.
-   * This is the primary "does this path retain heap" metric. It is NOT the churn volume (see
-   * {@link heapGross}) nor the governor-comparable peak (see {@link heapPeak}).
+   * Signed NET heap bytes (alloc − free) for HEAP_ALLOCATE / BULK_HEAP_ALLOCATE / HEAP_DEALLOCATE.
+   * A `HEAP_DEALLOCATE`, or a negative `HEAP_ALLOCATE`, is a deallocation, so this is signed: `+`
+   * grows the heap, `−` is net cleanup, `~0` is neutral ("allocated then freed — no lasting
+   * footprint"). This is the primary "does this path retain heap" metric. It is NOT the churn
+   * volume (see {@link heapGross}) nor the governor-comparable peak (see {@link heapPeak}).
    *
    * `self` is the net directly in this node's own body: seeded as `bytes` on each allocation
    * leaf, and (in `aggregateTotals`) summed onto the enclosing method from its direct leaf
@@ -292,11 +292,10 @@ export abstract class LogEvent {
   };
 
   /**
-   * Peak live heap (bytes) for this node's subtree: the highest running live-heap total any
-   * allocation leaf below it reached, clamped at 0. A free seeds the level it left behind, so a
-   * node that only frees never reports more than what stayed live. Always ≥ 0 and composes
-   * (child ≤ parent ≤ root), so the root equals the transaction peak. This is the heap number
-   * comparable to the heap governor limit.
+   * Peak live heap (bytes) for this node's subtree — the highest running live-heap total reached
+   * at a heap leaf below it, clamped at 0. Always ≥ 0 and composes (child ≤ parent ≤ root), so
+   * the root equals the transaction peak. This is the heap number comparable to the heap
+   * governor limit.
    */
   heapPeak = 0;
 
@@ -1196,8 +1195,7 @@ export class HeapDeallocateLine extends LogEvent {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
     this.bytes = parseBytes(parts[3]);
-    // The platform states the magnitude freed; the conditional keeps a zero as 0, not -0.
-    this.seedHeapLeaf(parser, this.bytes > 0 ? -this.bytes : this.bytes);
+    this.seedHeapLeaf(parser, 0 - this.bytes);
   }
 }
 

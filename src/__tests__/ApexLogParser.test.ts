@@ -555,6 +555,33 @@ describe('parseLog tests', () => {
     expect(method.heapPeak).toBe(1000000); // transiently held
   });
 
+  it('a negative HEAP_DEALLOCATE adds to the heap, as a positive HEAP_ALLOCATE does', () => {
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pM|M.a()\n' +
+      '15:20:52.222 (210)|HEAP_DEALLOCATE|[14]|Bytes:-1000\n' +
+      '15:20:52.222 (220)|METHOD_EXIT|[1]|01pM|M.a()\n' +
+      '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+
+    const method = parse(log).children[0]!.children[0]!;
+    expect(method.heapAllocated).toEqual({ self: 1000, total: 1000 });
+    expect(method.heapGross).toEqual({ self: 1000, total: 1000 });
+    expect(method.heapPeak).toBe(1000);
+  });
+
+  it('a zero-byte HEAP_DEALLOCATE states positive zero', () => {
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[1]|01pM|M.a()\n' +
+      '15:20:52.222 (210)|HEAP_DEALLOCATE|[14]|Bytes:0\n' +
+      '15:20:52.222 (220)|METHOD_EXIT|[1]|01pM|M.a()\n' +
+      '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
+
+    const free = parse(log).children[0]!.children[0]!.children[0]!;
+    expect(Object.is(free.heapAllocated.total, 0)).toBe(true);
+    expect(Object.is(free.heapAllocated.self, 0)).toBe(true);
+  });
+
   it('BULK_HEAP_ALLOCATE feeds net/gross/peak the same as HEAP_ALLOCATE', async () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +

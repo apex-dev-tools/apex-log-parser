@@ -311,8 +311,7 @@ export class ApexLogParser {
    * then rolled up (by max) to the enclosing methods in {@link aggregateTotals}.
    */
   trackHeapAllocation(bytes: number): number {
-    // The total is clamped, not just the return: a skipped block can drop an allocation and keep
-    // its free, and the debt would otherwise swallow every later allocation in the transaction.
+    // Clamped, so a free the log kept without its allocation cannot swallow later allocations.
     this.runningHeap = Math.max(0, this.runningHeap + bytes);
     return this.runningHeap;
   }
@@ -635,9 +634,9 @@ export class ApexLogParser {
           parent.thrownCount.total += child.thrownCount.total;
           parent.heapAllocated.total += child.heapAllocated.total;
           parent.heapGross.total += child.heapGross.total;
-          // Direct/self heap: attribute only leaf allocation children (HEAP_ALLOCATE /
-          // BULK_HEAP_ALLOCATE / HEAP_DEALLOCATE, which are not `isParent`) to the enclosing
-          // method, so `.self` = bytes allocated by this method's own body, excluding sub-methods.
+          // Direct/self heap: attribute only leaf heap children (which are not `isParent`) to the
+          // enclosing method, so `.self` = bytes allocated by this method's own body, excluding
+          // sub-methods.
           if (!child.isParent) {
             parent.heapAllocated.self += child.heapAllocated.self;
             parent.heapGross.self += child.heapGross.self;
