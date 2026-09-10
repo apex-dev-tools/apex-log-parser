@@ -116,7 +116,7 @@ itself.
   only once it is added to that loop.
 - `duration.self` is a subtraction: the parent starts at its total and each child's total comes off.
 - `heapPeak` composes by max, not sum. `heapAllocated.self` and `heapGross.self` take from the
-  leaf events that call `seedHeapLeaf`: `HEAP_ALLOCATE`, `BULK_HEAP_ALLOCATE`, `HEAP_DEALLOCATE`.
+  leaf events that call `seedHeapLeaf`.
 - `eventIndex` is the stable id. `timestamp` is not unique.
 
 ## Limits

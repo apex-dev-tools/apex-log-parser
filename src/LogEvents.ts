@@ -334,7 +334,7 @@ export abstract class LogEvent {
    * (negative = deallocation) and advances the parser's running live-heap total.
    */
   protected seedHeapLeaf(parser: ApexLogParser, bytes: number): void {
-    this.heapAllocated.self = this.heapAllocated.total = bytes;
+    this.heapAllocated.self = this.heapAllocated.total = bytes || 0;
     this.heapGross.self = this.heapGross.total = bytes > 0 ? bytes : 0;
     this.heapPeak = parser.trackHeapAllocation(bytes);
   }
@@ -1195,7 +1195,7 @@ export class HeapDeallocateLine extends LogEvent {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
     this.bytes = parseBytes(parts[3]);
-    this.seedHeapLeaf(parser, 0 - this.bytes);
+    this.seedHeapLeaf(parser, -this.bytes);
   }
 }
 
