@@ -2,42 +2,31 @@
 
 [![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
-[![minzipped size](https://img.shields.io/bundlephobia/minzip/@apexdevtools/apex-log-parser)](https://bundlephobia.com/package/@apexdevtools/apex-log-parser)
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
-![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 
-Turn a Salesforce Apex debug log into a typed event tree — execution timings, governor limits,
-SOQL/DML counts.
+Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor
+limits and SOQL/DML counts.
 
-> **Why this library?** It is the same parser that powers the
-> [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer) VS Code extension —
-> proven on real logs, with zero runtime dependencies and a bundled database of documented
-> Salesforce log events.
+It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
+VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).
 
 ## Features
 
-- **171 event types** parsed into typed classes — methods, SOQL, DML, flows, callouts, and more
-- **Hierarchical event tree** with parent/child links and automatic entry/exit matching
-- **Execution timing** per node, self and total, at nanosecond precision
-- **Governor limit tracking** with point-in-time snapshots, per namespace
-- **Per-line limit observations** — each limit line exposed as `{ metric, used, limit }`
-- **SOQL, DML and SOSL counts** aggregated up the tree
-- **Managed package namespace** detection and per-namespace metrics
-- **Zero dependencies**, ESM only
+- 171 event types parsed into their own classes, covering methods, SOQL, DML, flows, callouts and
+  more. Other lines use a generic class, so none are dropped
+- An event tree with parent/child links, where each entry event is matched to its exit
+- Execution time per node, self and total, in nanoseconds
+- Governor limits per namespace, with a snapshot for each limit block in the log
+- Each limit line's reading as `{ metric, used, limit }`
+- SOQL, DML and SOSL counts summed up the tree
+- Managed package namespaces, with metrics for each
+- No dependencies, ESM only
 
 ## Install
 
 ```bash
-# pnpm
-pnpm add @apexdevtools/apex-log-parser
-
-# npm
 npm install @apexdevtools/apex-log-parser
-
-# yarn
-yarn add @apexdevtools/apex-log-parser
 ```
 
 ## Quick start
@@ -90,60 +79,45 @@ LOG_ROOT LOG_ROOT (3.53ms)
 ```
 
 Note the shape. `parse()` returns the root, which is itself a `LogEvent`, so the same walk works
-from any node. `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not nodes of their own — each
+from any node. `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not nodes of their own. Each
 one closes its matching begin event and sets that event's `exitStamp` and `duration`.
 
-The root aggregates the whole tree, so totals need no walk:
+## Summarise a transaction
 
-```typescript
-console.log(`SOQL: ${log.soqlCount.total} queries, ${log.soqlRowCount.total} rows`);
-console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} rows`);
-// SOQL: 1 queries, 50 rows
-// DML:  1 statements, 50 rows
-```
+The root sums the whole tree, so SOQL and DML totals need no walk. Governor limits are on the root
+too: `final` is what the transaction had used when the log ended, and `peak` is the highest each
+metric reached. Check `peak` against a limit, because counters can fall mid-log.
 
-Governor limits are on the root too. `final` states what the transaction had used when the log
-ended, `peak` the highest each metric reached — check `peak` against a ceiling, because counters
-fall mid-log. Each metric states `{ used, limit, percentUsed }`:
-
-```typescript
-const { final, peak } = log.governorLimits;
-
-console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
-console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
-console.log(`Heap: ${peak.heapSize.used}/${peak.heapSize.limit} bytes`);
-```
-
-## Find the slowest methods
-
-`duration.self` excludes children, so it ranks by time spent in the method itself rather than in
-what it called.
+To rank methods, walk the tree and sort on `duration.self`. It excludes children, so it measures
+time spent in the method itself rather than in what it called.
 
 ```typescript
 import { type LogEvent, MethodEntryLine, parse } from '@apexdevtools/apex-log-parser';
 
-function findSlowest(log: LogEvent, count = 10): { name: string; duration: number }[] {
-  const methods: { name: string; duration: number }[] = [];
-  const stack: LogEvent[] = [...log.children];
-  while (stack.length) {
-    const node = stack.pop();
-    if (!node) {
-      break;
-    }
-    if (node instanceof MethodEntryLine) {
-      methods.push({ name: node.text, duration: node.duration.self });
-    }
-    stack.push(...node.children);
-  }
-  return methods.sort((a, b) => b.duration - a.duration).slice(0, count);
-}
+const log = parse(logData);
+const { final, peak } = log.governorLimits;
 
-console.table(findSlowest(parse(logData)));
+console.log(`SOQL: ${log.soqlCount.total} queries, ${log.soqlRowCount.total} rows`);
+console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} rows`);
+console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
+console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
+console.log(`Heap: ${peak.heapSize.used}/${peak.heapSize.limit} bytes`);
+
+const methods: MethodEntryLine[] = [];
+const stack: LogEvent[] = [log];
+for (let node = stack.pop(); node; node = stack.pop()) {
+  if (node instanceof MethodEntryLine) {
+    methods.push(node);
+  }
+  stack.push(...node.children);
+}
+methods.sort((a, b) => b.duration.self - a.duration.self);
+console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.duration.self })));
 ```
 
 ## API
 
-`parse(logData: string): ApexLog` — that is the whole entry point. There is no state to reset
+`parse(logData: string): ApexLog` is the whole entry point. There is no state to reset
 between calls, and `ApexLogParser.parse` gives each call its own parser. `ApexLog` is the root
 `LogEvent`, and adds `governorLimits`, `namespaces`, `debugLevels`, `userInfo`, `entryPoint`,
 `truncation`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
@@ -157,8 +131,8 @@ import { parse } from '@apexdevtools/apex-log-parser';
 import { LOG_LEVEL, type GovernorLimits } from '@apexdevtools/apex-log-parser/types';
 ```
 
-Every field, event class and type is described in the shipped declarations, so your editor has the
-full surface.
+The type declarations in the package document every field, event class and type, so your editor
+shows them.
 
 ## Tips
 
@@ -177,54 +151,25 @@ the most common surprise:
 `governorLimits.final` and `governorLimits.peak` metric stays at
 `{ used: 0, limit: 0, percentUsed: null }`. That is not a transaction that used nothing.
 
-**Read totals from the root.** It already aggregates the tree — walking it to count SOQL or DML
-is wasted work.
+**Read totals from the root.** It already sums the tree, so you don't need to walk it to count SOQL
+or DML.
 
 **Use `eventIndex` as an id.** It is unique, increasing and stable across a parse.
 
-**Two collections, two meanings.** `parsingErrors` holds lines the parser did not understand — a
+**Two collections, two meanings.** `parsingErrors` holds lines the parser did not understand, which is a
 parser problem. `logIssues` holds problems in the transaction the log describes, such as a
 truncated log or an unexpected exit.
 
-## FAQ
-
-### How do I parse a Salesforce Apex debug log in JavaScript or TypeScript?
-
-Install `@apexdevtools/apex-log-parser` and call `parse()` with the raw log text. It returns a
-typed tree you can walk, filter and analyse. See [Quick start](#quick-start).
-
-### What Apex debug log event types does it support?
-
-171 event types have a dedicated class, including `METHOD_ENTRY`/`EXIT`,
-`SOQL_EXECUTE_BEGIN`/`END`, `DML_BEGIN`/`END`, `CODE_UNIT_STARTED`/`FINISHED`,
-`FLOW_START_INTERVIEWS_BEGIN`, `CALLOUT_REQUEST`/`RESPONSE`, `EXCEPTION_THROWN` and `FATAL_ERROR`.
-Anything else falls back to a generic line class, so no log line is lost.
-
-### How do I analyse Salesforce governor limits programmatically?
-
-Call `parse()` and read `log.governorLimits` — `final` and `peak`, each stating 13 metrics with
-`used`, `limit` and `percentUsed`, plus `byNamespace` and point-in-time `snapshots`. See [Quick start](#quick-start), and read
-[Tips](#tips) first if every metric comes back zero.
-
 ## Requirements
 
-- **Node.js 20 or later.** The package targets ES2022 and runs in any runtime with ES modules —
-  Node, Deno, Bun, and modern browsers. It reads no files and makes no network calls.
+- **Node.js 20 or later.** The package targets ES2022 and runs in any runtime with ES modules:
+  Node, Deno, Bun and modern browsers. It reads no files and makes no network calls.
 - **ESM only.** There is no CommonJS build, so `require()` does not work.
 - **TypeScript declarations ship with the package.** No `@types` install is needed.
-
-## Stability
-
-This package is at 0.x. The API is in use by the Apex Log Analyzer and is not expected to churn,
-but minor versions may still make breaking changes until 1.0.
 
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, coding standards, and the PR process.
-
-## Changelog
-
-See [CHANGELOG.md](./CHANGELOG.md) or the [GitHub Releases](https://github.com/apex-dev-tools/apex-log-parser/releases) for version history.
 
 ## License
 

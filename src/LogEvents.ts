@@ -117,7 +117,7 @@ export abstract class LogEvent {
   /**
    * A globally-unique, monotonically-increasing index assigned at construction
    * time within a single parse. Use this as a stable identifier when navigating
-   * between views — unlike `timestamp`, it is guaranteed unique per event.
+   * between views. Unlike `timestamp`, it is guaranteed unique per event.
    */
   eventIndex = 0;
 
@@ -241,7 +241,7 @@ export abstract class LogEvent {
    * `self` is seeded on the EXCEPTION_THROWN leaf node (like DML/SOQL), so a method's
    * `thrownCount.self` is always 0 (the throw is a child, not the method itself). Because
    * only methods are hoverable on the timeline, `self` is deliberately omitted from the
-   * Throws tooltip row — it would only ever read "(self 0)". The field keeps the SelfTotal
+   * Throws tooltip row, because it would only ever read "(self 0)". The field keeps the SelfTotal
    * shape for consistency with the other metrics and so the leaf carries `self: 1`.
    */
   thrownCount: SelfTotal = {
@@ -258,13 +258,13 @@ export abstract class LogEvent {
   /**
    * Signed NET heap bytes (alloc − free) for HEAP_ALLOCATE / BULK_HEAP_ALLOCATE / HEAP_DEALLOCATE.
    * A `HEAP_DEALLOCATE`, or a negative `HEAP_ALLOCATE`, is a deallocation, so this is signed: `+`
-   * grows the heap, `−` is net cleanup, `~0` is neutral ("allocated then freed — no lasting
+   * grows the heap, `−` is net cleanup, `~0` is neutral ("allocated then freed, no lasting
    * footprint"). This is the primary "does this path retain heap" metric. It is NOT the churn
    * volume (see {@link heapGross}) nor the governor-comparable peak (see {@link heapPeak}).
    *
    * `self` is the net directly in this node's own body: seeded as `bytes` on each allocation
    * leaf, and (in `aggregateTotals`) summed onto the enclosing method from its direct leaf
-   * children only — so a method's `self` excludes allocations in sub-methods. `total` is the
+   * children only, so a method's `self` excludes allocations in sub-methods. `total` is the
    * net across this node and all descendants.
    */
   heapAllocated: SelfTotal = {
@@ -279,7 +279,7 @@ export abstract class LogEvent {
   };
 
   /**
-   * GROSS heap bytes allocated (positive HEAP_ALLOCATE only; frees ignored) — the churn / GC
+   * GROSS heap bytes allocated (positive HEAP_ALLOCATE only; frees ignored): the churn / GC
    * pressure a path creates regardless of whether it frees. Distinct from {@link heapAllocated}
    * (net) and {@link heapPeak} (max live): an allocate-then-free loop has net ≈ 0 and a small
    * peak but a large gross. Same self/total aggregation as {@link heapAllocated}.
@@ -292,7 +292,7 @@ export abstract class LogEvent {
   };
 
   /**
-   * Peak live heap (bytes) for this node's subtree — the highest running live-heap total reached
+   * Peak live heap (bytes) for this node's subtree: the highest running live-heap total reached
    * at a heap leaf below it, clamped at 0. Always ≥ 0 and composes (child ≤ parent ≤ root), so
    * the root equals the transaction peak. This is the heap number comparable to the heap
    * governor limit.
