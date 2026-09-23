@@ -1,5 +1,11 @@
 # @apexdevtools/apex-log-parser
 
+## 0.1.2
+
+### Patch Changes
+
+- 0387470: Reword and trim the README, and reword the package description and API doc comments in plainer language
+
 ## 0.1.1
 
 ### Patch Changes
