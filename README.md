@@ -5,19 +5,17 @@
 [![minzipped size](https://img.shields.io/bundlephobia/minzip/@apexdevtools/apex-log-parser)](https://bundlephobia.com/package/@apexdevtools/apex-log-parser)
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
-![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 
 Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor
 limits and SOQL/DML counts.
 
-This is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
-VS Code extension. It has no runtime dependencies.
+It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
+VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).
 
 ## Features
 
 - 171 event types parsed into their own classes, covering methods, SOQL, DML, flows, callouts and
-  more
+  more. Other lines use a generic class, so none are dropped
 - An event tree with parent/child links, where each entry event is matched to its exit
 - Execution time per node, self and total, in nanoseconds
 - Governor limits per namespace, with a snapshot for each limit block in the log
@@ -29,14 +27,7 @@ VS Code extension. It has no runtime dependencies.
 ## Install
 
 ```bash
-# pnpm
-pnpm add @apexdevtools/apex-log-parser
-
-# npm
 npm install @apexdevtools/apex-log-parser
-
-# yarn
-yarn add @apexdevtools/apex-log-parser
 ```
 
 ## Quick start
@@ -185,26 +176,6 @@ or DML.
 parser problem. `logIssues` holds problems in the transaction the log describes, such as a
 truncated log or an unexpected exit.
 
-## FAQ
-
-### How do I parse a Salesforce Apex debug log in JavaScript or TypeScript?
-
-Install `@apexdevtools/apex-log-parser` and call `parse()` with the raw log text. It returns a
-typed tree you can walk, filter and analyse. See [Quick start](#quick-start).
-
-### What Apex debug log event types does it support?
-
-171 event types have a dedicated class, including `METHOD_ENTRY`/`EXIT`,
-`SOQL_EXECUTE_BEGIN`/`END`, `DML_BEGIN`/`END`, `CODE_UNIT_STARTED`/`FINISHED`,
-`FLOW_START_INTERVIEWS_BEGIN`, `CALLOUT_REQUEST`/`RESPONSE`, `EXCEPTION_THROWN` and `FATAL_ERROR`.
-Anything else falls back to a generic line class, so no log line is lost.
-
-### How do I analyse Salesforce governor limits programmatically?
-
-Call `parse()` and read `log.governorLimits`. It has `final` and `peak`, each with 13 metrics stating
-`used`, `limit` and `percentUsed`, plus `byNamespace` and point-in-time `snapshots`. See [Quick start](#quick-start), and read
-[Tips](#tips) first if every metric comes back zero.
-
 ## Requirements
 
 - **Node.js 20 or later.** The package targets ES2022 and runs in any runtime with ES modules:
@@ -212,18 +183,9 @@ Call `parse()` and read `log.governorLimits`. It has `final` and `peak`, each wi
 - **ESM only.** There is no CommonJS build, so `require()` does not work.
 - **TypeScript declarations ship with the package.** No `@types` install is needed.
 
-## Stability
-
-This package is at 0.x. The API is in use by the Apex Log Analyzer and is not expected to churn,
-but minor versions may still make breaking changes until 1.0.
-
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, coding standards, and the PR process.
-
-## Changelog
-
-See [CHANGELOG.md](./CHANGELOG.md) or the [GitHub Releases](https://github.com/apex-dev-tools/apex-log-parser/releases) for version history.
 
 ## License
 

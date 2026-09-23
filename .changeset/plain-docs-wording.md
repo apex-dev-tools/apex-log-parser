@@ -2,4 +2,4 @@
 '@apexdevtools/apex-log-parser': patch
 ---
 
-Reword the README, package description and API doc comments in plainer language
+Reword and trim the README, and reword the package description and API doc comments in plainer language
