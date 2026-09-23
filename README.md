@@ -2,7 +2,6 @@
 
 [![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
-[![minzipped size](https://img.shields.io/bundlephobia/minzip/@apexdevtools/apex-log-parser)](https://bundlephobia.com/package/@apexdevtools/apex-log-parser)
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
 
@@ -83,52 +82,37 @@ Note the shape. `parse()` returns the root, which is itself a `LogEvent`, so the
 from any node. `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not nodes of their own. Each
 one closes its matching begin event and sets that event's `exitStamp` and `duration`.
 
-The root aggregates the whole tree, so totals need no walk:
+## Summarise a transaction
 
-```typescript
-console.log(`SOQL: ${log.soqlCount.total} queries, ${log.soqlRowCount.total} rows`);
-console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} rows`);
-// SOQL: 1 queries, 50 rows
-// DML:  1 statements, 50 rows
-```
+The root sums the whole tree, so SOQL and DML totals need no walk. Governor limits are on the root
+too: `final` is what the transaction had used when the log ended, and `peak` is the highest each
+metric reached. Check `peak` against a limit, because counters can fall mid-log.
 
-Governor limits are on the root too. `final` is what the transaction had used when the log
-ended, and `peak` is the highest each metric reached. Check `peak` against a limit, because
-counters can fall mid-log. Each metric is `{ used, limit, percentUsed }`:
-
-```typescript
-const { final, peak } = log.governorLimits;
-
-console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
-console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
-console.log(`Heap: ${peak.heapSize.used}/${peak.heapSize.limit} bytes`);
-```
-
-## Find the slowest methods
-
-`duration.self` excludes children, so it ranks by time spent in the method itself rather than in
-what it called.
+To rank methods, walk the tree and sort on `duration.self`. It excludes children, so it measures
+time spent in the method itself rather than in what it called.
 
 ```typescript
 import { type LogEvent, MethodEntryLine, parse } from '@apexdevtools/apex-log-parser';
 
-function findSlowest(log: LogEvent, count = 10): { name: string; duration: number }[] {
-  const methods: { name: string; duration: number }[] = [];
-  const stack: LogEvent[] = [...log.children];
-  while (stack.length) {
-    const node = stack.pop();
-    if (!node) {
-      break;
-    }
-    if (node instanceof MethodEntryLine) {
-      methods.push({ name: node.text, duration: node.duration.self });
-    }
-    stack.push(...node.children);
-  }
-  return methods.sort((a, b) => b.duration - a.duration).slice(0, count);
-}
+const log = parse(logData);
+const { final, peak } = log.governorLimits;
 
-console.table(findSlowest(parse(logData)));
+console.log(`SOQL: ${log.soqlCount.total} queries, ${log.soqlRowCount.total} rows`);
+console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} rows`);
+console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
+console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
+console.log(`Heap: ${peak.heapSize.used}/${peak.heapSize.limit} bytes`);
+
+const methods: MethodEntryLine[] = [];
+const stack: LogEvent[] = [log];
+for (let node = stack.pop(); node; node = stack.pop()) {
+  if (node instanceof MethodEntryLine) {
+    methods.push(node);
+  }
+  stack.push(...node.children);
+}
+methods.sort((a, b) => b.duration.self - a.duration.self);
+console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.duration.self })));
 ```
 
 ## API
