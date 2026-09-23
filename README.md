@@ -8,24 +8,23 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 
-Turn a Salesforce Apex debug log into a typed event tree — execution timings, governor limits,
-SOQL/DML counts.
+Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor
+limits and SOQL/DML counts.
 
-> **Why this library?** It is the same parser that powers the
-> [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer) VS Code extension —
-> proven on real logs, with zero runtime dependencies and a bundled database of documented
-> Salesforce log events.
+This is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
+VS Code extension. It has no runtime dependencies.
 
 ## Features
 
-- **171 event types** parsed into typed classes — methods, SOQL, DML, flows, callouts, and more
-- **Hierarchical event tree** with parent/child links and automatic entry/exit matching
-- **Execution timing** per node, self and total, at nanosecond precision
-- **Governor limit tracking** with point-in-time snapshots, per namespace
-- **Per-line limit observations** — each limit line exposed as `{ metric, used, limit }`
-- **SOQL, DML and SOSL counts** aggregated up the tree
-- **Managed package namespace** detection and per-namespace metrics
-- **Zero dependencies**, ESM only
+- 171 event types parsed into their own classes, covering methods, SOQL, DML, flows, callouts and
+  more
+- An event tree with parent/child links, where each entry event is matched to its exit
+- Execution time per node, self and total, in nanoseconds
+- Governor limits per namespace, with a snapshot for each limit block in the log
+- Each limit line's reading as `{ metric, used, limit }`
+- SOQL, DML and SOSL counts summed up the tree
+- Managed package namespaces, with metrics for each
+- No dependencies, ESM only
 
 ## Install
 
@@ -90,7 +89,7 @@ LOG_ROOT LOG_ROOT (3.53ms)
 ```
 
 Note the shape. `parse()` returns the root, which is itself a `LogEvent`, so the same walk works
-from any node. `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not nodes of their own — each
+from any node. `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not nodes of their own. Each
 one closes its matching begin event and sets that event's `exitStamp` and `duration`.
 
 The root aggregates the whole tree, so totals need no walk:
@@ -102,9 +101,9 @@ console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} ro
 // DML:  1 statements, 50 rows
 ```
 
-Governor limits are on the root too. `final` states what the transaction had used when the log
-ended, `peak` the highest each metric reached — check `peak` against a ceiling, because counters
-fall mid-log. Each metric states `{ used, limit, percentUsed }`:
+Governor limits are on the root too. `final` is what the transaction had used when the log
+ended, and `peak` is the highest each metric reached. Check `peak` against a limit, because
+counters can fall mid-log. Each metric is `{ used, limit, percentUsed }`:
 
 ```typescript
 const { final, peak } = log.governorLimits;
@@ -143,7 +142,7 @@ console.table(findSlowest(parse(logData)));
 
 ## API
 
-`parse(logData: string): ApexLog` — that is the whole entry point. There is no state to reset
+`parse(logData: string): ApexLog` is the whole entry point. There is no state to reset
 between calls, and `ApexLogParser.parse` gives each call its own parser. `ApexLog` is the root
 `LogEvent`, and adds `governorLimits`, `namespaces`, `debugLevels`, `userInfo`, `entryPoint`,
 `truncation`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
@@ -157,8 +156,8 @@ import { parse } from '@apexdevtools/apex-log-parser';
 import { LOG_LEVEL, type GovernorLimits } from '@apexdevtools/apex-log-parser/types';
 ```
 
-Every field, event class and type is described in the shipped declarations, so your editor has the
-full surface.
+The type declarations in the package document every field, event class and type, so your editor
+shows them.
 
 ## Tips
 
@@ -177,12 +176,12 @@ the most common surprise:
 `governorLimits.final` and `governorLimits.peak` metric stays at
 `{ used: 0, limit: 0, percentUsed: null }`. That is not a transaction that used nothing.
 
-**Read totals from the root.** It already aggregates the tree — walking it to count SOQL or DML
-is wasted work.
+**Read totals from the root.** It already sums the tree, so you don't need to walk it to count SOQL
+or DML.
 
 **Use `eventIndex` as an id.** It is unique, increasing and stable across a parse.
 
-**Two collections, two meanings.** `parsingErrors` holds lines the parser did not understand — a
+**Two collections, two meanings.** `parsingErrors` holds lines the parser did not understand, which is a
 parser problem. `logIssues` holds problems in the transaction the log describes, such as a
 truncated log or an unexpected exit.
 
@@ -202,14 +201,14 @@ Anything else falls back to a generic line class, so no log line is lost.
 
 ### How do I analyse Salesforce governor limits programmatically?
 
-Call `parse()` and read `log.governorLimits` — `final` and `peak`, each stating 13 metrics with
+Call `parse()` and read `log.governorLimits`. It has `final` and `peak`, each with 13 metrics stating
 `used`, `limit` and `percentUsed`, plus `byNamespace` and point-in-time `snapshots`. See [Quick start](#quick-start), and read
 [Tips](#tips) first if every metric comes back zero.
 
 ## Requirements
 
-- **Node.js 20 or later.** The package targets ES2022 and runs in any runtime with ES modules —
-  Node, Deno, Bun, and modern browsers. It reads no files and makes no network calls.
+- **Node.js 20 or later.** The package targets ES2022 and runs in any runtime with ES modules:
+  Node, Deno, Bun and modern browsers. It reads no files and makes no network calls.
 - **ESM only.** There is no CommonJS build, so `require()` does not work.
 - **TypeScript declarations ship with the package.** No `@types` install is needed.
 
