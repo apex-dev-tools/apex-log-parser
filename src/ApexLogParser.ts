@@ -12,6 +12,7 @@ import {
 import { getLogEventClass } from './LogLineMapping.js';
 import { deriveGovernorLimits } from './limits.js';
 import type {
+  DebugLevelSetting,
   DebugLevels,
   GovernorSnapshot,
   IssueType,
@@ -229,7 +230,9 @@ export class ApexLogParser {
     const lineGenerator = this.generateLogLines(debugLog);
     const apexLog = this.toLogTree(lineGenerator);
     apexLog.size = utf8ByteLength(debugLog);
-    apexLog.debugLevels = this.getDebugLevels(debugLog);
+    const { levels, settings } = this.parseDebugSettings(debugLog);
+    apexLog.debugLevels = levels;
+    apexLog.debugLevelSettings = settings;
     apexLog.userInfo = parseUserInfo(debugLog);
     apexLog.entryPoint = findEntryPoint(apexLog);
     apexLog.logIssues = this.logIssues;
@@ -771,30 +774,36 @@ export class ApexLogParser {
     this.addLogIssue(startTime, eventIndex, summary, description, type);
   }
 
-  private getDebugLevels(log: string): DebugLevels {
-    const match = log.match(settingsPattern);
-    if (!match) {
-      return {};
+  private parseDebugSettings(log: string): { levels: DebugLevels; settings: DebugLevelSetting[] } {
+    const levels: DebugLevels = {};
+    const settings: DebugLevelSetting[] = [];
+    const line = log.match(settingsPattern)?.[0];
+    if (!line) {
+      return { levels, settings };
     }
 
-    const settings = match[0];
-    const levels: DebugLevels = {};
-    for (const entry of settings.substring(settings.indexOf(' ') + 1).split(';')) {
+    for (const entry of line.substring(line.indexOf(' ') + 1).split(';')) {
       if (!entry) {
         continue;
       }
 
-      const [token, level] = entry.split(',');
-      const key = token ? debugLevelKeyByToken.get(token) : undefined;
-      if (!key) {
-        this.parsingErrors.push(`Unsupported debug log category: ${token}`);
-      } else if (!level || !logLevels.has(level)) {
-        this.parsingErrors.push(`Unsupported debug level: ${entry}`);
+      // At the first comma only, so the level keeps whatever the entry stated after it.
+      const comma = entry.indexOf(',');
+      const token = comma < 0 ? entry : entry.slice(0, comma);
+      const level = comma < 0 ? null : entry.slice(comma + 1) || null;
+      const category = debugLevelKeyByToken.get(token) ?? null;
+      settings.push({ token, level, category });
+      // An unknown category is data the caller can still show, not a parse error.
+      if (!category) {
+        continue;
+      }
+      if (level && logLevels.has(level)) {
+        levels[category] = level as LogLevel;
       } else {
-        levels[key] = level as LogLevel;
+        this.parsingErrors.push(`Unsupported debug level: ${entry}`);
       }
     }
-    return levels;
+    return { levels, settings };
   }
 }
 

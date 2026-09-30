@@ -119,16 +119,14 @@ console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.durat
 
 `parse(logData: string): ApexLog` is the whole entry point. There is no state to reset
 between calls, and `ApexLogParser.parse` gives each call its own parser. `ApexLog` is the root
-`LogEvent`, and adds `governorLimits`, `namespaces`, `debugLevels`, `userInfo`, `entryPoint`,
-`truncation`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
+`LogEvent`, and adds `governorLimits`, `namespaces`, `debugLevels`, `debugLevelSettings`, `userInfo`,
+`entryPoint`, `truncation`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
 
-There are two entry points. The root exports runtime values only: `parse`, the `ApexLogParser`
-class, and the event classes you need for `instanceof` narrowing. Every type, and the
-const companions that go with them, come from `@apexdevtools/apex-log-parser/types`:
+Everything comes from the package root: `parse`, the `ApexLogParser` class, the event classes
+you need for `instanceof` narrowing, every type, and the const companions that go with them:
 
 ```typescript
-import { parse } from '@apexdevtools/apex-log-parser';
-import { LOG_LEVEL, type GovernorLimits } from '@apexdevtools/apex-log-parser/types';
+import { LOG_LEVEL, parse, type GovernorLimits } from '@apexdevtools/apex-log-parser';
 ```
 
 The type declarations in the package document every field, event class and type, so your editor

@@ -12,10 +12,13 @@ declare const TextEncoder: {
 const encoder = new TextEncoder();
 
 /**
- * Any size from 4 bytes up is correct, and none is measurably faster. Below 4 a single astral
- * code point never fits, `encodeInto` reads nothing, and the loop below stops advancing.
+ * Any size from 6 bytes up is correct, and none is measurably faster. Below 6 a chunk is one unit, a
+ * high surrogate there trims it to nothing, and the loop below stops advancing.
  */
 const bufferBytes = 8192;
+
+/** A UTF-16 code unit never takes more than 3 UTF-8 bytes, so a chunk this long always fits. */
+export const chunkUnits: number = Math.floor(bufferBytes / 3);
 
 /**
  * The UTF-8 byte length of a string. `String.length` counts UTF-16 code units, which under-reports
@@ -30,10 +33,13 @@ export function utf8ByteLength(text: string): number {
   const len = text.length;
   let bytes = 0;
   for (let i = 0; i < len; ) {
-    // `encodeInto` stops on a code-point boundary and states how far it got, so a surrogate pair
-    // is never split across two passes. The `slice` is a view, not a copy, on every engine this
-    // package targets; one that copied instead would make this quadratic.
-    const { read, written } = encoder.encodeInto(text.slice(i), buffer);
+    // Bound the slice: Blink copies the source string, so an open-ended one would be quadratic.
+    let end = Math.min(i + chunkUnits, len);
+    // A high surrogate cut from its pair would encode as a 3-byte replacement character.
+    if (end < len && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800) {
+      end--;
+    }
+    const { read, written } = encoder.encodeInto(text.slice(i, end), buffer);
     bytes += written;
     i += read;
   }
