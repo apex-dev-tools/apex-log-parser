@@ -9,10 +9,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./types": {
-      "types": "./dist/publicTypes.d.ts",
-      "import": "./dist/publicTypes.js"
-    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.js",
