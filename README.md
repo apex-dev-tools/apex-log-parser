@@ -120,7 +120,8 @@ console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.durat
 `parse(logData: string): ApexLog` is the whole entry point. There is no state to reset
 between calls, and `ApexLogParser.parse` gives each call its own parser. `ApexLog` is the root
 `LogEvent`, and adds `governorLimits`, `namespaces`, `debugLevels`, `debugLevelSettings`, `userInfo`,
-`entryPoint`, `truncation`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
+`entryPoint`, `entryPoints`, `truncation`, `logIssues`, `parsingErrors`, `exceptions` and
+`eventsById`.
 
 Everything comes from the package root: `parse`, the `ApexLogParser` class, the event classes
 you need for `instanceof` narrowing, every type, and the const companions that go with them:
