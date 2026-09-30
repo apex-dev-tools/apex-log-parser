@@ -2,11 +2,15 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { parse } from '../index.js';
-import { utf8ByteLength } from '../utf8.js';
+import { chunkUnits, utf8ByteLength } from '../utf8.js';
 
 /** 2 code units, 4 UTF-8 bytes. Built from the code point so an editor cannot mangle the pair. */
 const emoji = String.fromCodePoint(0x1f642);
 const loneSurrogate = String.fromCharCode(0xd800);
+
+declare const TextEncoder: {
+  prototype: { encodeInto(source: string, destination: Uint8Array): { read: number } };
+};
 
 describe('utf8ByteLength', () => {
   it.each([
@@ -31,12 +35,25 @@ describe('utf8ByteLength', () => {
   });
 
   it('counts a surrogate pair at every offset either side of a pass boundary', () => {
-    // Sweep the pair across every buffer size the helper might plausibly use, so this keeps
-    // testing a real boundary if that size changes.
-    for (const boundary of [4096, 8192, 16384, 32768, 65536]) {
+    for (const boundary of [chunkUnits, 2 * chunkUnits, 3 * chunkUnits]) {
       for (let pad = boundary - 10; pad <= boundary + 10; pad++) {
         expect(utf8ByteLength('a'.repeat(pad) + emoji)).toBe(pad + 4);
       }
+    }
+  });
+
+  it('encodes all of each source it passes to encodeInto', () => {
+    // Only Blink copies the source, so this pins the bound; a timing test passes on Node either way.
+    const encodeInto = vi.spyOn(TextEncoder.prototype, 'encodeInto');
+    try {
+      utf8ByteLength(`${'a'.repeat(99)}${emoji}`.repeat(1000));
+
+      expect(encodeInto.mock.calls.length).toBeGreaterThan(1);
+      encodeInto.mock.calls.forEach(([source], call) => {
+        expect(encodeInto.mock.results[call]?.value).toMatchObject({ read: source.length });
+      });
+    } finally {
+      encodeInto.mockRestore();
     }
   });
 });
