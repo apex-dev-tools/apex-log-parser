@@ -203,12 +203,23 @@ export type DebugCategory = keyof DebugLevels | '';
 
 /** The user timezone as the log header stated it. */
 export interface LogTimezone {
+  /**
+   * The timezone field exactly as the header stated it, e.g.
+   * `(GMT-08:00) Pacific Standard Time (America/Los_Angeles)`.
+   */
+  text: string;
   /** The display label, e.g. `Pacific Standard Time`. Localised in some logs. */
   label: string;
   /** IANA name, e.g. `America/Los_Angeles`. Null when the header stated no name. */
   name: string | null;
   /** Minutes east of UTC, e.g. -480 for `GMT-08:00`. Null when the header stated no offset. */
   offsetMinutes: number | null;
+  /**
+   * The offset as the header spelled it, e.g. `GMT-08:00` or `GMTZ`: the offset field, or the
+   * label's GMT prefix when that field is missing or unreadable. Null exactly when
+   * `offsetMinutes` is.
+   */
+  offsetText: string | null;
 }
 
 /** Who ran the transaction, from the `USER_INFO` header line. */

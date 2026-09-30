@@ -26,9 +26,11 @@ describe('userInfo', () => {
       id: '005J000000E9ctM',
       userName: 'test@example.com',
       timezone: {
+        text: '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)',
         label: 'Pacific Standard Time',
         name: 'America/Los_Angeles',
         offsetMinutes: -480,
+        offsetText: 'GMT-08:00',
       },
     });
   });
@@ -41,9 +43,11 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo?.timezone).toEqual({
+      text: "Heure d'Europe centrale",
       label: "Heure d'Europe centrale",
       name: null,
       offsetMinutes: 60,
+      offsetText: 'GMT+01:00',
     });
   });
 
@@ -54,7 +58,7 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.offsetMinutes).toBe(0);
+    expect(apexLog.userInfo?.timezone).toMatchObject({ offsetMinutes: 0, offsetText: 'GMTZ' });
   });
 
   it('keeps the slashes in a multi-part IANA name', () => {
@@ -83,9 +87,11 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo?.timezone).toEqual({
+      text: '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)',
       label: 'Pacific Standard Time',
       name: 'America/Los_Angeles',
       offsetMinutes: -480,
+      offsetText: 'GMT-08:00',
     });
   });
 
@@ -97,9 +103,11 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo?.timezone).toEqual({
+      text: '(GMT+05:30) India Standard Time',
       label: 'India Standard Time',
       name: null,
       offsetMinutes: 330,
+      offsetText: 'GMT+05:30',
     });
   });
 
@@ -110,7 +118,7 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.offsetMinutes).toBeNull();
+    expect(apexLog.userInfo?.timezone).toMatchObject({ offsetMinutes: null, offsetText: null });
   });
 
   it('reads the offset from the label when the header states no offset column', () => {
@@ -120,7 +128,10 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.offsetMinutes).toBe(330);
+    expect(apexLog.userInfo?.timezone).toMatchObject({
+      offsetMinutes: 330,
+      offsetText: 'GMT+05:30',
+    });
   });
 
   it('ignores a timestamped USER_INFO line a USER_DEBUG message quotes', () => {

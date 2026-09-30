@@ -92,7 +92,7 @@ const debugLevelKeyByToken = new Map<string, keyof DebugLevels>(
 );
 
 // Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
-// the header line never reaches `UserInfoLine`. The first match is the log's first timestamped line.
+// the header line never reaches `UserInfoLine`. The first match is the first timestamped line.
 const timestampedLinePattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|.*/m;
 // Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
 // localised, label with either part missing. Read the two parts apart, so one absent part does not
@@ -103,21 +103,22 @@ const ianaNamePattern = /\s\(([^)]*)\)$/;
 const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
 
 /**
- * Minutes east of UTC. The header states `GMTZ` rather than `GMT+00:00` for UTC.
+ * Minutes east of UTC, with the spelling they were read from. The header states `GMTZ` rather than
+ * `GMT+00:00` for UTC.
  * @returns null when the header stated no offset this can read.
  */
-function parseGmtOffset(offset: string): number | null {
-  if (offset === 'GMTZ') {
-    return 0;
+function parseGmtOffset(text: string): { minutes: number; text: string } | null {
+  if (text === 'GMTZ') {
+    return { minutes: 0, text };
   }
 
-  const match = offset.match(gmtOffsetPattern);
+  const match = text.match(gmtOffsetPattern);
   if (!match) {
     return null;
   }
 
   const minutes = Number.parseInt(match[2] ?? '0', 10) * 60 + Number.parseInt(match[3] ?? '0', 10);
-  return match[1] === '-' ? -minutes : minutes;
+  return { minutes: match[1] === '-' ? -minutes : minutes, text };
 }
 
 /**
@@ -137,14 +138,17 @@ function parseUserInfo(log: string): UserInfo | null {
   const gmtPrefix = field.match(gmtPrefixPattern);
   const timezone = field.slice(gmtPrefix?.[0]?.length ?? 0);
   const named = timezone.match(ianaNamePattern);
+  // The label states the offset too, so a log with no offset column is still readable.
+  const offset = parseGmtOffset(parts[6] ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? '');
   return {
     id: parts[3] ?? '',
     userName: parts[4] ?? '',
     timezone: {
+      text: field,
       label: timezone.replace(ianaNamePattern, '').trim(),
       name: named?.[1] ?? null,
-      // The label states the offset too, so a log with no offset column is still readable.
-      offsetMinutes: parseGmtOffset(parts[6] ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? ''),
+      offsetMinutes: offset?.minutes ?? null,
+      offsetText: offset?.text ?? null,
     },
   };
 }
