@@ -153,6 +153,9 @@ function parseUserInfo(log: string): UserInfo | null {
 
 const logLevels = new Set<string>(Object.values(LOG_LEVEL));
 
+// A settings line directly followed by a timestamped line: how each pasted log begins.
+const logHeaderPattern =
+  /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+\r?\n\d{2}:\d{2}:\d{2}\.\d+ \(\d+\)\|/gm;
 const nanosPattern = /^\d{2}:\d{2}:\d{2}\.\d+ \((\d+)\)\|/;
 
 /**
@@ -411,7 +414,7 @@ export class ApexLogParser {
       if (line) {
         // ignore blank lines
         if (lastEntry && !isLastLine && opensNextLog(line, log, lfIndex + 1, lastEntry)) {
-          this.reportMultipleLogs(lastEntry);
+          this.reportMultipleLogs(lastEntry, log, startIndex);
           break;
         }
         const entry = this.parseLine(line, lastEntry);
@@ -738,12 +741,15 @@ export class ApexLogParser {
     }
   }
 
-  private reportMultipleLogs(lastEntry: LogEvent) {
+  /** Runs once, only for a text that holds more than one log, so the scan of the rest is cheap. */
+  private reportMultipleLogs(lastEntry: LogEvent, log: string, nextLogStart: number) {
+    // At least 2: this runs only once a second log was found.
+    const count = Math.max(2, 1 + (log.slice(nextLogStart).match(logHeaderPattern)?.length ?? 0));
     this.addLogIssue(
       lastEntry.timestamp,
       lastEntry.eventIndex,
       'Multiple-Logs',
-      'The text holds more than one log. Only the first log was parsed. Open each log on its own.',
+      `The text holds ${count} logs. Only the first log was parsed. Open each log on its own.`,
       'error',
     );
   }

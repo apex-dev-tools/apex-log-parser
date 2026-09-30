@@ -32,7 +32,12 @@ describe('a text that holds more than one log', () => {
     expect(codeUnits(log)).toEqual(['First.unit']);
     expect(log.userInfo?.userName).toBe('user@example.com');
     expect(log.logIssues).toEqual([
-      expect.objectContaining({ summary: 'Multiple-Logs', type: 'error', startTime: 140 }),
+      expect.objectContaining({
+        summary: 'Multiple-Logs',
+        type: 'error',
+        startTime: 140,
+        description: expect.stringContaining('holds 2 logs'),
+      }),
     ]);
   });
 
