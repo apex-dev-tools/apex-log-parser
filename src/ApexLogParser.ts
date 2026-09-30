@@ -95,12 +95,6 @@ const debugLevelKeyByToken = new Map<string, keyof DebugLevels>(
 // Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
 // the header line never reaches `UserInfoLine`. The first match is the first timestamped line.
 const timestampedLinePattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|.*/m;
-// Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
-// localised, label with either part missing. Read the two parts apart, so one absent part does not
-// leave the other in the label.
-const gmtPrefixPattern = /^\((GMT[^)]*)\)\s*/;
-// Last group, because an IANA name can hold slashes.
-const ianaNamePattern = /\s\(([^)]*)\)$/;
 const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
 
 /**
@@ -143,16 +137,25 @@ function parseUserInfo(log: string): UserInfo | null {
   };
 }
 
+/**
+ * Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
+ * localised, label with either part missing. Read with string scans, not a regex, so a hostile
+ * field cannot make the parse slow.
+ */
 function parseTimezone(field: string, offsetField: string | undefined): LogTimezone {
-  const gmtPrefix = field.match(gmtPrefixPattern);
-  const timezone = field.slice(gmtPrefix?.[0]?.length ?? 0);
-  const named = timezone.match(ianaNamePattern);
+  const prefixEnd = field.startsWith('(GMT') ? field.indexOf(')') : -1;
+  const gmtPrefix = prefixEnd < 0 ? '' : field.slice(1, prefixEnd);
+  const timezone = prefixEnd < 0 ? field : field.slice(prefixEnd + 1);
+  // The last bracket, because an IANA name can hold slashes but no brackets.
+  const open = timezone.lastIndexOf('(');
+  const named =
+    open > 0 && timezone[open - 1] === ' ' && timezone.indexOf(')', open) === timezone.length - 1;
   // The label states the offset too, so a log with no offset column is still readable.
-  const offset = parseGmtOffset(offsetField ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? '');
+  const offset = parseGmtOffset(offsetField ?? '') ?? parseGmtOffset(gmtPrefix);
   return {
     text: field,
-    label: timezone.replace(ianaNamePattern, '').trim() || null,
-    name: named?.[1] ?? null,
+    label: (named ? timezone.slice(0, open) : timezone).trim() || null,
+    name: named ? timezone.slice(open + 1, -1) : null,
     offsetMinutes: offset?.minutes ?? null,
     offsetText: offset?.text ?? null,
   };

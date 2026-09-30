@@ -160,6 +160,19 @@ describe('userInfo', () => {
     expect(apexLog.userInfo?.timezone).toMatchObject({ text: '(GMT+01:00)', label: null });
   });
 
+  it('reads a timezone field of repeated brackets in linear time', () => {
+    const field = `Label${' (('.repeat(50_000)}`;
+    const start = Date.now();
+    const apexLog = parse(
+      logWithUserInfo(
+        `00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|${field}|GMT+01:00`,
+      ),
+    );
+
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(apexLog.userInfo?.timezone).toMatchObject({ text: field, name: null });
+  });
+
   it('ignores a timestamped USER_INFO line a USER_DEBUG message quotes', () => {
     const apexLog = parse(
       '61.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
