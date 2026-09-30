@@ -3,7 +3,7 @@
  */
 
 // The only entry point. Listed by name so internal declarations stay internal: export only what a
-// consumer needs at run time, not what its tests could reuse.
+// consumer uses in production, not what its tests could reuse.
 
 // ApexLogParser is public because every event constructor takes one, so a consumer that builds
 // events needs it.

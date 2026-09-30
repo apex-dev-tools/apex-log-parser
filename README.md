@@ -122,7 +122,7 @@ between calls, and `ApexLogParser.parse` gives each call its own parser. `ApexLo
 `LogEvent`, and adds `governorLimits`, `namespaces`, `debugLevels`, `userInfo`, `entryPoint`,
 `truncation`, `logIssues`, `parsingErrors`, `exceptions` and `eventsById`.
 
-Everything comes from the one entry point: `parse`, the `ApexLogParser` class, the event classes
+Everything comes from the package root: `parse`, the `ApexLogParser` class, the event classes
 you need for `instanceof` narrowing, every type, and the const companions that go with them:
 
 ```typescript

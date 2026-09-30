@@ -49,7 +49,7 @@ any commit.
 One entry point, the root (`.`). It exports `parse`, `ApexLogParser`, the event classes, the public
 types and their const companions (`LOG_LEVEL`, `LOG_CATEGORY`, ...).
 
-Export only what a consumer needs at run time. A helper that only a consumer's tests would reuse,
+Export only what a consumer uses in production. A helper that only a consumer's tests would reuse,
 such as `emptyLimits`, stays internal.
 
 `src/types.ts` also holds internal types — `LimitMetricMetadata` and `LogLineConstructor` stay out
