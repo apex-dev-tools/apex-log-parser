@@ -68,7 +68,7 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.name).toBe('America/Indiana/Indianapolis');
+    expect(apexLog.userInfo?.timezone?.name).toBe('America/Indiana/Indianapolis');
   });
 
   it('is null when the log has no USER_INFO line', () => {
@@ -132,6 +132,32 @@ describe('userInfo', () => {
       offsetMinutes: 330,
       offsetText: 'GMT+05:30',
     });
+  });
+
+  it('reports null for fields the header does not state', () => {
+    const apexLog = parse(
+      logWithUserInfo('00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA'),
+    );
+
+    expect(apexLog.userInfo).toEqual({ id: '005000000000AAA', userName: null, timezone: null });
+  });
+
+  it('reports null for empty fields', () => {
+    const apexLog = parse(
+      logWithUserInfo('00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA||'),
+    );
+
+    expect(apexLog.userInfo).toEqual({ id: '005000000000AAA', userName: null, timezone: null });
+  });
+
+  it('reports a null label when the timezone field states only an offset', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT+01:00)|GMT+01:00',
+      ),
+    );
+
+    expect(apexLog.userInfo?.timezone).toMatchObject({ text: '(GMT+01:00)', label: null });
   });
 
   it('ignores a timestamped USER_INFO line a USER_DEBUG message quotes', () => {

@@ -77,7 +77,10 @@ the same change: it pins the two runtime lists, and pins the types through an in
 - Event times are nanoseconds and heap figures are bytes. `ApexLog.startTime` is milliseconds since
   midnight, and the `cpuTime` limit is milliseconds. State the unit on any new field.
 - Report what the log stated. Never substitute a default for a value the log did not give — use
-  `null` or leave the field absent, so a caller can tell "not stated" from "zero".
+  `null`, so a caller can tell "not stated" from "zero". Not `''`, and not an absent or `undefined`
+  field, whose shape depends on the transport. A sub-object whose source field is missing is `null`
+  itself, not an object of nulls. The `?:` fields on `TruncationRegion` and `LogIssue` predate this
+  rule.
 - Comment the why, not the what. In doubt, none. One line. Public API takes a doc block.
 - Never paste a log from an org. Fixtures use `ns`, `MyClass`, `user@example.com` and ids
   zero-filled after the key prefix (`005000000000AAA`).

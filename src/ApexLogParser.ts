@@ -18,6 +18,7 @@ import type {
   LogEventType,
   LogIssue,
   LogLevel,
+  LogTimezone,
   Truncation,
   TruncationRegion,
   UserInfo,
@@ -134,22 +135,26 @@ function parseUserInfo(log: string): UserInfo | null {
     return null;
   }
 
-  const field = parts[5] ?? '';
+  return {
+    // An empty field between pipes states nothing either.
+    id: parts[3] || null,
+    userName: parts[4] || null,
+    timezone: parts[5] ? parseTimezone(parts[5], parts[6]) : null,
+  };
+}
+
+function parseTimezone(field: string, offsetField: string | undefined): LogTimezone {
   const gmtPrefix = field.match(gmtPrefixPattern);
   const timezone = field.slice(gmtPrefix?.[0]?.length ?? 0);
   const named = timezone.match(ianaNamePattern);
   // The label states the offset too, so a log with no offset column is still readable.
-  const offset = parseGmtOffset(parts[6] ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? '');
+  const offset = parseGmtOffset(offsetField ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? '');
   return {
-    id: parts[3] ?? '',
-    userName: parts[4] ?? '',
-    timezone: {
-      text: field,
-      label: timezone.replace(ianaNamePattern, '').trim(),
-      name: named?.[1] ?? null,
-      offsetMinutes: offset?.minutes ?? null,
-      offsetText: offset?.text ?? null,
-    },
+    text: field,
+    label: timezone.replace(ianaNamePattern, '').trim() || null,
+    name: named?.[1] ?? null,
+    offsetMinutes: offset?.minutes ?? null,
+    offsetText: offset?.text ?? null,
   };
 }
 
