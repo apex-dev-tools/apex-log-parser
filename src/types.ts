@@ -214,20 +214,38 @@ export interface DebugLevelSetting {
 
 /** The user timezone as the log header stated it. */
 export interface LogTimezone {
-  /** The display label, e.g. `Pacific Standard Time`. Localised in some logs. */
-  label: string;
+  /**
+   * The timezone field exactly as the header stated it, e.g.
+   * `(GMT-08:00) Pacific Standard Time (America/Los_Angeles)`.
+   */
+  text: string;
+  /**
+   * The display label, e.g. `Pacific Standard Time`. Localised in some logs. Null when the header
+   * stated none.
+   */
+  label: string | null;
   /** IANA name, e.g. `America/Los_Angeles`. Null when the header stated no name. */
   name: string | null;
   /** Minutes east of UTC, e.g. -480 for `GMT-08:00`. Null when the header stated no offset. */
   offsetMinutes: number | null;
+  /**
+   * The offset as the header spelled it, e.g. `GMT-08:00` or `GMTZ`: the offset field, or the
+   * label's GMT prefix when that field is missing or unreadable. Null exactly when
+   * `offsetMinutes` is.
+   */
+  offsetText: string | null;
 }
 
-/** Who ran the transaction, from the `USER_INFO` header line. */
+/**
+ * Who ran the transaction, from the `USER_INFO` header line. A field the header did not state is
+ * null, not an empty string, so a caller can tell the two apart.
+ */
 export interface UserInfo {
   /** The 15 or 18 character user id. */
-  id: string;
-  userName: string;
-  timezone: LogTimezone;
+  id: string | null;
+  userName: string | null;
+  /** Null when the header stated no timezone field. */
+  timezone: LogTimezone | null;
 }
 
 /**
