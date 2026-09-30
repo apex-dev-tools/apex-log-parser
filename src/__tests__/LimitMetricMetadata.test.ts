@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { emptyLimits } from '../limits.js';
-import { ALL_LIMIT_METRICS, LIMIT_METRIC } from '../publicTypes.js';
+import { ALL_LIMIT_METRICS, LIMIT_METRIC } from '../types.js';
 
 describe('governor metric metadata', () => {
   // Membership is compile-enforced; the array compare is here for the declaration order.
