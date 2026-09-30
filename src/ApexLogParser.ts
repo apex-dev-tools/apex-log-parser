@@ -92,8 +92,8 @@ const debugLevelKeyByToken = new Map<string, keyof DebugLevels>(
 );
 
 // Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
-// the header line never reaches `UserInfoLine`. Only a timestamped line matches.
-const userInfoPattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|USER_INFO\|.*/m;
+// the header line never reaches `UserInfoLine`. The first match is the log's first timestamped line.
+const timestampedLinePattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|.*/m;
 // Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
 // localised, label with either part missing. Read the two parts apart, so one absent part does not
 // leave the other in the label.
@@ -125,16 +125,14 @@ function parseGmtOffset(offset: string): number | null {
  * @returns null when the log states no user.
  */
 function parseUserInfo(log: string): UserInfo | null {
-  // Header region only, so a USER_DEBUG message that quotes a whole log, timestamped lines
-  // included, cannot stand in for a header the log never stated.
-  const executionStarted = log.indexOf('|EXECUTION_STARTED');
-  const header = executionStarted < 0 ? log : log.slice(0, executionStarted);
-  const line = header.match(userInfoPattern)?.[0];
-  if (!line) {
+  // The header is the first timestamped line, so a later line - a USER_DEBUG payload that quotes a
+  // log, or the echo of anonymous source - cannot stand in for a header the log never stated. The
+  // settings line and the echo come first, and neither starts with a timestamp.
+  const parts = log.match(timestampedLinePattern)?.[0].split('|');
+  if (parts?.[1] !== 'USER_INFO') {
     return null;
   }
 
-  const parts = line.split('|');
   const field = parts[5] ?? '';
   const gmtPrefix = field.match(gmtPrefixPattern);
   const timezone = field.slice(gmtPrefix?.[0]?.length ?? 0);

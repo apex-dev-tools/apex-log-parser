@@ -145,4 +145,41 @@ describe('userInfo', () => {
 
     expect(apexLog.userInfo).toBeNull();
   });
+
+  it('reads the header after an anonymous echo that quotes EXECUTION_STARTED', () => {
+    const apexLog = parse(
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        "Execute Anonymous: String s = '|EXECUTION_STARTED';\n" +
+        '09:18:22.6 (50)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time|GMT-08:00\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.userInfo?.userName).toBe('user@example.com');
+  });
+
+  it('ignores a payload USER_INFO line in a log with no EXECUTION_STARTED', () => {
+    const apexLog = parse(
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        '09:18:22.6 (1)|CODE_UNIT_STARTED|[EXTERNAL]|MyTrigger on Account trigger event BeforeInsert\n' +
+        '09:18:22.6 (2)|USER_DEBUG|[7]|DEBUG|pasted log follows:\n' +
+        '09:18:22.6 (2)|USER_INFO|[EXTERNAL]|005000000000AAA|other@example.com|Pacific Standard Time|GMT-08:00\n' +
+        '09:18:22.6 (3)|CODE_UNIT_FINISHED|MyTrigger on Account trigger event BeforeInsert\n',
+    );
+
+    expect(apexLog.userInfo).toBeNull();
+  });
+
+  it('reads the first header when every execution states one', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '09:18:22.6 (50)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time|GMT-08:00',
+      ) +
+        '09:19:13.90 (3000)|USER_INFO|[EXTERNAL]|005000000000AAB|later@example.com|Pacific Standard Time|GMT-08:00\n' +
+        '09:19:13.90 (3100)|EXECUTION_STARTED\n' +
+        '09:19:13.95 (4000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.userInfo?.userName).toBe('user@example.com');
+  });
 });
