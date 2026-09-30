@@ -28,6 +28,7 @@ export type { LimitMetricKey, LimitObservation, RunningTotalObservation } from '
 export type {
   CPUType,
   DebugCategory,
+  DebugLevelSetting,
   DebugLevels,
   GovernorLimits,
   GovernorSnapshot,
