@@ -176,7 +176,8 @@ export interface GovernorLimits {
 /**
  * The log level the header declared per category. An absent property means the header declared no
  * level for that category, which is not the same as nothing of that category having run. A category
- * the platform adds later appears here as a new optional property.
+ * the platform adds later appears here as a new optional property. Until then it appears only in
+ * `ApexLog.debugLevelSettings`, with `category: null`.
  */
 export interface DebugLevels {
   apexCode?: LogLevel;
@@ -200,6 +201,16 @@ export interface DebugLevels {
  * See: https://help.salesforce.com/s/articleView?id=platform.code_setting_debug_log_levels.htm
  */
 export type DebugCategory = keyof DebugLevels | '';
+
+/** One `CATEGORY,LEVEL` entry of the log's settings line, as the log stated it. */
+export interface DebugLevelSetting {
+  /** The category token, e.g. `APEX_CODE`. */
+  token: string;
+  /** The level, e.g. `FINE`. Null when the entry states none. */
+  level: string | null;
+  /** The `DebugLevels` property the token names. Null when the parser does not know the token. */
+  category: keyof DebugLevels | null;
+}
 
 /** The user timezone as the log header stated it. */
 export interface LogTimezone {

@@ -4,6 +4,7 @@
 import type {
   CPUType,
   DebugCategory,
+  DebugLevelSetting,
   DebugLevels,
   GovernorLimits,
   GovernorSnapshot,
@@ -56,6 +57,7 @@ const ROOT_EXPORTS = [
 interface PublicTypeSurface {
   cpuType: CPUType;
   debugCategory: DebugCategory;
+  debugLevelSetting: DebugLevelSetting;
   debugLevels: DebugLevels;
   governorLimits: GovernorLimits;
   governorSnapshot: GovernorSnapshot;

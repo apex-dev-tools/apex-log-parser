@@ -15,6 +15,7 @@ import {
 import type {
   CPUType,
   DebugCategory,
+  DebugLevelSetting,
   DebugLevels,
   GovernorLimits,
   LineNumber,
@@ -406,9 +407,16 @@ export class ApexLog extends LogEvent {
   public size = 0;
 
   /**
-   * The Apex Debug Logging Levels for the current log
+   * The Apex Debug Logging Levels for the current log: known categories with a valid level only.
+   * See `debugLevelSettings` for every entry as the log stated it.
    */
   public debugLevels: DebugLevels = {};
+
+  /**
+   * Every entry of the settings line, verbatim and in log order, including a category the parser
+   * does not know. Empty when the log has no settings line.
+   */
+  public debugLevelSettings: DebugLevelSetting[] = [];
 
   /**
    * All the namespaces that appear in this log.

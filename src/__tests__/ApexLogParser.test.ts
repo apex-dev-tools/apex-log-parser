@@ -1065,18 +1065,34 @@ describe('Log Settings tests', () => {
     expect(apexLog.parsingErrors).toEqual([]);
   });
 
-  it('reports an unknown category and an unknown level, and ignores an empty entry', () => {
+  it('keeps every entry verbatim, reports only an unknown level, and ignores an empty entry', () => {
     const parsed = parse(
-      '61.0 APEX_CODE,FINE;APEX_PROFILING,WIBBLE;FUTURE_CATEGORY,FINE;\n' +
+      '61.0 APEX_CODE,FINE;APEX_PROFILING,WIBBLE;FUTURE_CATEGORY,FINE;;NO_COMMA;NO_LEVEL,;DB,FINE,EXTRA\n' +
         '09:18:22.6 (100)|EXECUTION_STARTED\n' +
         '09:18:22.6 (200)|EXECUTION_FINISHED\n',
     );
 
     expect(parsed.debugLevels).toEqual({ apexCode: 'FINE' });
+    expect(parsed.debugLevelSettings).toEqual([
+      { token: 'APEX_CODE', level: 'FINE', category: 'apexCode' },
+      { token: 'APEX_PROFILING', level: 'WIBBLE', category: 'apexProfiling' },
+      { token: 'FUTURE_CATEGORY', level: 'FINE', category: null },
+      { token: 'NO_COMMA', level: null, category: null },
+      { token: 'NO_LEVEL', level: null, category: null },
+      { token: 'DB', level: 'FINE,EXTRA', category: 'database' },
+    ]);
     expect(parsed.parsingErrors).toEqual([
       'Unsupported debug level: APEX_PROFILING,WIBBLE',
-      'Unsupported debug log category: FUTURE_CATEGORY',
+      'Unsupported debug level: DB,FINE,EXTRA',
     ]);
+  });
+
+  it('has no settings when the log has no settings line', () => {
+    const parsed = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n09:18:22.6 (200)|EXECUTION_FINISHED\n',
+    );
+
+    expect(parsed.debugLevelSettings).toEqual([]);
   });
 });
 
