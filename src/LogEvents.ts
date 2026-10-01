@@ -1263,7 +1263,7 @@ export class UserInfoLine extends LogEvent {
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
     this.lineNumber = this.parseLineNumber(parts[2]);
-    this.text = parts[3] + ' ' + parts[4];
+    this.text = [parts[3], parts[4]].filter(Boolean).join(' ');
   }
 }
 

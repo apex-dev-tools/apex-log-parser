@@ -140,6 +140,7 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo).toEqual({ id: '005000000000AAA', userName: null, timezone: null });
+    expect(apexLog.children[0]).toMatchObject({ type: 'USER_INFO', text: '005000000000AAA' });
   });
 
   it('reports null for empty fields', () => {

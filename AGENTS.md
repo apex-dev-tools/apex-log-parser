@@ -131,8 +131,9 @@ lines keep their reading on the event as `limitUsage`. Two folds are deliberate:
 - `parse()` is the entry point. `ApexLogParser` is public only because every event constructor takes
   one; its fields are parser state, not API. `parse()` builds a fresh parser per call, so reusing an
   instance is safe.
-- `generateLogLines` starts at `EXECUTION_STARTED` and falls back to the whole log when there is
-  none, so header lines before it are discarded unless read explicitly in `parse()`.
+- `generateLogLines` starts at the first timestamped line, and at line 1 when there is none. The
+  header is the text before that line: `parseLog` reads the settings line from it, and `USER_INFO`
+  from the first timestamped line. No other code reads the header.
 - A log can be truncated in two unrelated ways: the platform dropped a block
   (`*** Skipped N bytes`), or the log hit the maximum size. `ApexLog.truncation` reports both.
 - `LogEvent.isTruncated` means the parser found no matching exit event. On the root `ApexLog` it

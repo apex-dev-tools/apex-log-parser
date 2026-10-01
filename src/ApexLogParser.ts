@@ -83,9 +83,8 @@ const debugLevelKeyByToken = new Map<string, keyof DebugLevels>(
   Object.entries(debugLevelTokenByKey).map(([key, token]) => [token, key as keyof DebugLevels]),
 );
 
-// Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
-// the header line never reaches `UserInfoLine`. The first match is the first timestamped line.
-const timestampedLinePattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|.*/m;
+// The first event, near the top of a log. It needs the counter: no event builds from a line without.
+const timestampedLinePattern = /^\d{2}:\d{2}:\d{2}\.\d+ \(\d+\)\|.*/m;
 const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
 
 /**
@@ -111,11 +110,9 @@ function parseGmtOffset(text: string): { minutes: number; text: string } | null 
  * Reads the `USER_INFO` header line: id, user name, timezone label and offset.
  * @returns null when the log states no user.
  */
-function parseUserInfo(log: string): UserInfo | null {
-  // The header is the first timestamped line, so a later line - a USER_DEBUG payload that quotes a
-  // log, or the echo of anonymous source - cannot stand in for a header the log never stated. The
-  // settings line and the echo come first, and neither starts with a timestamp.
-  const parts = log.match(timestampedLinePattern)?.[0].split('|');
+function parseUserInfo(firstLine: string | undefined): UserInfo | null {
+  // The first timestamped line only, so a USER_INFO quoted later cannot stand in for the header.
+  const parts = firstLine?.split('|');
   if (parts?.[1] !== 'USER_INFO') {
     return null;
   }
@@ -238,13 +235,16 @@ export class ApexLogParser {
   }
 
   private parseLog(debugLog: string): ApexLog {
-    const lineGenerator = this.generateLogLines(debugLog);
+    const firstLine = debugLog.match(timestampedLinePattern);
+    const eventsStart = firstLine?.index;
+    const lineGenerator = this.generateLogLines(debugLog, eventsStart ?? 0);
     const apexLog = this.toLogTree(lineGenerator);
     apexLog.size = utf8ByteLength(debugLog);
-    const { levels, settings } = this.parseDebugSettings(debugLog);
+    // With no timestamped line, the header is the whole text.
+    const { levels, settings } = this.parseDebugSettings(debugLog.slice(0, eventsStart));
     apexLog.debugLevels = levels;
     apexLog.debugLevelSettings = settings;
-    apexLog.userInfo = parseUserInfo(debugLog);
+    apexLog.userInfo = parseUserInfo(firstLine?.[0]);
     apexLog.entryPoints = findEntryPoints(apexLog, this.codeUnits);
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
@@ -397,12 +397,7 @@ export class ApexLogParser {
     }
   }
 
-  private *generateLogLines(log: string): Generator<LogEvent> {
-    let startIndex = log.search(/^\d{2}:\d{2}:\d{2}.\d{1} \(\d+\)\|EXECUTION_STARTED$/m);
-    if (startIndex === -1) {
-      startIndex = 0;
-    }
-
+  private *generateLogLines(log: string, startIndex: number): Generator<LogEvent> {
     const hascrlf = log.indexOf('\r\n', startIndex) > -1;
     let lastEntry: LogEvent | null = null;
     let lfIndex = log.indexOf('\n', startIndex);
@@ -470,6 +465,7 @@ export class ApexLogParser {
     if (isEntry) {
       const exitOnNextLine = currentLine.nextLineIsExit;
       let nextLine;
+      let newExecution = false;
 
       stack.push(currentLine);
 
@@ -503,6 +499,11 @@ export class ApexLogParser {
           // The current line was truncated (we did not find the exit line before the end of log) and there was a discontinuity
           currentLine.isTruncated = true;
           break;
+        } else if (nextLine.type === 'EXECUTION_STARTED') {
+          // An execution is always top level, so every frame still open lost its exit.
+          newExecution = true;
+          this.discontinuity = false; // the new execution starts with a fresh stack
+          break;
         }
 
         lineIter.fetch(); // it's a child - consume the line
@@ -518,9 +519,14 @@ export class ApexLogParser {
 
       // End of line error handling. We have finished processing this log line and either got to the end
       // of the log without finding an exit line or the current line was truncated)
-      if (!nextLine || currentLine.isTruncated) {
+      if (!nextLine || newExecution || currentLine.isTruncated) {
         // truncated method - terminate at the end of the log
-        currentLine.exitStamp = this.lastTimestamp ?? currentLine.timestamp;
+        // A child can close on a line this frame never consumed, so never end before it.
+        const lastChild = currentLine.children.at(-1);
+        currentLine.exitStamp = Math.max(
+          this.lastTimestamp,
+          lastChild?.exitStamp ?? lastChild?.timestamp ?? currentLine.timestamp,
+        );
 
         // we found an entry event on its own e.g a `METHOD_ENTRY` without a `METHOD_EXIT` and got to the end of the log
         this.addLogIssue(
@@ -802,10 +808,13 @@ export class ApexLogParser {
     this.addLogIssue(startTime, eventIndex, summary, description, type);
   }
 
-  private parseDebugSettings(log: string): { levels: DebugLevels; settings: DebugLevelSetting[] } {
+  private parseDebugSettings(header: string): {
+    levels: DebugLevels;
+    settings: DebugLevelSetting[];
+  } {
     const levels: DebugLevels = {};
     const settings: DebugLevelSetting[] = [];
-    const line = log.match(settingsPattern)?.[0];
+    const line = header.match(settingsPattern)?.[0];
     if (!line) {
       return { levels, settings };
     }
