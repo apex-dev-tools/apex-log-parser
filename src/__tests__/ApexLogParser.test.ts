@@ -291,9 +291,11 @@ describe('parseLog tests', () => {
     const apexLog = parse(log);
 
     expect(apexLog.children.length).toBe(1);
-    expect(apexLog.logIssues.length).toBe(2);
-    expect(apexLog.logIssues[0]?.summary).toBe('Unexpected-End');
-    expect(apexLog.logIssues[1]?.summary).toBe('Max-Size-reached');
+    expect(apexLog.children[0]?.exitStamp).toBe(1000);
+    expect(apexLog.logIssues.map((issue) => issue.summary)).toEqual([
+      'Max-Size-reached',
+      'Unexpected-End',
+    ]);
   });
 
   it('Should detect exceptions', async () => {

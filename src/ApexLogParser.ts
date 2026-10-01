@@ -520,7 +520,12 @@ export class ApexLogParser {
       // of the log without finding an exit line or the current line was truncated)
       if (!nextLine || currentLine.isTruncated) {
         // truncated method - terminate at the end of the log
-        currentLine.exitStamp = this.lastTimestamp ?? currentLine.timestamp;
+        // A child can close on a line this frame never consumed, so never end before it.
+        const lastChild = currentLine.children.at(-1);
+        currentLine.exitStamp = Math.max(
+          this.lastTimestamp,
+          lastChild?.exitStamp ?? lastChild?.timestamp ?? currentLine.timestamp,
+        );
 
         // we found an entry event on its own e.g a `METHOD_ENTRY` without a `METHOD_EXIT` and got to the end of the log
         this.addLogIssue(

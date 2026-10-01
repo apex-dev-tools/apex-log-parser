@@ -95,6 +95,20 @@ describe('truncation', () => {
     expect(apexLog.truncation.totalSkippedBytes).toBe(500);
   });
 
+  it('ends an unclosed frame no earlier than the child that closed inside it', () => {
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (200)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.outer()\n' +
+      '09:18:22.6 (300)|METHOD_ENTRY|[2]|01p000000000AAA|MyClass.inner()\n' +
+      '09:18:22.6 (900)|METHOD_EXIT|[2]|01p000000000AAA|MyClass.inner()\n';
+
+    const outer = parse(log).children[0]?.children[0];
+
+    expect(outer?.isTruncated).toBe(true);
+    expect(outer?.exitStamp).toBe(900);
+    expect(outer?.duration).toMatchObject({ total: 700, self: 100 });
+  });
+
   it('reports no truncation for a complete log', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
