@@ -5,8 +5,7 @@
 import {
   ApexLog,
   applyFlowDbResiduals,
-  CodeUnitStartedLine,
-  type ExecutionStartedLine,
+  type CodeUnitStartedLine,
   type LogEvent,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
@@ -51,10 +50,14 @@ function issueKey(type: IssueType, summary: string): string {
 }
 
 // From the parser, not the tree: an unfinished event can nest the next execution at any depth.
-function findEntryPoints(root: ApexLog, executions: ExecutionStartedLine[]): CodeUnitStartedLine[] {
-  return [root, ...executions]
-    .flatMap((parent) => parent.children.filter((child) => child instanceof CodeUnitStartedLine))
-    .sort((a, b) => a.eventIndex - b.eventIndex);
+function findEntryPoints(root: ApexLog, codeUnits: CodeUnitStartedLine[]): CodeUnitStartedLine[] {
+  const entryPoints: CodeUnitStartedLine[] = [];
+  for (const unit of codeUnits) {
+    if (unit.parent === root || unit.parent?.type === 'EXECUTION_STARTED') {
+      entryPoints.push(unit);
+    }
+  }
+  return entryPoints;
 }
 
 /**
@@ -212,8 +215,8 @@ export class ApexLogParser {
   eventsById: LogEvent[] = [];
   /** Every exception event (EXCEPTION_THROWN, FATAL_ERROR) in log order. */
   exceptions: LogEvent[] = [];
-  /** Every `EXECUTION_STARTED` event in log order. */
-  readonly executions: ExecutionStartedLine[] = [];
+  /** Every `CODE_UNIT_STARTED` event in log order. */
+  readonly codeUnits: CodeUnitStartedLine[] = [];
   readonly governorSnapshots: GovernorSnapshot[] = [];
 
   /**
@@ -242,7 +245,7 @@ export class ApexLogParser {
     apexLog.debugLevels = levels;
     apexLog.debugLevelSettings = settings;
     apexLog.userInfo = parseUserInfo(debugLog);
-    apexLog.entryPoints = findEntryPoints(apexLog, this.executions);
+    apexLog.entryPoints = findEntryPoints(apexLog, this.codeUnits);
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
     apexLog.namespaces = Array.from(this.namespaces);

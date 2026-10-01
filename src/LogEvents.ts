@@ -899,6 +899,7 @@ export class CodeUnitStartedLine extends DurationLogEvent {
     }
 
     this.namespace ||= 'default';
+    parser.codeUnits.push(this);
   }
 }
 export class CodeUnitFinishedLine extends LogEvent {
@@ -1541,7 +1542,6 @@ export class ExecutionStartedLine extends DurationLogEvent {
   namespace = 'default';
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['EXECUTION_FINISHED'], LOG_CATEGORY.Apex, 'method');
-    parser.executions.push(this);
   }
 }
 
