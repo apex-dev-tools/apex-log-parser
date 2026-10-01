@@ -12,12 +12,14 @@ import {
 import { getLogEventClass } from './LogLineMapping.js';
 import { deriveGovernorLimits } from './limits.js';
 import type {
+  DebugLevelSetting,
   DebugLevels,
   GovernorSnapshot,
   IssueType,
   LogEventType,
   LogIssue,
   LogLevel,
+  LogTimezone,
   Truncation,
   TruncationRegion,
   UserInfo,
@@ -92,32 +94,27 @@ const debugLevelKeyByToken = new Map<string, keyof DebugLevels>(
 );
 
 // Read from the log text, not from an event: `generateLogLines` starts at `EXECUTION_STARTED`, so
-// the header line never reaches `UserInfoLine`. Only a timestamped line matches.
-const userInfoPattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|USER_INFO\|.*/m;
-// Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
-// localised, label with either part missing. Read the two parts apart, so one absent part does not
-// leave the other in the label.
-const gmtPrefixPattern = /^\((GMT[^)]*)\)\s*/;
-// Last group, because an IANA name can hold slashes.
-const ianaNamePattern = /\s\(([^)]*)\)$/;
+// the header line never reaches `UserInfoLine`. The first match is the first timestamped line.
+const timestampedLinePattern = /^\d{2}:\d{2}:\d{2}\.\d+(?: \(\d+\))?\|.*/m;
 const gmtOffsetPattern = /^GMT([+-])(\d{2}):(\d{2})$/;
 
 /**
- * Minutes east of UTC. The header states `GMTZ` rather than `GMT+00:00` for UTC.
+ * Minutes east of UTC, with the spelling they were read from. The header states `GMTZ` rather than
+ * `GMT+00:00` for UTC.
  * @returns null when the header stated no offset this can read.
  */
-function parseGmtOffset(offset: string): number | null {
-  if (offset === 'GMTZ') {
-    return 0;
+function parseGmtOffset(text: string): { minutes: number; text: string } | null {
+  if (text === 'GMTZ') {
+    return { minutes: 0, text };
   }
 
-  const match = offset.match(gmtOffsetPattern);
+  const match = text.match(gmtOffsetPattern);
   if (!match) {
     return null;
   }
 
   const minutes = Number.parseInt(match[2] ?? '0', 10) * 60 + Number.parseInt(match[3] ?? '0', 10);
-  return match[1] === '-' ? -minutes : minutes;
+  return { minutes: match[1] === '-' ? -minutes : minutes, text };
 }
 
 /**
@@ -125,29 +122,43 @@ function parseGmtOffset(offset: string): number | null {
  * @returns null when the log states no user.
  */
 function parseUserInfo(log: string): UserInfo | null {
-  // Header region only, so a USER_DEBUG message that quotes a whole log, timestamped lines
-  // included, cannot stand in for a header the log never stated.
-  const executionStarted = log.indexOf('|EXECUTION_STARTED');
-  const header = executionStarted < 0 ? log : log.slice(0, executionStarted);
-  const line = header.match(userInfoPattern)?.[0];
-  if (!line) {
+  // The header is the first timestamped line, so a later line - a USER_DEBUG payload that quotes a
+  // log, or the echo of anonymous source - cannot stand in for a header the log never stated. The
+  // settings line and the echo come first, and neither starts with a timestamp.
+  const parts = log.match(timestampedLinePattern)?.[0].split('|');
+  if (parts?.[1] !== 'USER_INFO') {
     return null;
   }
 
-  const parts = line.split('|');
-  const field = parts[5] ?? '';
-  const gmtPrefix = field.match(gmtPrefixPattern);
-  const timezone = field.slice(gmtPrefix?.[0]?.length ?? 0);
-  const named = timezone.match(ianaNamePattern);
   return {
-    id: parts[3] ?? '',
-    userName: parts[4] ?? '',
-    timezone: {
-      label: timezone.replace(ianaNamePattern, '').trim(),
-      name: named?.[1] ?? null,
-      // The label states the offset too, so a log with no offset column is still readable.
-      offsetMinutes: parseGmtOffset(parts[6] ?? '') ?? parseGmtOffset(gmtPrefix?.[1] ?? ''),
-    },
+    // An empty field between pipes states nothing either.
+    id: parts[3] || null,
+    userName: parts[4] || null,
+    timezone: parts[5] ? parseTimezone(parts[5], parts[6]) : null,
+  };
+}
+
+/**
+ * Field 6 is '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)', or a bare, sometimes
+ * localised, label with either part missing. Read with string scans, not a regex, so a hostile
+ * field cannot make the parse slow.
+ */
+function parseTimezone(field: string, offsetField: string | undefined): LogTimezone {
+  const prefixEnd = field.startsWith('(GMT') ? field.indexOf(')') : -1;
+  const gmtPrefix = prefixEnd < 0 ? '' : field.slice(1, prefixEnd);
+  const timezone = prefixEnd < 0 ? field : field.slice(prefixEnd + 1);
+  // The last bracket, because an IANA name can hold slashes but no brackets.
+  const open = timezone.lastIndexOf('(');
+  const named =
+    open > 0 && timezone[open - 1] === ' ' && timezone.indexOf(')', open) === timezone.length - 1;
+  // The label states the offset too, so a log with no offset column is still readable.
+  const offset = parseGmtOffset(offsetField ?? '') ?? parseGmtOffset(gmtPrefix);
+  return {
+    text: field,
+    label: (named ? timezone.slice(0, open) : timezone).trim() || null,
+    name: named ? timezone.slice(open + 1, -1) : null,
+    offsetMinutes: offset?.minutes ?? null,
+    offsetText: offset?.text ?? null,
   };
 }
 
@@ -238,7 +249,9 @@ export class ApexLogParser {
     const lineGenerator = this.generateLogLines(debugLog);
     const apexLog = this.toLogTree(lineGenerator);
     apexLog.size = utf8ByteLength(debugLog);
-    apexLog.debugLevels = this.getDebugLevels(debugLog);
+    const { levels, settings } = this.parseDebugSettings(debugLog);
+    apexLog.debugLevels = levels;
+    apexLog.debugLevelSettings = settings;
     apexLog.userInfo = parseUserInfo(debugLog);
     apexLog.entryPoint = findEntryPoint(apexLog);
     apexLog.logIssues = this.logIssues;
@@ -797,30 +810,36 @@ export class ApexLogParser {
     this.addLogIssue(startTime, eventIndex, summary, description, type);
   }
 
-  private getDebugLevels(log: string): DebugLevels {
-    const match = log.match(settingsPattern);
-    if (!match) {
-      return {};
+  private parseDebugSettings(log: string): { levels: DebugLevels; settings: DebugLevelSetting[] } {
+    const levels: DebugLevels = {};
+    const settings: DebugLevelSetting[] = [];
+    const line = log.match(settingsPattern)?.[0];
+    if (!line) {
+      return { levels, settings };
     }
 
-    const settings = match[0];
-    const levels: DebugLevels = {};
-    for (const entry of settings.substring(settings.indexOf(' ') + 1).split(';')) {
+    for (const entry of line.substring(line.indexOf(' ') + 1).split(';')) {
       if (!entry) {
         continue;
       }
 
-      const [token, level] = entry.split(',');
-      const key = token ? debugLevelKeyByToken.get(token) : undefined;
-      if (!key) {
-        this.parsingErrors.push(`Unsupported debug log category: ${token}`);
-      } else if (!level || !logLevels.has(level)) {
-        this.parsingErrors.push(`Unsupported debug level: ${entry}`);
+      // At the first comma only, so the level keeps whatever the entry stated after it.
+      const comma = entry.indexOf(',');
+      const token = comma < 0 ? entry : entry.slice(0, comma);
+      const level = comma < 0 ? null : entry.slice(comma + 1) || null;
+      const category = debugLevelKeyByToken.get(token) ?? null;
+      settings.push({ token, level, category });
+      // An unknown category is data the caller can still show, not a parse error.
+      if (!category) {
+        continue;
+      }
+      if (level && logLevels.has(level)) {
+        levels[category] = level as LogLevel;
       } else {
-        levels[key] = level as LogLevel;
+        this.parsingErrors.push(`Unsupported debug level: ${entry}`);
       }
     }
-    return levels;
+    return { levels, settings };
   }
 }
 

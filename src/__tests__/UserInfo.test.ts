@@ -26,9 +26,11 @@ describe('userInfo', () => {
       id: '005J000000E9ctM',
       userName: 'test@example.com',
       timezone: {
+        text: '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)',
         label: 'Pacific Standard Time',
         name: 'America/Los_Angeles',
         offsetMinutes: -480,
+        offsetText: 'GMT-08:00',
       },
     });
   });
@@ -41,9 +43,11 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo?.timezone).toEqual({
+      text: "Heure d'Europe centrale",
       label: "Heure d'Europe centrale",
       name: null,
       offsetMinutes: 60,
+      offsetText: 'GMT+01:00',
     });
   });
 
@@ -54,7 +58,7 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.offsetMinutes).toBe(0);
+    expect(apexLog.userInfo?.timezone).toMatchObject({ offsetMinutes: 0, offsetText: 'GMTZ' });
   });
 
   it('keeps the slashes in a multi-part IANA name', () => {
@@ -64,7 +68,7 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.name).toBe('America/Indiana/Indianapolis');
+    expect(apexLog.userInfo?.timezone?.name).toBe('America/Indiana/Indianapolis');
   });
 
   it('is null when the log has no USER_INFO line', () => {
@@ -83,9 +87,11 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo?.timezone).toEqual({
+      text: '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)',
       label: 'Pacific Standard Time',
       name: 'America/Los_Angeles',
       offsetMinutes: -480,
+      offsetText: 'GMT-08:00',
     });
   });
 
@@ -97,9 +103,11 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo?.timezone).toEqual({
+      text: '(GMT+05:30) India Standard Time',
       label: 'India Standard Time',
       name: null,
       offsetMinutes: 330,
+      offsetText: 'GMT+05:30',
     });
   });
 
@@ -110,7 +118,7 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.offsetMinutes).toBeNull();
+    expect(apexLog.userInfo?.timezone).toMatchObject({ offsetMinutes: null, offsetText: null });
   });
 
   it('reads the offset from the label when the header states no offset column', () => {
@@ -120,7 +128,49 @@ describe('userInfo', () => {
       ),
     );
 
-    expect(apexLog.userInfo?.timezone.offsetMinutes).toBe(330);
+    expect(apexLog.userInfo?.timezone).toMatchObject({
+      offsetMinutes: 330,
+      offsetText: 'GMT+05:30',
+    });
+  });
+
+  it('reports null for fields the header does not state', () => {
+    const apexLog = parse(
+      logWithUserInfo('00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA'),
+    );
+
+    expect(apexLog.userInfo).toEqual({ id: '005000000000AAA', userName: null, timezone: null });
+  });
+
+  it('reports null for empty fields', () => {
+    const apexLog = parse(
+      logWithUserInfo('00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA||'),
+    );
+
+    expect(apexLog.userInfo).toEqual({ id: '005000000000AAA', userName: null, timezone: null });
+  });
+
+  it('reports a null label when the timezone field states only an offset', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT+01:00)|GMT+01:00',
+      ),
+    );
+
+    expect(apexLog.userInfo?.timezone).toMatchObject({ text: '(GMT+01:00)', label: null });
+  });
+
+  it('reads a timezone field of repeated brackets in linear time', () => {
+    const field = `Label${' (('.repeat(50_000)}`;
+    const start = Date.now();
+    const apexLog = parse(
+      logWithUserInfo(
+        `00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|${field}|GMT+01:00`,
+      ),
+    );
+
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(apexLog.userInfo?.timezone).toMatchObject({ text: field, name: null });
   });
 
   it('ignores a timestamped USER_INFO line a USER_DEBUG message quotes', () => {
@@ -144,5 +194,42 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo).toBeNull();
+  });
+
+  it('reads the header after an anonymous echo that quotes EXECUTION_STARTED', () => {
+    const apexLog = parse(
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        "Execute Anonymous: String s = '|EXECUTION_STARTED';\n" +
+        '09:18:22.6 (50)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time|GMT-08:00\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.userInfo?.userName).toBe('user@example.com');
+  });
+
+  it('ignores a payload USER_INFO line in a log with no EXECUTION_STARTED', () => {
+    const apexLog = parse(
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        '09:18:22.6 (1)|CODE_UNIT_STARTED|[EXTERNAL]|MyTrigger on Account trigger event BeforeInsert\n' +
+        '09:18:22.6 (2)|USER_DEBUG|[7]|DEBUG|pasted log follows:\n' +
+        '09:18:22.6 (2)|USER_INFO|[EXTERNAL]|005000000000AAA|other@example.com|Pacific Standard Time|GMT-08:00\n' +
+        '09:18:22.6 (3)|CODE_UNIT_FINISHED|MyTrigger on Account trigger event BeforeInsert\n',
+    );
+
+    expect(apexLog.userInfo).toBeNull();
+  });
+
+  it('reads the first header when every execution states one', () => {
+    const apexLog = parse(
+      logWithUserInfo(
+        '09:18:22.6 (50)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time|GMT-08:00',
+      ) +
+        '09:19:13.90 (3000)|USER_INFO|[EXTERNAL]|005000000000AAB|later@example.com|Pacific Standard Time|GMT-08:00\n' +
+        '09:19:13.90 (3100)|EXECUTION_STARTED\n' +
+        '09:19:13.95 (4000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.userInfo?.userName).toBe('user@example.com');
   });
 });

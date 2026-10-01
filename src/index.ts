@@ -2,7 +2,8 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
-// Runtime only. Types and the const companions live in '@apexdevtools/apex-log-parser/types'.
+// The only entry point. Listed by name so internal declarations stay internal: export only what a
+// consumer uses in production, not what its tests could reuse.
 
 // ApexLogParser is public because every event constructor takes one, so a consumer that builds
 // events needs it.
@@ -22,3 +23,37 @@ export {
   SOQLExecuteExplainLine,
   SOSLExecuteBeginLine,
 } from './LogEvents.js';
+
+export type { LimitMetricKey, LimitObservation, RunningTotalObservation } from './limits.js';
+export type {
+  CPUType,
+  DebugCategory,
+  DebugLevelSetting,
+  DebugLevels,
+  GovernorLimits,
+  GovernorSnapshot,
+  IssueType,
+  LimitMetricMeta,
+  LimitMetricUnit,
+  Limits,
+  LimitValue,
+  LineNumber,
+  LogCategory,
+  LogEventType,
+  LogIssue,
+  LogLevel,
+  LogTimezone,
+  NamespaceLimits,
+  SelfTotal,
+  Truncation,
+  TruncationRegion,
+  UserInfo,
+} from './types.js';
+// The const companions of the unions above.
+export {
+  ALL_LIMIT_METRICS,
+  ALL_LOG_CATEGORIES,
+  LIMIT_METRIC,
+  LOG_CATEGORY,
+  LOG_LEVEL,
+} from './types.js';
