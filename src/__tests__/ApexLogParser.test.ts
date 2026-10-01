@@ -917,6 +917,18 @@ describe('getRootMethod tests', () => {
     expect(interViewBegin?.duration).toEqual({ self: 6332706, total: 6332706 });
   });
 
+  it('FlowStartInterviewsBeginLine takes its name from an interview, not an error before it', () => {
+    const log = parse(
+      '17:52:35.370 (100)|FLOW_START_INTERVIEWS_BEGIN|1\n' +
+        '17:52:35.370 (200)|FLOW_START_INTERVIEWS_ERROR|An error occurred.|3b2a1|My_Flow\n' +
+        '17:52:35.370 (300)|FLOW_START_INTERVIEW_BEGIN|3b2a1|Example Flow\n' +
+        '17:52:35.370 (400)|FLOW_START_INTERVIEW_END|3b2a1|Example Flow\n' +
+        '17:52:35.370 (500)|FLOW_START_INTERVIEWS_END|1\n',
+    );
+
+    expect(log.children[0]?.text).toBe('FLOW_START_INTERVIEWS : Example Flow');
+  });
+
   it('FlowStartInterviewsBeginLine should be a flow called from a process builder', async () => {
     const log =
       '17:52:34.317 (1350000000)|EXECUTION_STARTED\n' +
