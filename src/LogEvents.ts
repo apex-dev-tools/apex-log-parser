@@ -1906,7 +1906,20 @@ export class FlowElementErrorLine extends LogEvent {
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = [parts[2], parts[3], parts[4]].filter(Boolean).join(' ');
+    this.text = parts.slice(2).join('|');
+  }
+
+  // The message can span lines, with the element type and name after it, so read the full text.
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    const nameBar = this.text.lastIndexOf('|');
+    const typeBar = this.text.lastIndexOf('|', nameBar - 1);
+    if (typeBar < 0) {
+      return;
+    }
+    const message = this.text.slice(0, typeBar).trimEnd();
+    const type = this.text.slice(typeBar + 1, nameBar);
+    const name = this.text.slice(nameBar + 1);
+    this.text = `${message} ${type} ${name}`;
   }
 }
 

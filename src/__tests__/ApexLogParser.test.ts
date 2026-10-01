@@ -1975,9 +1975,24 @@ describe('FLOW_ELEMENT_ERROR', () => {
     );
   });
 
-  it('keeps a message that states no element', () => {
-    const log = parse('09:18:22.6 (100)|FLOW_ELEMENT_ERROR|An error occurred.\n');
+  it('reads the element type and name after a message that spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|You have reached the limit.\n' +
+        'Actions will start again in the next hour.\n' +
+        '|FlowActionCall|myRule_1_A1\n' +
+        '09:18:22.6 (200)|FLOW_ELEMENT_END|myRule_1_A1|FlowActionCall|myRule_1_A1\n',
+    );
 
-    expect(log.children[0]?.text).toBe('An error occurred.');
+    expect(log.children[0]?.text).toBe(
+      'You have reached the limit.\nActions will start again in the next hour. FlowActionCall myRule_1_A1',
+    );
+  });
+
+  it('keeps a message that states no element', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|An error occurred.\n' + ' --- An Apex error occurred\n',
+    );
+
+    expect(log.children[0]?.text).toBe('An error occurred.\n --- An Apex error occurred');
   });
 });
