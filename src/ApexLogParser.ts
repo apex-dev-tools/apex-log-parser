@@ -164,6 +164,25 @@ function parseTimezone(field: string, offsetField: string | undefined): LogTimez
 
 const logLevels = new Set<string>(Object.values(LOG_LEVEL));
 
+// A settings line directly followed by a timestamped line: how each pasted log begins.
+const logHeaderPattern =
+  /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+\r?\n\d{2}:\d{2}:\d{2}\.\d+ \(\d+\)\|/gm;
+const nanosPattern = /^\d{2}:\d{2}:\d{2}\.\d+ \((\d+)\)\|/;
+
+/**
+ * Each log opens with a settings line and restarts its nanosecond counter. So a settings line whose
+ * next line is earlier than the last event opens a second log. A settings line alone is not enough:
+ * a debug message can quote one, and then the counter keeps rising.
+ */
+function opensNextLog(line: string, log: string, nextStart: number, lastEntry: LogEvent): boolean {
+  // Cheap test first: a timestamped line has ':' third, and this runs on every line.
+  if (line.charCodeAt(2) === 58 || !settingsPattern.test(line)) {
+    return false;
+  }
+  const nanos = log.slice(nextStart, nextStart + 40).match(nanosPattern)?.[1];
+  return nanos !== undefined && Number(nanos) < lastEntry.timestamp;
+}
+
 const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
 
 /** The platform states the dropped size on the skip line itself, with thousands separators. */
@@ -407,6 +426,10 @@ export class ApexLogParser {
       const line = log.slice(startIndex, eolIndex);
       if (line) {
         // ignore blank lines
+        if (lastEntry && !isLastLine && opensNextLog(line, log, lfIndex + 1, lastEntry)) {
+          this.reportMultipleLogs(lastEntry, log, startIndex);
+          break;
+        }
         const entry = this.parseLine(line, lastEntry);
         if (entry) {
           this.afterParse(entry, lastEntry);
@@ -729,6 +752,19 @@ export class ApexLogParser {
         lastPkg?.recalculateDurations();
       }
     }
+  }
+
+  /** Runs once, only for a text that holds more than one log, so the scan of the rest is cheap. */
+  private reportMultipleLogs(lastEntry: LogEvent, log: string, nextLogStart: number) {
+    // At least 2: this runs only once a second log was found.
+    const count = Math.max(2, 1 + (log.slice(nextLogStart).match(logHeaderPattern)?.length ?? 0));
+    this.addLogIssue(
+      lastEntry.timestamp,
+      lastEntry.eventIndex,
+      'Multiple-Logs',
+      `The text holds ${count} logs. Only the first log was parsed. Open each log on its own.`,
+      'error',
+    );
   }
 
   /** @returns the issue as stored, or undefined when an issue with the same identity is held. */
