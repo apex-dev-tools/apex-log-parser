@@ -17,6 +17,18 @@ describe('ApexLog.entryPoints', () => {
     expect(apexLog.entryPoints).toEqual([]);
   });
 
+  it('leaves out a code unit inside another code unit', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex\n' +
+        '09:18:22.6 (300)|CODE_UNIT_STARTED|[EXTERNAL]|01q|MyTrigger on Account trigger event BeforeInsert\n' +
+        '09:18:22.6 (400)|CODE_UNIT_FINISHED|MyTrigger on Account trigger event BeforeInsert\n' +
+        '09:18:22.6 (500)|CODE_UNIT_FINISHED|execute_anonymous_apex\n' +
+        '09:18:22.6 (900)|EXECUTION_FINISHED\n',
+    );
+    expect(apexLog.entryPoints.map((unit) => unit.text)).toEqual(['execute_anonymous_apex']);
+  });
+
   it('lists every code unit directly under each execution, in log order', () => {
     const apexLog = parse(
       '09:18:22.6 (100)|EXECUTION_STARTED\n' +
