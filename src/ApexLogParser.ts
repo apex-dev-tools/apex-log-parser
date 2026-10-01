@@ -243,7 +243,6 @@ export class ApexLogParser {
     apexLog.debugLevelSettings = settings;
     apexLog.userInfo = parseUserInfo(debugLog);
     apexLog.entryPoints = findEntryPoints(apexLog, this.executions);
-    apexLog.entryPoint = apexLog.entryPoints[0] ?? null;
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
     apexLog.namespaces = Array.from(this.namespaces);

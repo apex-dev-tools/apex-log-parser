@@ -433,9 +433,6 @@ export class ApexLog extends LogEvent {
    */
   public parsingErrors: string[] = [];
 
-  /** The first item of `entryPoints`. Null when that is empty. */
-  public entryPoint: CodeUnitStartedLine | null = null;
-
   /**
    * Every code unit directly on the root or directly under an `EXECUTION_STARTED`, in log order. The
    * first can be a short platform step, such as `FutureHandler - state load` before the real work.
