@@ -1963,3 +1963,21 @@ describe('parser state per parse call', () => {
     expect(parser.namespaces.size).toBe(0);
   });
 });
+
+describe('FLOW_ELEMENT_ERROR', () => {
+  it('keeps the error message, element type and element name', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|Required fields are missing: [Name]|FlowRecordCreate|Create_Account\n',
+    );
+
+    expect(log.children[0]?.text).toBe(
+      'Required fields are missing: [Name] FlowRecordCreate Create_Account',
+    );
+  });
+
+  it('keeps a message that states no element', () => {
+    const log = parse('09:18:22.6 (100)|FLOW_ELEMENT_ERROR|An error occurred.\n');
+
+    expect(log.children[0]?.text).toBe('An error occurred.');
+  });
+});

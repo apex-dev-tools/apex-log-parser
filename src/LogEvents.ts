@@ -1906,7 +1906,7 @@ export class FlowElementErrorLine extends LogEvent {
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = parts[1] || '' + parts[2] + ' ' + parts[3] + ' ' + parts[4];
+    this.text = [parts[2], parts[3], parts[4]].filter(Boolean).join(' ');
   }
 }
 
