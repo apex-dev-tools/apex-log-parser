@@ -70,6 +70,19 @@ describe('a text that holds more than one log', () => {
     expect(log.logIssues.map((issue) => issue.summary)).not.toContain('Multiple-Logs');
   });
 
+  it('parses the first log when only a later log states EXECUTION_STARTED', () => {
+    const log = parse(
+      SETTINGS +
+        '09:18:22.6 (100)|CODE_UNIT_STARTED|[EXTERNAL]|01q|First.unit\n' +
+        '09:18:22.6 (200)|CODE_UNIT_FINISHED|First.unit\n' +
+        SETTINGS +
+        execution(50, 'Second.unit'),
+    );
+
+    expect(codeUnits(log)).toEqual(['First.unit']);
+    expect(log.logIssues.map((issue) => issue.summary)).toContain('Multiple-Logs');
+  });
+
   it('keeps one log whose every execution states USER_INFO', () => {
     const log = parse(
       SETTINGS + execution(100, 'FutureHandler - state load') + execution(200, 'Real.work'),
