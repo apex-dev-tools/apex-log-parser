@@ -437,7 +437,8 @@ export class ApexLog extends LogEvent {
    * Every code unit directly on the root or directly under an `EXECUTION_STARTED`, in log order. The
    * first can be a short platform step, such as `FutureHandler - state load` before the real work.
    * Each one states its `timestamp` and `duration`, so a caller can choose which to name, e.g. the
-   * longest. Empty when no code unit sits at either place.
+   * longest. One with `isTruncated` has no stated end: its duration runs to the end of the log, and
+   * it can hold later entry points. Empty when no code unit sits at either place.
    */
   public entryPoints: CodeUnitStartedLine[] = [];
 

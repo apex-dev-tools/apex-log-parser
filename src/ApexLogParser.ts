@@ -212,7 +212,7 @@ export class ApexLogParser {
   eventsById: LogEvent[] = [];
   /** Every exception event (EXCEPTION_THROWN, FATAL_ERROR) in log order. */
   exceptions: LogEvent[] = [];
-  /** Every `EXECUTION_STARTED` event in log order, at whatever depth the tree put it. */
+  /** Every `EXECUTION_STARTED` event in log order. */
   readonly executions: ExecutionStartedLine[] = [];
   readonly governorSnapshots: GovernorSnapshot[] = [];
 
