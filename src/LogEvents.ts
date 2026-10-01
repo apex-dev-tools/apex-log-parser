@@ -584,6 +584,21 @@ function parseBytes(fragment: string | undefined): number {
   return fragment?.startsWith('Bytes:') ? Number(fragment.slice(6)) || 0 : 0;
 }
 
+// Wrapped lines can carry the fields after a message, out of the constructor's reach.
+function splitTrailingFields(text: string, count: number): string[] | null {
+  const parts = text.split('|');
+  if (parts.length <= count) {
+    return null;
+  }
+  const fields = parts.splice(-count);
+  // A line break in a field means more text followed, so the fields cannot be told apart from it.
+  if (fields.some((field) => field.includes('\n'))) {
+    return null;
+  }
+  // trimEnd drops the line break before a wrapped '|field' line.
+  return [parts.join('|').trimEnd(), ...fields];
+}
+
 /* Log line entry Parsers */
 
 export class BulkHeapAllocateLine extends LogEvent {
@@ -1672,7 +1687,15 @@ export class FlowStartInterviewsErrorLine extends LogEvent {
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = `${parts[2]} - ${parts[4]}`;
+    this.text = parts.slice(2).join('|');
+  }
+
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    const split = splitTrailingFields(this.text, 2);
+    if (split) {
+      const [message, , flowName] = split;
+      this.text = `${message} - ${flowName}`;
+    }
   }
 }
 
@@ -1906,7 +1929,14 @@ export class FlowElementErrorLine extends LogEvent {
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = parts[1] || '' + parts[2] + ' ' + parts[3] + ' ' + parts[4];
+    this.text = parts.slice(2).join('|');
+  }
+
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    const split = splitTrailingFields(this.text, 2);
+    if (split) {
+      this.text = split.filter(Boolean).join(' ');
+    }
   }
 }
 
@@ -2130,9 +2160,15 @@ export class ValidationFormulaLine extends LogEvent {
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    const extra = parts.length > 3 ? ' ' + parts[3] : '';
+    this.text = parts.slice(2).join('|');
+  }
 
-    this.text = parts[2] + extra;
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    const split = splitTrailingFields(this.text, 1);
+    if (split) {
+      const [formula, values] = split;
+      this.text = `${formula} ${values}`;
+    }
   }
 }
 
@@ -2229,7 +2265,16 @@ export class WFFormulaLine extends DurationLogEvent {
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['WF_FORMULA'], LOG_CATEGORY.Automation, 'custom');
-    this.text = parts[2] + ' : ' + parts[3];
+    this.text = parts.slice(2).join('|');
+  }
+
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    // Split at the marker, not the last '|': a formula can use '||' and a value can hold '|'.
+    const valuesStart = this.text.indexOf('|Values:');
+    if (valuesStart >= 0) {
+      const formula = this.text.slice(0, valuesStart).trimEnd();
+      this.text = `${formula} : ${this.text.slice(valuesStart + 1)}`;
+    }
   }
 }
 
