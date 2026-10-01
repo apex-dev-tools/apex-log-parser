@@ -2,5 +2,5 @@
 '@apexdevtools/apex-log-parser': minor
 ---
 
-Add `ApexLog.entryPoints`, the first code unit of each execution in the log. `entryPoint` now also
-finds an execution that an unfinished event holds
+Add `ApexLog.entryPoints`: every code unit directly on the root or directly under an execution, in
+log order

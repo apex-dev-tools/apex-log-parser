@@ -433,18 +433,14 @@ export class ApexLog extends LogEvent {
    */
   public parsingErrors: string[] = [];
 
-  /**
-   * The first item of `entryPoints`. Null when that is empty. In a log with more than one execution
-   * this can be a short platform step, such as `FutureHandler - state load` before the real work, so
-   * see `entryPoints` for the others.
-   */
+  /** The first item of `entryPoints`. Null when that is empty. */
   public entryPoint: CodeUnitStartedLine | null = null;
 
   /**
-   * The first code unit of each execution, in log order. A code unit directly on the root counts as
-   * its own execution. Each one states its `timestamp` and `duration`, so a caller can choose which
-   * to name, e.g. the longest. Empty when no code unit sits on the root or directly under an
-   * execution.
+   * Every code unit directly on the root or directly under an `EXECUTION_STARTED`, in log order. The
+   * first can be a short platform step, such as `FutureHandler - state load` before the real work.
+   * Each one states its `timestamp` and `duration`, so a caller can choose which to name, e.g. the
+   * longest. Empty when no code unit sits at either place.
    */
   public entryPoints: CodeUnitStartedLine[] = [];
 

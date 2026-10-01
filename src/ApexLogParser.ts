@@ -52,11 +52,9 @@ function issueKey(type: IssueType, summary: string): string {
 
 // From the parser, not the tree: an unfinished event can nest the next execution at any depth.
 function findEntryPoints(root: ApexLog, executions: ExecutionStartedLine[]): CodeUnitStartedLine[] {
-  const rootUnits = root.children.filter((child) => child instanceof CodeUnitStartedLine);
-  const executionUnits = executions
-    .map((execution) => execution.children.find((event) => event instanceof CodeUnitStartedLine))
-    .filter((unit) => unit !== undefined);
-  return [...rootUnits, ...executionUnits].sort((a, b) => a.eventIndex - b.eventIndex);
+  return [root, ...executions]
+    .flatMap((parent) => parent.children.filter((child) => child instanceof CodeUnitStartedLine))
+    .sort((a, b) => a.eventIndex - b.eventIndex);
 }
 
 /**
