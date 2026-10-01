@@ -465,6 +465,7 @@ export class ApexLogParser {
     if (isEntry) {
       const exitOnNextLine = currentLine.nextLineIsExit;
       let nextLine;
+      let newExecution = false;
 
       stack.push(currentLine);
 
@@ -498,6 +499,11 @@ export class ApexLogParser {
           // The current line was truncated (we did not find the exit line before the end of log) and there was a discontinuity
           currentLine.isTruncated = true;
           break;
+        } else if (nextLine.type === 'EXECUTION_STARTED') {
+          // An execution is always top level, so every frame still open lost its exit.
+          newExecution = true;
+          this.discontinuity = false; // the new execution starts with a fresh stack
+          break;
         }
 
         lineIter.fetch(); // it's a child - consume the line
@@ -513,9 +519,14 @@ export class ApexLogParser {
 
       // End of line error handling. We have finished processing this log line and either got to the end
       // of the log without finding an exit line or the current line was truncated)
-      if (!nextLine || currentLine.isTruncated) {
+      if (!nextLine || newExecution || currentLine.isTruncated) {
         // truncated method - terminate at the end of the log
-        currentLine.exitStamp = this.lastTimestamp ?? currentLine.timestamp;
+        // A child can close on a line this frame never consumed, so never end before it.
+        const lastChild = currentLine.children.at(-1);
+        currentLine.exitStamp = Math.max(
+          this.lastTimestamp,
+          lastChild?.exitStamp ?? lastChild?.timestamp ?? currentLine.timestamp,
+        );
 
         // we found an entry event on its own e.g a `METHOD_ENTRY` without a `METHOD_EXIT` and got to the end of the log
         this.addLogIssue(
