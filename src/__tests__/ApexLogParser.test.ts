@@ -1995,4 +1995,44 @@ describe('FLOW_ELEMENT_ERROR', () => {
 
     expect(log.children[0]?.text).toBe('An error occurred.\n --- An Apex error occurred');
   });
+
+  it('leaves no leading space when the message is empty', () => {
+    const log = parse('09:18:22.6 (100)|FLOW_ELEMENT_ERROR||FlowDecision|Check_Status\n');
+
+    expect(log.children[0]?.text).toBe('FlowDecision Check_Status');
+  });
+});
+
+describe('events with fields after a message that spans lines', () => {
+  it('reads the values of a WF_FORMULA whose formula spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_FORMULA|Formula:AND(\nISBLANK(Name))|Values:Name=null\n' +
+        '09:18:22.6 (200)|WF_FORMULA|Formula:ISBLANK(Name)|Values:Name=null\n',
+    );
+
+    expect(log.eventsById.slice(1).map((event) => event.text)).toEqual([
+      'Formula:AND(\nISBLANK(Name)) : Values:Name=null',
+      'Formula:ISBLANK(Name) : Values:Name=null',
+    ]);
+  });
+
+  it('reads the values of a VALIDATION_FORMULA whose formula spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|VALIDATION_FORMULA|AND(\nISBLANK(Name))|Name=null\n' +
+        '09:18:22.6 (200)|VALIDATION_FORMULA|ISBLANK(Name)|Name=null\n',
+    );
+
+    expect(log.eventsById.slice(1).map((event) => event.text)).toEqual([
+      'AND(\nISBLANK(Name)) Name=null',
+      'ISBLANK(Name) Name=null',
+    ]);
+  });
+
+  it('reads the flow name of a FLOW_START_INTERVIEWS_ERROR whose message spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_START_INTERVIEWS_ERROR|An error occurred.\nTry again.|3b2a1|My_Flow\n',
+    );
+
+    expect(log.children[0]?.text).toBe('An error occurred.\nTry again. - My_Flow');
+  });
 });

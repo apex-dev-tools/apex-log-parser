@@ -584,6 +584,24 @@ function parseBytes(fragment: string | undefined): number {
   return fragment?.startsWith('Bytes:') ? Number(fragment.slice(6)) || 0 : 0;
 }
 
+/**
+ * Splits the last `count` fields off an event's full text. A message that spans lines puts the
+ * fields after it on a wrapped line, so the constructor cannot read them.
+ * @returns null when the text holds no more than `count` fields.
+ */
+function splitTrailingFields(
+  text: string,
+  count: number,
+): { message: string; fields: string[] } | null {
+  const parts = text.split('|');
+  if (parts.length <= count) {
+    return null;
+  }
+  const fields = parts.splice(-count);
+  // trimEnd drops the line break before a wrapped '|field' line.
+  return { message: parts.join('|').trimEnd(), fields };
+}
+
 /* Log line entry Parsers */
 
 export class BulkHeapAllocateLine extends LogEvent {
@@ -1672,7 +1690,15 @@ export class FlowStartInterviewsErrorLine extends LogEvent {
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = `${parts[2]} - ${parts[4]}`;
+    this.text = parts.slice(2).join('|');
+  }
+
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    // Fields: message, interview ID, flow name.
+    const split = splitTrailingFields(this.text, 2);
+    if (split) {
+      this.text = `${split.message} - ${split.fields[1]}`;
+    }
   }
 }
 
@@ -1909,17 +1935,11 @@ export class FlowElementErrorLine extends LogEvent {
     this.text = parts.slice(2).join('|');
   }
 
-  // The message can span lines, with the element type and name after it, so read the full text.
   onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
-    const nameBar = this.text.lastIndexOf('|');
-    const typeBar = this.text.lastIndexOf('|', nameBar - 1);
-    if (typeBar < 0) {
-      return;
+    const split = splitTrailingFields(this.text, 2);
+    if (split) {
+      this.text = [split.message, ...split.fields].filter(Boolean).join(' ');
     }
-    const message = this.text.slice(0, typeBar).trimEnd();
-    const type = this.text.slice(typeBar + 1, nameBar);
-    const name = this.text.slice(nameBar + 1);
-    this.text = `${message} ${type} ${name}`;
   }
 }
 
@@ -2143,9 +2163,15 @@ export class ValidationFormulaLine extends LogEvent {
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    const extra = parts.length > 3 ? ' ' + parts[3] : '';
+    this.text = parts.slice(2).join('|');
+  }
 
-    this.text = parts[2] + extra;
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    // Fields: formula source, values.
+    const split = splitTrailingFields(this.text, 1);
+    if (split) {
+      this.text = `${split.message} ${split.fields[0]}`;
+    }
   }
 }
 
@@ -2242,7 +2268,15 @@ export class WFFormulaLine extends DurationLogEvent {
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['WF_FORMULA'], LOG_CATEGORY.Automation, 'custom');
-    this.text = parts[2] + ' : ' + parts[3];
+    this.text = parts.slice(2).join('|');
+  }
+
+  onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
+    // Fields: formula source, values.
+    const split = splitTrailingFields(this.text, 1);
+    if (split) {
+      this.text = `${split.message} : ${split.fields[0]}`;
+    }
   }
 }
 
