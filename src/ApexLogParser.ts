@@ -171,6 +171,14 @@ function opensNextLog(line: string, log: string, nextStart: number, lastEntry: L
 }
 
 const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
+// The exact forms only, so a debug message that quotes the words stays text.
+const truncationMarkerPattern =
+  /^(?:\*\*\* Skipped [\d,]+ bytes of detailed log|\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+) *$/;
+
+function isTruncationMarker(line: string): boolean {
+  // '*' first: a cheap test, because this runs on every wrapped line.
+  return line.charCodeAt(0) === 42 && truncationMarkerPattern.test(line);
+}
 
 /** The platform states the dropped size on the skip line itself, with thousands separators. */
 function parseSkippedBytes(line: string): number | undefined {
@@ -352,7 +360,7 @@ export class ApexLogParser {
     }
 
     const hasType = !!(type && typePattern.test(type));
-    if (!hasType && lastEntry?.acceptsText) {
+    if (!hasType && lastEntry?.acceptsText && !isTruncationMarker(line)) {
       // wrapped text from the previous entry?
       lastEntry.text += '\n' + line;
     } else if (hasType) {

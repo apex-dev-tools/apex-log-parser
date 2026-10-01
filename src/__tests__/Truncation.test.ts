@@ -183,4 +183,61 @@ describe('truncation', () => {
     expect(apexLog.truncation).toEqual({ regions: [], totalSkippedBytes: 0 });
     expect(apexLog.truncatedEvents).toEqual([]);
   });
+
+  it('reports a skip line that follows an event which takes wrapped text', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[1]|DEBUG|hello\n' +
+        '*** Skipped 1,000 bytes of detailed log\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.truncation.regions.map((region) => region.kind)).toEqual(['skipped-lines']);
+    expect(apexLog.truncation.totalSkippedBytes).toBe(1000);
+    expect(apexLog.eventsById.find((event) => event.type === 'USER_DEBUG')?.text).toBe(
+      'DEBUG | hello',
+    );
+  });
+
+  it('reports a max-size line that follows an event which takes wrapped text', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[1]|DEBUG|hello\n' +
+        '*********** MAXIMUM DEBUG LOG SIZE REACHED *********** \n',
+    );
+
+    expect(apexLog.truncation.regions.map((region) => region.kind)).toEqual(['max-size']);
+    expect(apexLog.eventsById.find((event) => event.type === 'USER_DEBUG')?.text).toBe(
+      'DEBUG | hello',
+    );
+  });
+
+  it('keeps a skip line out of the limit block before it', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (500)|CUMULATIVE_LIMIT_USAGE\n' +
+        '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
+        '  Number of SOQL queries: 8 out of 100\n' +
+        '*** Skipped 1,000 bytes of detailed log\n' +
+        '09:18:22.6 (600)|CUMULATIVE_LIMIT_USAGE_END\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.truncation.regions.map((region) => region.kind)).toEqual(['skipped-lines']);
+    expect(apexLog.governorLimits.final.soqlQueries).toMatchObject({ used: 8, limit: 100 });
+  });
+
+  it('keeps a debug message that quotes the marker words as text', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[1]|DEBUG|line one\n' +
+        '*** Skipped lines are logged when MAXIMUM DEBUG LOG SIZE REACHED\n' +
+        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.truncation.regions).toEqual([]);
+    expect(apexLog.eventsById.find((event) => event.type === 'USER_DEBUG')?.text).toBe(
+      'DEBUG | line one\n*** Skipped lines are logged when MAXIMUM DEBUG LOG SIZE REACHED',
+    );
+  });
 });
