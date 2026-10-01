@@ -917,6 +917,18 @@ describe('getRootMethod tests', () => {
     expect(interViewBegin?.duration).toEqual({ self: 6332706, total: 6332706 });
   });
 
+  it('FlowStartInterviewsBeginLine takes its name from an interview, not an error before it', () => {
+    const log = parse(
+      '17:52:35.370 (100)|FLOW_START_INTERVIEWS_BEGIN|1\n' +
+        '17:52:35.370 (200)|FLOW_START_INTERVIEWS_ERROR|An error occurred.|3b2a1|My_Flow\n' +
+        '17:52:35.370 (300)|FLOW_START_INTERVIEW_BEGIN|3b2a1|Example Flow\n' +
+        '17:52:35.370 (400)|FLOW_START_INTERVIEW_END|3b2a1|Example Flow\n' +
+        '17:52:35.370 (500)|FLOW_START_INTERVIEWS_END|1\n',
+    );
+
+    expect(log.children[0]?.text).toBe('FLOW_START_INTERVIEWS : Example Flow');
+  });
+
   it('FlowStartInterviewsBeginLine should be a flow called from a process builder', async () => {
     const log =
       '17:52:34.317 (1350000000)|EXECUTION_STARTED\n' +
@@ -2005,5 +2017,102 @@ describe('parser state per parse call', () => {
     expect(parser.governorSnapshots).toEqual([]);
     expect(parser.eventsById).toEqual([]);
     expect(parser.namespaces.size).toBe(0);
+  });
+});
+
+describe('FLOW_ELEMENT_ERROR', () => {
+  it('keeps the error message, element type and element name', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|Required fields are missing: [Name]|FlowRecordCreate|Create_Account\n',
+    );
+
+    expect(log.children[0]?.text).toBe(
+      'Required fields are missing: [Name] FlowRecordCreate Create_Account',
+    );
+  });
+
+  it('reads the element type and name after a message that spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|You have reached the limit.\n' +
+        'Actions will start again in the next hour.\n' +
+        '|FlowActionCall|myRule_1_A1\n' +
+        '09:18:22.6 (200)|FLOW_ELEMENT_END|myRule_1_A1|FlowActionCall|myRule_1_A1\n',
+    );
+
+    expect(log.children[0]?.text).toBe(
+      'You have reached the limit.\nActions will start again in the next hour. FlowActionCall myRule_1_A1',
+    );
+  });
+
+  it('keeps a message that states no element', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|An error occurred.\n' + ' --- An Apex error occurred\n',
+    );
+
+    expect(log.children[0]?.text).toBe('An error occurred.\n --- An Apex error occurred');
+  });
+
+  it('leaves no leading space when the message is empty', () => {
+    const log = parse('09:18:22.6 (100)|FLOW_ELEMENT_ERROR||FlowDecision|Check_Status\n');
+
+    expect(log.children[0]?.text).toBe('FlowDecision Check_Status');
+  });
+});
+
+describe('events with fields after a message that spans lines', () => {
+  it('reads the values of a WF_FORMULA whose formula spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_FORMULA|Formula:AND(\nISBLANK(Name))|Values:Name=null\n' +
+        '09:18:22.6 (200)|WF_FORMULA|Formula:ISBLANK(Name)|Values:Name=null\n',
+    );
+
+    expect(log.eventsById.slice(1).map((event) => event.text)).toEqual([
+      'Formula:AND(\nISBLANK(Name)) : Values:Name=null',
+      'Formula:ISBLANK(Name) : Values:Name=null',
+    ]);
+  });
+
+  it('keeps a WF_FORMULA "||" operator and a "|" in a value in place', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_FORMULA|Formula:ISBLANK(Name) || ISBLANK(Phone)|Values:Desc=a|b\n',
+    );
+
+    expect(log.children[0]?.text).toBe('Formula:ISBLANK(Name) || ISBLANK(Phone) : Values:Desc=a|b');
+  });
+
+  it('reads the values of a VALIDATION_FORMULA whose formula spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|VALIDATION_FORMULA|AND(\nISBLANK(Name))|Name=null\n' +
+        '09:18:22.6 (200)|VALIDATION_FORMULA|ISBLANK(Name)|Name=null\n',
+    );
+
+    expect(log.eventsById.slice(1).map((event) => event.text)).toEqual([
+      'AND(\nISBLANK(Name)) Name=null',
+      'ISBLANK(Name) Name=null',
+    ]);
+  });
+
+  it('reads the flow name of a FLOW_START_INTERVIEWS_ERROR whose message spans lines', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_START_INTERVIEWS_ERROR|An error occurred.\nTry again.|3b2a1|My_Flow\n',
+    );
+
+    expect(log.children[0]?.text).toBe('An error occurred.\nTry again. - My_Flow');
+  });
+
+  it('reads the flow name of a single-line FLOW_START_INTERVIEWS_ERROR', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_START_INTERVIEWS_ERROR|An error occurred.|3b2a1|My_Flow\n',
+    );
+
+    expect(log.children[0]?.text).toBe('An error occurred. - My_Flow');
+  });
+
+  it('keeps the raw text when more text follows the trailing fields', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|msg\n|FlowActionCall|myRule_1_A1\nmore text\n',
+    );
+
+    expect(log.children[0]?.text).toBe('msg\n|FlowActionCall|myRule_1_A1\nmore text');
   });
 });
