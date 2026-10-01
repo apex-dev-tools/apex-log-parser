@@ -584,22 +584,19 @@ function parseBytes(fragment: string | undefined): number {
   return fragment?.startsWith('Bytes:') ? Number(fragment.slice(6)) || 0 : 0;
 }
 
-/**
- * Splits the last `count` fields off an event's full text. A message that spans lines puts the
- * fields after it on a wrapped line, so the constructor cannot read them.
- * @returns null when the text holds no more than `count` fields.
- */
-function splitTrailingFields(
-  text: string,
-  count: number,
-): { message: string; fields: string[] } | null {
+// Wrapped lines can carry the fields after a message, out of the constructor's reach.
+function splitTrailingFields(text: string, count: number): string[] | null {
   const parts = text.split('|');
   if (parts.length <= count) {
     return null;
   }
   const fields = parts.splice(-count);
+  // A line break in a field means more text followed, so the fields cannot be told apart from it.
+  if (fields.some((field) => field.includes('\n'))) {
+    return null;
+  }
   // trimEnd drops the line break before a wrapped '|field' line.
-  return { message: parts.join('|').trimEnd(), fields };
+  return [parts.join('|').trimEnd(), ...fields];
 }
 
 /* Log line entry Parsers */
@@ -1694,10 +1691,10 @@ export class FlowStartInterviewsErrorLine extends LogEvent {
   }
 
   onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
-    // Fields: message, interview ID, flow name.
     const split = splitTrailingFields(this.text, 2);
     if (split) {
-      this.text = `${split.message} - ${split.fields[1]}`;
+      const [message, , flowName] = split;
+      this.text = `${message} - ${flowName}`;
     }
   }
 }
@@ -1938,7 +1935,7 @@ export class FlowElementErrorLine extends LogEvent {
   onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
     const split = splitTrailingFields(this.text, 2);
     if (split) {
-      this.text = [split.message, ...split.fields].filter(Boolean).join(' ');
+      this.text = split.filter(Boolean).join(' ');
     }
   }
 }
@@ -2167,10 +2164,10 @@ export class ValidationFormulaLine extends LogEvent {
   }
 
   onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
-    // Fields: formula source, values.
     const split = splitTrailingFields(this.text, 1);
     if (split) {
-      this.text = `${split.message} ${split.fields[0]}`;
+      const [formula, values] = split;
+      this.text = `${formula} ${values}`;
     }
   }
 }
@@ -2272,10 +2269,10 @@ export class WFFormulaLine extends DurationLogEvent {
   }
 
   onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
-    // Fields: formula source, values.
     const split = splitTrailingFields(this.text, 1);
     if (split) {
-      this.text = `${split.message} : ${split.fields[0]}`;
+      const [formula, values] = split;
+      this.text = `${formula} : ${values}`;
     }
   }
 }

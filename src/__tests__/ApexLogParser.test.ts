@@ -2079,4 +2079,20 @@ describe('events with fields after a message that spans lines', () => {
 
     expect(log.children[0]?.text).toBe('An error occurred.\nTry again. - My_Flow');
   });
+
+  it('reads the flow name of a single-line FLOW_START_INTERVIEWS_ERROR', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_START_INTERVIEWS_ERROR|An error occurred.|3b2a1|My_Flow\n',
+    );
+
+    expect(log.children[0]?.text).toBe('An error occurred. - My_Flow');
+  });
+
+  it('keeps the raw text when more text follows the trailing fields', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|msg\n|FlowActionCall|myRule_1_A1\nmore text\n',
+    );
+
+    expect(log.children[0]?.text).toBe('msg\n|FlowActionCall|myRule_1_A1\nmore text');
+  });
 });
