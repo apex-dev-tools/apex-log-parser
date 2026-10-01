@@ -109,6 +109,67 @@ describe('truncation', () => {
     expect(outer?.duration).toMatchObject({ total: 700, self: 100 });
   });
 
+  it('closes every open frame when a new execution starts', () => {
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|01p|First.unit\n' +
+      '09:18:22.6 (300)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()\n' +
+      '*** Skipped 1000 bytes of detailed log\n' +
+      '09:18:22.6 (400)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (410)|CODE_UNIT_STARTED|[EXTERNAL]|01p|Second.unit\n' +
+      '09:18:22.6 (420)|CODE_UNIT_FINISHED|Second.unit\n' +
+      '09:18:22.6 (430)|EXECUTION_FINISHED\n';
+
+    const apexLog = parse(log);
+
+    expect(apexLog.children.map((event) => event.type)).toEqual([
+      'EXECUTION_STARTED',
+      'EXECUTION_STARTED',
+    ]);
+    expect(apexLog.truncatedEvents.map((event) => event.text)).toEqual([
+      'MyClass.run()',
+      'First.unit',
+      'EXECUTION_STARTED',
+    ]);
+    expect(apexLog.children[1]?.isTruncated).toBe(false);
+    expect(apexLog.truncatedEvents.map((event) => event.exitStamp)).toEqual([300, 300, 300]);
+  });
+
+  it('never ends an open frame before a child that closes on the next execution', () => {
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|Workflow:Account\n' +
+      '09:18:22.6 (300)|WF_FIELD_UPDATE|[Workflow:Account: MyRule]|Field:Account: Name|Value:x\n' +
+      '09:18:22.6 (5000)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (5100)|EXECUTION_FINISHED\n';
+
+    const unit = parse(log).children[0]?.children[0];
+
+    expect(unit?.exitStamp).toBe(5000);
+    expect(unit?.duration.self).toBe(100);
+  });
+
+  it('parses a new execution normally after an exception in the one the log dropped', () => {
+    const log =
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (200)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.outer()\n' +
+      '09:18:22.6 (300)|EXCEPTION_THROWN|[1]|System.NullPointerException: boom\n' +
+      '09:18:22.6 (400)|EXECUTION_STARTED\n' +
+      '09:18:22.6 (410)|CODE_UNIT_STARTED|[EXTERNAL]|01p|Second.unit\n' +
+      '09:18:22.6 (420)|METHOD_ENTRY|[5]|01p000000000AAA|MyClass.a()\n' +
+      '09:18:22.6 (430)|METHOD_EXIT|[9]|01p000000000AAA|MyClass.b()\n' +
+      '09:18:22.6 (440)|METHOD_EXIT|[5]|01p000000000AAA|MyClass.a()\n' +
+      '09:18:22.6 (450)|CODE_UNIT_FINISHED|Second.unit\n' +
+      '09:18:22.6 (460)|EXECUTION_FINISHED\n';
+
+    const apexLog = parse(log);
+    const second = apexLog.children[1];
+
+    expect(second?.isTruncated).toBe(false);
+    expect(second?.exitStamp).toBe(460);
+    expect(apexLog.logIssues.map((issue) => issue.summary)).toContain('Unexpected-Exit');
+  });
+
   it('reports no truncation for a complete log', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
