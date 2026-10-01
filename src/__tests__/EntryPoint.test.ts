@@ -86,4 +86,52 @@ describe('ApexLog.entryPoints', () => {
       'Second.unit',
     ]);
   });
+
+  it('finds an execution nested under a method the log never finished', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|01p|First.unit\n' +
+        '09:18:22.6 (300)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()\n' +
+        '*** Skipped 1000 bytes of detailed log\n' +
+        '09:18:22.6 (400)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (410)|CODE_UNIT_STARTED|[EXTERNAL]|01p|Second.unit\n' +
+        '09:18:22.6 (420)|CODE_UNIT_FINISHED|Second.unit\n' +
+        '09:18:22.6 (430)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.entryPoints.map((unit) => unit.text)).toEqual(['First.unit', 'Second.unit']);
+  });
+
+  it('finds an execution nested under a root code unit the log never finished', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        CODE_UNIT +
+        '09:18:22.6 (810)|EXECUTION_FINISHED\n' +
+        '09:18:22.6 (820)|CODE_UNIT_STARTED|[EXTERNAL]|01p|Orphan.unit\n' +
+        '09:18:22.6 (830)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (840)|CODE_UNIT_STARTED|[EXTERNAL]|01p|Third.unit\n' +
+        '09:18:22.6 (850)|CODE_UNIT_FINISHED|Third.unit\n' +
+        '09:18:22.6 (860)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.entryPoints.map((unit) => unit.text)).toEqual([
+      'MyClass.myTrigger',
+      'Orphan.unit',
+      'Third.unit',
+    ]);
+  });
+
+  it('keeps log order when a nested execution starts before the outer code unit', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (300)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (320)|CODE_UNIT_STARTED|[EXTERNAL]|01p|Second.unit\n' +
+        '09:18:22.6 (330)|CODE_UNIT_FINISHED|Second.unit\n' +
+        '09:18:22.6 (340)|EXECUTION_FINISHED\n' +
+        '09:18:22.6 (400)|CODE_UNIT_STARTED|[EXTERNAL]|01p|Third.unit\n' +
+        '09:18:22.6 (410)|CODE_UNIT_FINISHED|Third.unit\n',
+    );
+
+    expect(apexLog.entryPoints.map((unit) => unit.text)).toEqual(['Second.unit', 'Third.unit']);
+  });
 });

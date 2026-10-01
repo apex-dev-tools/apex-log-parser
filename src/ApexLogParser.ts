@@ -6,7 +6,7 @@ import {
   ApexLog,
   applyFlowDbResiduals,
   CodeUnitStartedLine,
-  ExecutionStartedLine,
+  type ExecutionStartedLine,
   type LogEvent,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
@@ -50,27 +50,13 @@ function issueKey(type: IssueType, summary: string): string {
   return type + ':' + summary;
 }
 
-/**
- * The first code unit of each execution, in log order. It sits under `EXECUTION_STARTED` in most
- * logs, but directly on the root in a log that holds no `EXECUTION_STARTED`, where each code unit is
- * its own execution.
- */
-function findEntryPoints(root: ApexLog): CodeUnitStartedLine[] {
-  return root.children.flatMap((child) => {
-    if (child instanceof CodeUnitStartedLine) {
-      return [child];
-    }
-    return child instanceof ExecutionStartedLine ? executionEntryPoints(child) : [];
-  });
-}
-
-function executionEntryPoints(execution: ExecutionStartedLine): CodeUnitStartedLine[] {
-  const first = execution.children.find((event) => event instanceof CodeUnitStartedLine);
-  // An execution the log never finished holds the next execution as a child.
-  const nested = execution.children
-    .filter((event) => event instanceof ExecutionStartedLine)
-    .flatMap(executionEntryPoints);
-  return first ? [first, ...nested] : nested;
+// From the parser, not the tree: an unfinished event can nest the next execution at any depth.
+function findEntryPoints(root: ApexLog, executions: ExecutionStartedLine[]): CodeUnitStartedLine[] {
+  const rootUnits = root.children.filter((child) => child instanceof CodeUnitStartedLine);
+  const executionUnits = executions
+    .map((execution) => execution.children.find((event) => event instanceof CodeUnitStartedLine))
+    .filter((unit) => unit !== undefined);
+  return [...rootUnits, ...executionUnits].sort((a, b) => a.eventIndex - b.eventIndex);
 }
 
 /**
@@ -228,6 +214,8 @@ export class ApexLogParser {
   eventsById: LogEvent[] = [];
   /** Every exception event (EXCEPTION_THROWN, FATAL_ERROR) in log order. */
   exceptions: LogEvent[] = [];
+  /** Every `EXECUTION_STARTED` event in log order, at whatever depth the tree put it. */
+  readonly executions: ExecutionStartedLine[] = [];
   readonly governorSnapshots: GovernorSnapshot[] = [];
 
   /**
@@ -256,7 +244,7 @@ export class ApexLogParser {
     apexLog.debugLevels = levels;
     apexLog.debugLevelSettings = settings;
     apexLog.userInfo = parseUserInfo(debugLog);
-    apexLog.entryPoints = findEntryPoints(apexLog);
+    apexLog.entryPoints = findEntryPoints(apexLog, this.executions);
     apexLog.entryPoint = apexLog.entryPoints[0] ?? null;
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
