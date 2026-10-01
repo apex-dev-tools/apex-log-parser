@@ -1659,10 +1659,9 @@ export class FlowStartInterviewsBeginLine extends DurationLogEvent {
   }
 
   getFlowName(): string {
-    if (this.children.length) {
-      return this.children[0]?.text || '';
-    }
-    return '';
+    // Only an interview's text is a flow label; an error can come first.
+    const interview = this.children.find((child) => child.type === 'FLOW_START_INTERVIEW_BEGIN');
+    return interview?.text || '';
   }
 }
 
