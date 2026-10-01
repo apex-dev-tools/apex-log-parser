@@ -434,10 +434,13 @@ export class ApexLog extends LogEvent {
   public parsingErrors: string[] = [];
 
   /**
-   * The first code unit the log states, which is what the transaction ran. Null when the log states
-   * no code unit at all.
+   * Every code unit directly on the root or directly under an `EXECUTION_STARTED`, in log order. The
+   * first can be a short platform step, such as `FutureHandler - state load` before the real work.
+   * Each one states its `timestamp` and `duration`, so a caller can choose which to name, e.g. the
+   * longest. When the log drops an exit line, one entry point can hold a later one, truncated or not,
+   * so do not sum their durations. Empty when no code unit sits at either place.
    */
-  public entryPoint: CodeUnitStartedLine | null = null;
+  public entryPoints: CodeUnitStartedLine[] = [];
 
   /** Who ran the transaction, from the `USER_INFO` header line. Null when it states no user. */
   public userInfo: UserInfo | null = null;
@@ -896,6 +899,7 @@ export class CodeUnitStartedLine extends DurationLogEvent {
     }
 
     this.namespace ||= 'default';
+    parser.codeUnits.push(this);
   }
 }
 export class CodeUnitFinishedLine extends LogEvent {

@@ -5,8 +5,7 @@
 import {
   ApexLog,
   applyFlowDbResiduals,
-  CodeUnitStartedLine,
-  ExecutionStartedLine,
+  type CodeUnitStartedLine,
   type LogEvent,
 } from './LogEvents.js';
 import { getLogEventClass } from './LogLineMapping.js';
@@ -50,24 +49,15 @@ function issueKey(type: IssueType, summary: string): string {
   return type + ':' + summary;
 }
 
-/**
- * The first code unit, which is what the transaction ran. It sits under `EXECUTION_STARTED` in most
- * logs, but directly on the root in a log that holds no `EXECUTION_STARTED`. One level deep only.
- */
-function findEntryPoint(root: ApexLog): CodeUnitStartedLine | null {
-  for (const child of root.children) {
-    if (child instanceof CodeUnitStartedLine) {
-      return child;
-    }
-    if (child instanceof ExecutionStartedLine) {
-      for (const event of child.children) {
-        if (event instanceof CodeUnitStartedLine) {
-          return event;
-        }
-      }
+// From the parser, not the tree: an unfinished event can nest the next execution at any depth.
+function findEntryPoints(root: ApexLog, codeUnits: CodeUnitStartedLine[]): CodeUnitStartedLine[] {
+  const entryPoints: CodeUnitStartedLine[] = [];
+  for (const unit of codeUnits) {
+    if (unit.parent === root || unit.parent?.type === 'EXECUTION_STARTED') {
+      entryPoints.push(unit);
     }
   }
-  return null;
+  return entryPoints;
 }
 
 /**
@@ -225,6 +215,8 @@ export class ApexLogParser {
   eventsById: LogEvent[] = [];
   /** Every exception event (EXCEPTION_THROWN, FATAL_ERROR) in log order. */
   exceptions: LogEvent[] = [];
+  /** Every `CODE_UNIT_STARTED` event in log order. */
+  readonly codeUnits: CodeUnitStartedLine[] = [];
   readonly governorSnapshots: GovernorSnapshot[] = [];
 
   /**
@@ -253,7 +245,7 @@ export class ApexLogParser {
     apexLog.debugLevels = levels;
     apexLog.debugLevelSettings = settings;
     apexLog.userInfo = parseUserInfo(debugLog);
-    apexLog.entryPoint = findEntryPoint(apexLog);
+    apexLog.entryPoints = findEntryPoints(apexLog, this.codeUnits);
     apexLog.logIssues = this.logIssues;
     apexLog.parsingErrors = this.parsingErrors;
     apexLog.namespaces = Array.from(this.namespaces);
