@@ -2269,10 +2269,11 @@ export class WFFormulaLine extends DurationLogEvent {
   }
 
   onAfter(_parser: ApexLogParser, _next?: LogEvent): void {
-    const split = splitTrailingFields(this.text, 1);
-    if (split) {
-      const [formula, values] = split;
-      this.text = `${formula} : ${values}`;
+    // Split at the marker, not the last '|': a formula can use '||' and a value can hold '|'.
+    const valuesStart = this.text.indexOf('|Values:');
+    if (valuesStart >= 0) {
+      const formula = this.text.slice(0, valuesStart).trimEnd();
+      this.text = `${formula} : ${this.text.slice(valuesStart + 1)}`;
     }
   }
 }

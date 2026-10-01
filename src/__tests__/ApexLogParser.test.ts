@@ -2060,6 +2060,14 @@ describe('events with fields after a message that spans lines', () => {
     ]);
   });
 
+  it('keeps a WF_FORMULA "||" operator and a "|" in a value in place', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_FORMULA|Formula:ISBLANK(Name) || ISBLANK(Phone)|Values:Desc=a|b\n',
+    );
+
+    expect(log.children[0]?.text).toBe('Formula:ISBLANK(Name) || ISBLANK(Phone) : Values:Desc=a|b');
+  });
+
   it('reads the values of a VALIDATION_FORMULA whose formula spans lines', () => {
     const log = parse(
       '09:18:22.6 (100)|VALIDATION_FORMULA|AND(\nISBLANK(Name))|Name=null\n' +
