@@ -70,7 +70,8 @@ printTree(log);
 Prints:
 
 ```
-LOG_ROOT LOG_ROOT (3.53ms)
+LOG_ROOT LOG_ROOT (3.59ms)
+  USER_INFO 005000000000AAA user@example.com (0.00ms)
   EXECUTION_STARTED EXECUTION_STARTED (3.53ms)
     CODE_UNIT_STARTED AccountService.refresh() (3.30ms)
       METHOD_ENTRY AccountService.loadAccounts() (2.20ms)

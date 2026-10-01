@@ -196,8 +196,9 @@ describe('Invalid Debug Lines tests', () => {
 });
 
 describe('parseLog tests', () => {
-  it('Should parse between EXECUTION_STARTED and EXECUTION_FINISHED and return an iterator', async () => {
+  it('Should parse from the first timestamped line and return an iterator', async () => {
     const log =
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
       '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Greenwich Mean Time|GMT+01:00\n' +
       '09:18:22.6 (6574780)|EXECUTION_STARTED\n' +
       '09:18:22.6 (6586704)|CODE_UNIT_STARTED|[EXTERNAL]|066d0000002m8ij|ns.VFRemote: ns.MyController invoke(save)\n' +
@@ -206,10 +207,13 @@ describe('parseLog tests', () => {
 
     const apexLog = parse(log);
     const logLines = apexLog.children;
-    expect(logLines.length).toEqual(1);
-    expect(logLines[0]).toBeInstanceOf(ExecutionStartedLine);
+    expect(logLines.length).toEqual(2);
+    expect(logLines[0]).toMatchObject({ type: 'USER_INFO', timestamp: 6508409 });
+    expect(logLines[1]).toBeInstanceOf(ExecutionStartedLine);
+    expect(apexLog.timestamp).toBe(6508409);
+    expect(apexLog.parsingErrors).toEqual([]);
 
-    const firstChildren = logLines[0]?.children ?? [];
+    const firstChildren = logLines[1]?.children ?? [];
     expect(firstChildren.length).toEqual(1);
     expect(firstChildren[0]).toBeInstanceOf(CodeUnitStartedLine);
   });
@@ -235,7 +239,7 @@ describe('parseLog tests', () => {
     expect(suffixes.get('FLOW_START_INTERVIEW_BEGIN')).toBe(' (flow)');
   });
 
-  it('Should parse between EXECUTION_STARTED and EXECUTION_FINISHED for CRLF (\r\n)', async () => {
+  it('Should parse from the first timestamped line for CRLF (\r\n)', async () => {
     const log =
       '09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Greenwich Mean Time|GMT+01:00\r\n' +
       '09:18:22.6 (6574780)|EXECUTION_STARTED\r\n' +
@@ -245,12 +249,50 @@ describe('parseLog tests', () => {
 
     const apexLog = parse(log);
 
-    expect(apexLog.children.length).toEqual(1);
-    expect(apexLog.children[0]).toBeInstanceOf(ExecutionStartedLine);
+    expect(apexLog.children.length).toEqual(2);
+    expect(apexLog.children[0]).toMatchObject({ type: 'USER_INFO' });
+    expect(apexLog.children[1]).toBeInstanceOf(ExecutionStartedLine);
 
-    const firstChildren = apexLog.children[0]?.children ?? [];
+    const firstChildren = apexLog.children[1]?.children ?? [];
     expect(firstChildren.length).toEqual(1);
     expect(firstChildren[0]).toBeInstanceOf(CodeUnitStartedLine);
+  });
+
+  it('starts at the first event of a log with no EXECUTION_STARTED', () => {
+    const apexLog = parse(
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        'Execute Anonymous: System.debug(1);\n' +
+        '09:18:22.6 (100)|CODE_UNIT_STARTED|[EXTERNAL]|01q000000000001|__sfdc_trigger/ns/Invoice\n' +
+        '09:18:22.6 (200)|CODE_UNIT_FINISHED|__sfdc_trigger/ns/Invoice\n',
+    );
+
+    expect(apexLog.children.map((child) => child.type)).toEqual(['CODE_UNIT_STARTED']);
+    expect(apexLog.debugLevels).toEqual({ apexCode: 'FINE', apexProfiling: 'FINE' });
+    expect(apexLog.parsingErrors).toEqual([]);
+  });
+
+  it('reads the settings line from the header only', () => {
+    const apexLog = parse(
+      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[1]|DEBUG|pasted header follows:\n' +
+        '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        '09:18:22.6 (300)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.debugLevels).toEqual({});
+    expect(apexLog.debugLevelSettings).toEqual([]);
+  });
+
+  it('starts after a header line that states no nanosecond counter', () => {
+    const apexLog = parse(
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
+        '09:18:22.6|USER_INFO|[EXTERNAL]|005000000000AAA\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|EXECUTION_FINISHED\n',
+    );
+
+    expect(apexLog.children.map((child) => child.type)).toEqual(['EXECUTION_STARTED']);
+    expect(apexLog.debugLevels).toEqual({ apexCode: 'FINE', apexProfiling: 'FINE' });
   });
 
   it('Should handle partial logs', async () => {
@@ -291,9 +333,11 @@ describe('parseLog tests', () => {
     const apexLog = parse(log);
 
     expect(apexLog.children.length).toBe(1);
-    expect(apexLog.logIssues.length).toBe(2);
-    expect(apexLog.logIssues[0]?.summary).toBe('Unexpected-End');
-    expect(apexLog.logIssues[1]?.summary).toBe('Max-Size-reached');
+    expect(apexLog.children[0]?.exitStamp).toBe(1000);
+    expect(apexLog.logIssues.map((issue) => issue.summary)).toEqual([
+      'Max-Size-reached',
+      'Unexpected-End',
+    ]);
   });
 
   it('Should detect exceptions', async () => {
@@ -766,7 +810,7 @@ describe('parseLog tests', () => {
       '09:19:13.82 (51595120059)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
-    const execEvent = apexLog.children[0] as MethodEntryLine;
+    const execEvent = apexLog.children[1] as MethodEntryLine;
     expect(execEvent).toBeInstanceOf(ExecutionStartedLine);
 
     expect(execEvent.children.length).toEqual(1);
