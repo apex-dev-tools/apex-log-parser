@@ -29,6 +29,14 @@ import type {
 } from './types.js';
 import { LOG_CATEGORY, LOG_LEVEL } from './types.js';
 
+// Built from `{}`, so V8 gives it a map apart from the count literals, whose fields then stay ints.
+function zeroDuration(): SelfTotal {
+  const duration = {} as SelfTotal;
+  duration.self = 0;
+  duration.total = 0;
+  return duration;
+}
+
 /**
  * All log lines extend this base class.
  */
@@ -148,96 +156,46 @@ export abstract class LogEvent {
   cpuType: CPUType = ''; // the category key to collect our cpu usage
 
   /**
-   * The time spent.
+   * The time spent: `self` is the net (wall) time spent in the node (when not inside children), and
+   * `total` is the total (wall) time spent in the node.
    */
-  duration: SelfTotal = {
-    /**
-     * The net (wall) time spent in the node (when not inside children)
-     */
-    self: 0,
-    /**
-     * The total (wall) time spent in the node
-     */
-    total: 0,
-  };
+  duration: SelfTotal = zeroDuration();
 
   /**
-   * Total + self row counts for DML
+   * Total + self row counts for DML: `self` excludes child nodes, `total` includes them.
    */
-  dmlRowCount: SelfTotal = {
-    /**
-     * The net number of DML rows for this node, excluding child nodes
-     */
-    self: 0,
-    /**
-     * The total number of DML rows for this node and child nodes
-     */
-    total: 0,
-  };
+  dmlRowCount: SelfTotal = { self: 0, total: 0 };
 
   /**
-   * Total + self row counts for SOQL
+   * Total + self row counts for SOQL: `self` excludes child nodes, `total` includes them.
    */
-  soqlRowCount: SelfTotal = {
-    /**
-     * The net number of SOQL rows for this node, excluding child nodes
-     */
-    self: 0,
-    /**
-     * The total number of SOQL rows for this node and child nodes
-     */
-    total: 0,
-  };
+  soqlRowCount: SelfTotal = { self: 0, total: 0 };
 
   /**
-   * Total + self row counts for SOSL
+   * Total + self row counts for SOSL: `self` excludes child nodes, `total` includes them.
    */
-  soslRowCount: SelfTotal = {
-    /**
-     * The net number of SOSL rows for this node, excluding child nodes
-     */
-    self: 0,
-    /**
-     * The total number of SOSL rows for this node and child nodes
-     */
-    total: 0,
-  };
-
-  dmlCount: SelfTotal = {
-    /**
-     * The net number of DML operations (DML_BEGIN) in this node.
-     */
-    self: 0,
-    /**
-     * The total number of DML operations (DML_BEGIN) in this node and child nodes
-     */
-    total: 0,
-  };
-
-  soqlCount: SelfTotal = {
-    /**
-     * The net number of SOQL operations (SOQL_EXECUTE_BEGIN) in this node.
-     */
-    self: 0,
-    /**
-     * The total number of SOQL operations (SOQL_EXECUTE_BEGIN) in this node and child nodes
-     */
-    total: 0,
-  };
-
-  soslCount: SelfTotal = {
-    /**
-     * The net number of SOSL operations (SOSL_EXECUTE_BEGIN) in this node.
-     */
-    self: 0,
-    /**
-     * The total number of SOSL operations (SOSL_EXECUTE_BEGIN) in this node and child nodes
-     */
-    total: 0,
-  };
+  soslRowCount: SelfTotal = { self: 0, total: 0 };
 
   /**
-   * Total + self counts for exceptions thrown (EXCEPTION_THROWN).
+   * DML operations (DML_BEGIN): `self` is the net number in this node, `total` includes child nodes.
+   */
+  dmlCount: SelfTotal = { self: 0, total: 0 };
+
+  /**
+   * SOQL operations (SOQL_EXECUTE_BEGIN): `self` is the net number in this node, `total` includes
+   * child nodes.
+   */
+  soqlCount: SelfTotal = { self: 0, total: 0 };
+
+  /**
+   * SOSL operations (SOSL_EXECUTE_BEGIN): `self` is the net number in this node, `total` includes
+   * child nodes.
+   */
+  soslCount: SelfTotal = { self: 0, total: 0 };
+
+  /**
+   * Total + self counts for exceptions thrown (EXCEPTION_THROWN): `self` is the number thrown
+   * directly by this node, and `total` includes child nodes.
    *
    * `self` is seeded on the EXCEPTION_THROWN leaf node (like DML/SOQL), so a method's
    * `thrownCount.self` is always 0 (the throw is a child, not the method itself). Because
@@ -245,16 +203,7 @@ export abstract class LogEvent {
    * Throws tooltip row, because it would only ever read "(self 0)". The field keeps the SelfTotal
    * shape for consistency with the other metrics and so the leaf carries `self: 1`.
    */
-  thrownCount: SelfTotal = {
-    /**
-     * The net number of exceptions thrown directly by this node.
-     */
-    self: 0,
-    /**
-     * The total number of exceptions thrown in this node and child nodes
-     */
-    total: 0,
-  };
+  thrownCount: SelfTotal = { self: 0, total: 0 };
 
   /**
    * Signed NET heap bytes (alloc − free) for HEAP_ALLOCATE / BULK_HEAP_ALLOCATE / HEAP_DEALLOCATE.
@@ -268,16 +217,7 @@ export abstract class LogEvent {
    * children only, so a method's `self` excludes allocations in sub-methods. `total` is the
    * net across this node and all descendants.
    */
-  heapAllocated: SelfTotal = {
-    /**
-     * The net bytes retained directly by this node (excluding sub-methods).
-     */
-    self: 0,
-    /**
-     * The total net bytes retained in this node and child nodes
-     */
-    total: 0,
-  };
+  heapAllocated: SelfTotal = { self: 0, total: 0 };
 
   /**
    * GROSS heap bytes allocated (positive HEAP_ALLOCATE only; frees ignored): the churn / GC
@@ -285,12 +225,7 @@ export abstract class LogEvent {
    * (net) and {@link heapPeak} (max live): an allocate-then-free loop has net ≈ 0 and a small
    * peak but a large gross. Same self/total aggregation as {@link heapAllocated}.
    */
-  heapGross: SelfTotal = {
-    /** Gross bytes allocated directly by this node (excluding sub-methods). */
-    self: 0,
-    /** Total gross bytes allocated in this node and child nodes. */
-    total: 0,
-  };
+  heapGross: SelfTotal = { self: 0, total: 0 };
 
   /**
    * Peak live heap (bytes) for this node's subtree: the highest running live-heap total reached
@@ -1040,16 +975,13 @@ export class VFPageMessageLine extends LogEvent {
 export class DMLBeginLine extends DurationLogEvent {
   debugCategory: DebugCategory = 'database';
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  dmlCount = {
-    self: 1,
-    total: 1,
-  };
   namespace = 'default';
   /** The SObject the DML targets (e.g. `Account`), from the `Type:` field. Null if absent. */
   sObjectType: string | null = null;
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['DML_END'], LOG_CATEGORY.DML, 'free');
+    this.dmlCount.self = this.dmlCount.total = 1;
     this.lineNumber = this.parseLineNumber(parts[2]);
     this.text = 'DML ' + parts[3] + ' ' + parts[4];
     const typePart = parts[4];
@@ -1086,13 +1018,10 @@ export class SOQLExecuteBeginLine extends DurationLogEvent {
   debugLevel: LogLevel = LOG_LEVEL.Info;
   aggregations = 0;
   children: SOQLExecuteExplainLine[] = [];
-  soqlCount = {
-    self: 1,
-    total: 1,
-  };
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['SOQL_EXECUTE_END'], LOG_CATEGORY.SOQL, 'free');
+    this.soqlCount.self = this.soqlCount.total = 1;
     this.lineNumber = this.parseLineNumber(parts[2]);
 
     const [, , , aggregations, soqlString] = parts;
@@ -1173,13 +1102,10 @@ export class SOQLExecuteExplainLine extends LogEvent {
 export class SOSLExecuteBeginLine extends DurationLogEvent {
   debugCategory: DebugCategory = 'database';
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  soslCount = {
-    self: 1,
-    total: 1,
-  };
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['SOSL_EXECUTE_END'], LOG_CATEGORY.SOQL, 'free');
+    this.soslCount.self = this.soslCount.total = 1;
     this.lineNumber = this.parseLineNumber(parts[2]);
     this.text = `SOSL: ${parts[3]}`;
   }
@@ -2548,10 +2474,10 @@ export class ExceptionThrownLine extends LogEvent {
   debugCategory: DebugCategory = 'apexCode';
   discontinuity = true;
   acceptsText = true;
-  thrownCount = { self: 1, total: 1 };
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
+    this.thrownCount.self = this.thrownCount.total = 1;
     this.lineNumber = this.parseLineNumber(parts[2]);
     this.text = parts[3] || '';
     parser.exceptions.push(this);
