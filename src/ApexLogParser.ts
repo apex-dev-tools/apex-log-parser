@@ -8,7 +8,7 @@ import {
   type CodeUnitStartedLine,
   type LogEvent,
 } from './LogEvents.js';
-import { getLogEventClass } from './LogLineMapping.js';
+import { eventNames, getLogEventClass } from './LogLineMapping.js';
 import { deriveGovernorLimits } from './limits.js';
 import type {
   DebugLevelSetting,
@@ -354,6 +354,7 @@ export class ApexLogParser {
 
     const metaCtor = getLogEventClass(type as LogEventType);
     if (metaCtor) {
+      parts[1] = eventNames.get(type) ?? type;
       const entry = new metaCtor(this, parts);
       entry.logLine = line;
       return entry;
