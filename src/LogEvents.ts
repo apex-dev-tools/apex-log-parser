@@ -599,6 +599,8 @@ function splitTrailingFields(text: string, count: number): string[] | null {
   return [parts.join('|').trimEnd(), ...fields];
 }
 
+const salesforceIdPattern = /^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/;
+
 /* Log line entry Parsers */
 
 export class BulkHeapAllocateLine extends LogEvent {
@@ -1642,7 +1644,6 @@ export class EventSericeSubDetailLine extends LogEvent {
 export class FlowStartInterviewsBeginLine extends DurationLogEvent {
   debugCategory: DebugCategory = 'workflow';
   debugLevel: LogLevel = LOG_LEVEL.Info;
-  text = 'FLOW_START_INTERVIEWS : ';
 
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts, ['FLOW_START_INTERVIEWS_END'], LOG_CATEGORY.Automation, 'custom');
@@ -1651,7 +1652,7 @@ export class FlowStartInterviewsBeginLine extends DurationLogEvent {
   onEnd(_end: LogEvent, stack: LogEvent[]): void {
     const flowType = this.getFlowType(stack);
     this.suffix = ` (${flowType})`;
-    this.text += this.getFlowName();
+    this.text = this.getFlowName() || this.text;
   }
 
   getFlowType(stack: LogEvent[]): string {
@@ -2186,7 +2187,12 @@ export class WFFlowActionErrorLine extends LogEvent {
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = parts[1] + ' ' + parts[4];
+    // The docs state a flow version ID that real logs omit, so skip every leading ID.
+    let messageStart = 2;
+    while (messageStart < parts.length - 1 && salesforceIdPattern.test(parts[messageStart] ?? '')) {
+      messageStart++;
+    }
+    this.text = parts.slice(messageStart).join('|') || this.text;
   }
 }
 
@@ -2196,7 +2202,7 @@ export class WFFlowActionErrorDetailLine extends LogEvent {
   acceptsText = true;
   constructor(parser: ApexLogParser, parts: string[]) {
     super(parser, parts);
-    this.text = parts[1] + ' ' + parts[2];
+    this.text = parts.slice(2).join('|') || this.text;
   }
 }
 
@@ -2251,7 +2257,8 @@ export class WFCriteriaBeginLine extends DurationLogEvent {
       LOG_CATEGORY.Automation,
       'custom',
     );
-    this.text = 'WF_CRITERIA : ' + parts[5] + ' : ' + parts[3];
+    // The trigger type is stated only when the rule respects trigger types.
+    this.text = [parts[5], parts[3]].filter(Boolean).join(' : ');
   }
 }
 

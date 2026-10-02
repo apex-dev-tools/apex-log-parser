@@ -869,7 +869,7 @@ describe('getRootMethod tests', () => {
     expect(interViewsBegin).toMatchObject({
       parent: unitStart,
       type: 'FLOW_START_INTERVIEWS_BEGIN',
-      text: 'FLOW_START_INTERVIEWS : Example Process Builder',
+      text: 'Example Process Builder',
       suffix: ' (Process Builder)',
     });
 
@@ -908,7 +908,7 @@ describe('getRootMethod tests', () => {
     expect(unitStart.children.length).toBe(1);
     const interViewsBegin = unitStart.children[0]!;
     expect(interViewsBegin.type).toBe('FLOW_START_INTERVIEWS_BEGIN');
-    expect(interViewsBegin.text).toBe('FLOW_START_INTERVIEWS : Example Flow');
+    expect(interViewsBegin.text).toBe('Example Flow');
     expect(interViewsBegin.suffix).toBe(' (Flow)');
 
     expect(interViewsBegin.children.length).toBe(1);
@@ -926,7 +926,7 @@ describe('getRootMethod tests', () => {
         '17:52:35.370 (500)|FLOW_START_INTERVIEWS_END|1\n',
     );
 
-    expect(log.children[0]?.text).toBe('FLOW_START_INTERVIEWS : Example Flow');
+    expect(log.children[0]?.text).toBe('Example Flow');
   });
 
   it('FlowStartInterviewsBeginLine should be a flow called from a process builder', async () => {
@@ -959,7 +959,7 @@ describe('getRootMethod tests', () => {
     expect(unitStart.children.length).toBe(1);
     const pbBegin = unitStart.children[0]!;
     expect(pbBegin.type).toBe('FLOW_START_INTERVIEWS_BEGIN');
-    expect(pbBegin.text).toBe('FLOW_START_INTERVIEWS : Example Process Builder');
+    expect(pbBegin.text).toBe('Example Process Builder');
     expect(pbBegin.suffix).toBe(' (Process Builder)');
 
     expect(pbBegin.children.length).toBe(1);
@@ -969,7 +969,7 @@ describe('getRootMethod tests', () => {
 
     const interViewsBegin = pbDetail.children[0]!;
     expect(interViewsBegin.type).toBe('FLOW_START_INTERVIEWS_BEGIN');
-    expect(interViewsBegin.text).toBe('FLOW_START_INTERVIEWS : Example Flow');
+    expect(interViewsBegin.text).toBe('Example Flow');
     expect(interViewsBegin.suffix).toBe(' (Flow)');
     expect(interViewsBegin.duration).toEqual({ self: 2, total: 3 });
 
@@ -2114,5 +2114,62 @@ describe('events with fields after a message that spans lines', () => {
     );
 
     expect(log.children[0]?.text).toBe('msg\n|FlowActionCall|myRule_1_A1\nmore text');
+  });
+});
+
+describe('event text without the event name', () => {
+  it('shows only the message of WF_FLOW_ACTION_ERROR and its detail', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_FLOW_ACTION_ERROR|09L000000000AAA|300000000000AAA|Error executing flow: My_Flow\n' +
+        '09:18:22.6 (200)|WF_FLOW_ACTION_ERROR_DETAIL|The flow tried to update records.\n',
+    );
+
+    expect(log.eventsById.slice(1).map((event) => event.text)).toEqual([
+      'Error executing flow: My_Flow',
+      'The flow tried to update records.',
+    ]);
+  });
+
+  it('shows the evaluation mode and rule of WF_CRITERIA_BEGIN', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_CRITERIA_BEGIN|[Account: Acme 001000000000AAA]|My_Rule|01Q000000000AAA|ON_ALL_CHANGES|0\n' +
+        '09:18:22.6 (200)|WF_CRITERIA_END|false\n',
+    );
+
+    expect(log.children[0]?.text).toBe('ON_ALL_CHANGES : My_Rule');
+  });
+
+  it('keeps the event name of a FLOW_START_INTERVIEWS_BEGIN with no interview', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_START_INTERVIEWS_BEGIN|1\n' +
+        '09:18:22.6 (200)|FLOW_START_INTERVIEWS_END|1\n',
+    );
+
+    expect(log.children[0]?.text).toBe('FLOW_START_INTERVIEWS_BEGIN');
+  });
+
+  it('skips the flow version ID the docs state for WF_FLOW_ACTION_ERROR', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_FLOW_ACTION_ERROR|09L000000000AAA|300000000000AAA|301000000000AAA|Error executing flow\n',
+    );
+
+    expect(log.children[0]?.text).toBe('Error executing flow');
+  });
+
+  it('keeps a "|" in a WF_FLOW_ACTION_ERROR_DETAIL message', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_FLOW_ACTION_ERROR_DETAIL|Field A | Field B are required\n',
+    );
+
+    expect(log.children[0]?.text).toBe('Field A | Field B are required');
+  });
+
+  it('shows only the rule of a WF_CRITERIA_BEGIN that states no trigger type', () => {
+    const log = parse(
+      '09:18:22.6 (100)|WF_CRITERIA_BEGIN|[Account: Acme 001000000000AAA]|My_Rule|01Q000000000AAA\n' +
+        '09:18:22.6 (200)|WF_CRITERIA_END|false\n',
+    );
+
+    expect(log.children[0]?.text).toBe('My_Rule');
   });
 });
