@@ -12,6 +12,9 @@ updates:
       default-days: 7
       semver-major-days: 14
     groups:
+      # The bench plugin pins vitest's range, so they move together.
+      vitest:
+        patterns: ['vitest', '@codspeed/*']
       development-dependencies:
         dependency-type: 'development'
         update-types: ['minor', 'patch']
