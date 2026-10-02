@@ -29,9 +29,11 @@ import type {
 } from './types.js';
 import { LOG_CATEGORY, LOG_LEVEL } from './types.js';
 
-// Built from `{}`, so V8 gives it a map apart from the count literals, whose fields then stay ints.
+// From `{}`: a map apart from the count literals. The `null` first stops V8 boxing each leaf's zeros.
 function zeroDuration(): SelfTotal {
   const duration = {} as SelfTotal;
+  duration.self = null as unknown as number;
+  duration.total = null as unknown as number;
   duration.self = 0;
   duration.total = 0;
   return duration;
