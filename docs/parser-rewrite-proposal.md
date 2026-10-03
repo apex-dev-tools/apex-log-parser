@@ -20,6 +20,11 @@ Build it the way the fastest modern parsers are built (oxc, Lezer, simdjson). Th
    decoders and a TypeScript interface per event. That interface narrows by `type`, names every
    field, and limits `children` to the types a parent can actually hold.
 
+All three layers are **monomorphic by construction**: typed arrays, per-type behaviour as tables
+indexed by type id, and one node class. The per-event variety lives only in TypeScript. That
+one-class rule matters: a prototype per event type measures 2× *slower* than today. See
+[Monomorphism](#8-monomorphism).
+
 The store is a few `ArrayBuffer`s, so it **transfers to and from a worker at no cost**. That one
 property is what makes `parseInWorker`, `parseAsync` with progress, streaming, and disk caching
 in MCP practical. Today none of them is.
@@ -77,8 +82,9 @@ The numbers are per event: about 1.27 KB retained on a 100 MB log.
 - **`logLine` and `text` strings.** A `slice` of 13 characters or more is a V8 *sliced string*, so
   the tree pins the whole source string for as long as it lives
   ([V8 issue 2869](https://groups.google.com/g/v8-reviews/c/93uSOHcIZW8)).
-- **175 classes.** Every hot access site is megamorphic. #109 notes that this cannot be fixed
-  without one event class, which is an API break.
+- **175 classes.** Every hot access site is megamorphic: one class per type reads a field 2.2×
+  slower than one class for all ([Monomorphism](#8-monomorphism)). #109 notes that this cannot be
+  fixed without one event class, which is an API break.
 - **Separate passes** for times, package merge, totals, flow residuals and issue end times. #109
   merges some of them.
 - **Boxed doubles.** #107 found that nanosecond durations force V8 to box the counters that share
@@ -171,8 +177,10 @@ source for callers that only need the tree and the interned names.
 
 - **`Node<K>`**, the ergonomic view. `log.node(i)` creates a tiny object (`store`, `row`) on
   first access and caches it in a sparse array, so `===` and `Map` keys keep working in UIs.
-  Field getters live on one prototype per event type, generated from the schema. Only nodes a
-  consumer touches ever exist.
+  Every node is an instance of **one** class, and every field getter lives on that one
+  prototype. Each getter decodes through a table indexed by type id, so property access stays
+  monomorphic. The per-event types exist only for TypeScript (see [Monomorphism](#8-monomorphism)).
+  Only nodes a consumer touches ever exist.
 - **`Cursor`** has no allocation: `firstChild()`, `nextSibling()`, `parent()`, `type`,
   `timestamp`, and so on. Rollups, exports and the variables index (#72) use it. It is iterative,
   so a deep log cannot overflow the stack (#34).
@@ -357,7 +365,47 @@ Not now. The reasons:
 - **Keep the door open.** The store's column layout is the ABI. Revisit only if the benchmark
   shows the scanner above about half the parse time after the rewrite.
 
-## 8. Allocation rules for the hot path
+## 8. Monomorphism
+
+V8 caches each property access and each call site by the hidden class (map) it has seen. With one
+map the cache is monomorphic and fast. With 2–4 maps it is polymorphic. With more than 4 it is
+megamorphic, and every access falls back to a global lookup. Today every shared access site (for
+example `parent.dmlCount.total` in `aggregateTotals`) sees up to 175 classes, which #109
+identifies as the limit on its gains.
+
+Measured: 1M nodes of 60 event types, reading `.lineNumber` at one site (Node 22, mean of 10 runs):
+
+| Representation | Time |
+| --- | ---: |
+| One class per type, own fields (today) | 10.0 ms |
+| Lazy view, one prototype per type | 19.6 ms |
+| **Lazy view, one class for every node** | **4.6 ms** |
+| Typed-array column `lineNo[i]` | 1.2 ms |
+
+A prototype per type, the obvious way to generate typed views, is twice as slow as today. One
+class is 2.2× faster than today, and a column read is 8×. So the design keeps the runtime
+monomorphic at every layer, and puts all the per-type variety in TypeScript, which costs
+nothing at runtime:
+
+- **Scanner and store.** Typed arrays have a fixed element kind, so there are no maps to vary.
+  `Float64Array` holds nanosecond times unboxed, which is the problem #107 works around today.
+- **Per-type behaviour is data, not methods.** Today `onEnd?` and `onAfter?` are polymorphic
+  method calls on 175 classes. They become a `switch` on the type id, or a lookup in a table of
+  exit ids, counter columns and field slots, all indexed by type id.
+- **One node class.** One prototype holds every field getter of every event, and each getter
+  reads its slot from `FIELD_SLOT[type][field]`. Every receiver has the same map, so every
+  inline cache stays monomorphic. TypeScript shows a node only the fields its `type` declares.
+- **The same map for every node object.** The constructor sets every field, in the same order,
+  and nothing adds a property later. The same rule holds for the side-table objects (issues,
+  truncation regions, limit values).
+- **Consumer callbacks.** `visit({ SOQL_EXECUTE_BEGIN: f, DML_BEGIN: g })` calls several
+  functions from one site, which makes that call polymorphic. That is fine for a handful of
+  types. For whole-log work, the cursor and the columns avoid calls entirely.
+- **A check in CI.** A test runs the scanner under `--allow-natives-syntax` and asserts that
+  `%GetOptimizationStatus` shows the hot functions optimised and never deoptimised on the bench
+  logs. A change that makes a site polymorphic then fails a test, not just a benchmark.
+
+## 9. Allocation rules for the hot path
 
 - No `split`, no regex, and no `slice` per line. Regexes only on the header and on lines that
   already failed the fast checks.
@@ -369,7 +417,7 @@ Not now. The reasons:
 - One pass. Anything that needs "later" waits on a small pending list resolved by row id, as
   issue end times do.
 
-## 9. How this lands
+## 10. How this lands
 
 The rule from #37 holds: no step merges without a before-and-after number from the harness in
 #106. Correctness is held to the private 440-log corpus digest that #107 and #109 already use.
@@ -388,7 +436,7 @@ The rule from #37 holds: no step merges without a before-and-after number from t
 6. **Migrate the analyzer and MCP.** Release 1.0. Keep `compat` for one major, so the analyzer can
    move one view at a time; `compat` costs today's memory, but only for code that still uses it.
 
-## 10. Risks
+## 11. Risks
 
 - **Exactness of the matching rules.** `parseTree`/`endMethod`, discontinuities, max-size
   truncation, package merge and flow residuals are subtle and tested mainly through real logs.
