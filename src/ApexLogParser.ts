@@ -461,7 +461,7 @@ export class ApexLogParser {
 
     rootMethod.setTimes();
     this.mergeManagedPackageEvents(rootMethod);
-    this.aggregateTotals([rootMethod]);
+    this.aggregateTotals();
     applyFlowDbResiduals(this.flowDbElements);
     return rootMethod;
   }
@@ -606,96 +606,74 @@ export class ApexLogParser {
     }
   }
 
-  private flattenByDepth(nodes: LogEvent[]) {
-    const result = new Map<number, LogEvent[]>();
-
-    let currentDepth = 0;
-    let currentNodes = nodes.filter((n) => n.children.length);
-    let len = currentNodes.length;
-    while (len) {
-      result.set(currentDepth++, currentNodes);
-
-      const children: LogEvent[] = [];
-      while (len--) {
-        const node = currentNodes[len];
-        if (!node?.children) {
-          continue;
-        }
-
-        let i = node.children.length;
-        while (i--) {
-          const c = node.children[i];
-          if (c?.children.length) {
-            children.push(c);
-          }
-        }
-      }
-
-      currentNodes = children;
-      len = currentNodes.length;
-    }
-
-    return result;
-  }
-
-  private aggregateTotals(nodes: LogEvent[]) {
-    const len = nodes.length;
-    if (!len) {
-      return;
-    }
-
-    // This method purposely processes the children at the lowest depth first in bulk to avoid as much recursion as possible. This increases performance to be just over ~3 times faster or ~70% faster.
-
-    // collect all children for the supplied nodes by depth.
-    const nodesByDepth = this.flattenByDepth(nodes);
-    let depth = nodesByDepth.size;
-    while (depth--) {
-      const nds = nodesByDepth.get(depth);
-      if (!nds) {
+  private aggregateTotals() {
+    // Each event is created after its parent, so walking them backwards totals every child first.
+    const events = this.eventsById;
+    let i = events.length;
+    while (i--) {
+      const parent = events[i];
+      if (!parent?.children.length) {
         continue;
       }
-      let i = nds.length;
-      while (i--) {
-        const parent = nds[i];
-        if (!parent?.children) {
+
+      // Sum into locals and write each parent field once: a parent read per child is megamorphic.
+      const children = parent.children;
+      let dml = 0;
+      let soql = 0;
+      let sosl = 0;
+      let dmlRows = 0;
+      let soqlRows = 0;
+      let soslRows = 0;
+      let thrown = 0;
+      let heapNet = 0;
+      let heapGross = 0;
+      let heapNetSelf = 0;
+      let heapGrossSelf = 0;
+      let childTime = 0;
+      let heapPeak = parent.heapPeak;
+      let j = children.length;
+      while (j--) {
+        const child = children[j];
+        if (!child) {
           continue;
         }
-
-        // One write per parent: zeroDuration's tagged fields allocate a number on each large write.
-        let childTime = 0;
-        let j = parent.children.length;
-        while (j--) {
-          const child = parent.children[j];
-          if (!child) {
-            continue;
-          }
-          parent.dmlCount.total += child.dmlCount.total;
-          parent.soqlCount.total += child.soqlCount.total;
-          parent.soslCount.total += child.soslCount.total;
-          parent.dmlRowCount.total += child.dmlRowCount.total;
-          parent.soqlRowCount.total += child.soqlRowCount.total;
-          parent.soslRowCount.total += child.soslRowCount.total;
-          childTime += child.duration.total;
-          parent.thrownCount.total += child.thrownCount.total;
-          parent.heapAllocated.total += child.heapAllocated.total;
-          parent.heapGross.total += child.heapGross.total;
-          // Direct/self heap: attribute only leaf heap children (which are not `isParent`) to the
-          // enclosing method, so `.self` = bytes allocated by this method's own body, excluding
-          // sub-methods.
-          if (!child.isParent) {
-            parent.heapAllocated.self += child.heapAllocated.self;
-            parent.heapGross.self += child.heapGross.self;
-          }
-          // Peak live heap composes by max (not sum): a parent's peak is the highest
-          // reached anywhere in its subtree, so root.heapPeak = the transaction peak.
-          if (child.heapPeak > parent.heapPeak) {
-            parent.heapPeak = child.heapPeak;
-          }
+        dml += child.dmlCount.total;
+        soql += child.soqlCount.total;
+        sosl += child.soslCount.total;
+        dmlRows += child.dmlRowCount.total;
+        soqlRows += child.soqlRowCount.total;
+        soslRows += child.soslRowCount.total;
+        childTime += child.duration.total;
+        thrown += child.thrownCount.total;
+        heapNet += child.heapAllocated.total;
+        heapGross += child.heapGross.total;
+        // Direct/self heap: attribute only leaf heap children (which are not `isParent`) to the
+        // enclosing method, so `.self` = bytes allocated by this method's own body, excluding
+        // sub-methods.
+        if (!child.isParent) {
+          heapNetSelf += child.heapAllocated.self;
+          heapGrossSelf += child.heapGross.self;
         }
-        parent.duration.self -= childTime;
+        // Peak live heap composes by max (not sum): a parent's peak is the highest
+        // reached anywhere in its subtree, so root.heapPeak = the transaction peak.
+        if (child.heapPeak > heapPeak) {
+          heapPeak = child.heapPeak;
+        }
       }
+      parent.dmlCount.total += dml;
+      parent.soqlCount.total += soql;
+      parent.soslCount.total += sosl;
+      parent.dmlRowCount.total += dmlRows;
+      parent.soqlRowCount.total += soqlRows;
+      parent.soslRowCount.total += soslRows;
+      parent.duration.self -= childTime;
+      parent.thrownCount.total += thrown;
+      parent.heapAllocated.total += heapNet;
+      parent.heapGross.total += heapGross;
+      parent.heapAllocated.self += heapNetSelf;
+      parent.heapGross.self += heapGrossSelf;
+      parent.heapPeak = heapPeak;
     }
-    nodesByDepth.clear();
   }
 
   private mergeManagedPackageEvents(root: LogEvent) {
@@ -721,6 +699,7 @@ export class ApexLogParser {
             lastPkg.exitStamp = child.exitStamp || child.timestamp;
 
             // Currently pkg events can not have children (no exit event) but if they ever do we need to move the children to the lastPkg event. The commented code below does that.
+            // Revived, it should also empty child.children, or aggregateTotals totals the dropped event.
 
             // // Move children from the discarded package to the kept package
             // for (const childOfDiscarded of child.children) {
