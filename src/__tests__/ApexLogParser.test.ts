@@ -1735,6 +1735,31 @@ describe('Line Type Tests', () => {
 });
 
 describe('Aggregating Totals', () => {
+  // aggregateTotals walks eventsById backwards, which totals children first only while this holds.
+  it('creates every event after its parent', () => {
+    const log = parse(
+      [
+        '01:02:03.04 (0)|EXECUTION_STARTED',
+        '01:02:03.04 (1)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex',
+        '01:02:03.04 (2)|METHOD_ENTRY|[1]|a00000000000000|ns.MyClass.outer()',
+        '01:02:03.04 (3)|ENTERING_MANAGED_PKG|ns',
+        '01:02:03.04 (4)|ENTERING_MANAGED_PKG|ns',
+        '01:02:03.04 (5)|METHOD_ENTRY|[2]|a00000000000000|ns.MyClass.inner()',
+        '01:02:03.04 (6)|SOQL_EXECUTE_BEGIN|[3]|Aggregations:0|SELECT Id FROM Account',
+        '01:02:03.04 (7)|SOQL_EXECUTE_END|[3]|Rows:1',
+        '01:02:03.04 (8)|METHOD_EXIT|[2]|a00000000000000|ns.MyClass.inner()',
+        '01:02:03.04 (9)|METHOD_EXIT|[1]|a00000000000000|ns.MyClass.outer()',
+        '01:02:03.04 (10)|CODE_UNIT_FINISHED|execute_anonymous_apex',
+        '01:02:03.04 (11)|EXECUTION_FINISHED',
+      ].join('\n'),
+    );
+    const outOfOrder = log.eventsById.filter(
+      (event) => event.parent && event.eventIndex <= event.parent.eventIndex,
+    );
+    expect(outOfOrder).toEqual([]);
+    expect(log.eventsById.length).toBeGreaterThan(10);
+  });
+
   it('should sum from child to parent', () => {
     const logArray = [
       '01:02:03.04 (0)|EXECUTION_STARTED',
