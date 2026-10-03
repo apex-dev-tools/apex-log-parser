@@ -661,38 +661,63 @@ export class ApexLogParser {
           continue;
         }
 
-        // One write per parent: zeroDuration's tagged fields allocate a number on each large write.
+        // Sum into locals and write each parent field once: a parent read per child is megamorphic.
+        const children = parent.children;
+        let dml = 0;
+        let soql = 0;
+        let sosl = 0;
+        let dmlRows = 0;
+        let soqlRows = 0;
+        let soslRows = 0;
+        let thrown = 0;
+        let heapNet = 0;
+        let heapGross = 0;
+        let heapNetSelf = 0;
+        let heapGrossSelf = 0;
         let childTime = 0;
-        let j = parent.children.length;
+        let heapPeak = parent.heapPeak;
+        let j = children.length;
         while (j--) {
-          const child = parent.children[j];
+          const child = children[j];
           if (!child) {
             continue;
           }
-          parent.dmlCount.total += child.dmlCount.total;
-          parent.soqlCount.total += child.soqlCount.total;
-          parent.soslCount.total += child.soslCount.total;
-          parent.dmlRowCount.total += child.dmlRowCount.total;
-          parent.soqlRowCount.total += child.soqlRowCount.total;
-          parent.soslRowCount.total += child.soslRowCount.total;
+          dml += child.dmlCount.total;
+          soql += child.soqlCount.total;
+          sosl += child.soslCount.total;
+          dmlRows += child.dmlRowCount.total;
+          soqlRows += child.soqlRowCount.total;
+          soslRows += child.soslRowCount.total;
           childTime += child.duration.total;
-          parent.thrownCount.total += child.thrownCount.total;
-          parent.heapAllocated.total += child.heapAllocated.total;
-          parent.heapGross.total += child.heapGross.total;
+          thrown += child.thrownCount.total;
+          heapNet += child.heapAllocated.total;
+          heapGross += child.heapGross.total;
           // Direct/self heap: attribute only leaf heap children (which are not `isParent`) to the
           // enclosing method, so `.self` = bytes allocated by this method's own body, excluding
           // sub-methods.
           if (!child.isParent) {
-            parent.heapAllocated.self += child.heapAllocated.self;
-            parent.heapGross.self += child.heapGross.self;
+            heapNetSelf += child.heapAllocated.self;
+            heapGrossSelf += child.heapGross.self;
           }
           // Peak live heap composes by max (not sum): a parent's peak is the highest
           // reached anywhere in its subtree, so root.heapPeak = the transaction peak.
-          if (child.heapPeak > parent.heapPeak) {
-            parent.heapPeak = child.heapPeak;
+          if (child.heapPeak > heapPeak) {
+            heapPeak = child.heapPeak;
           }
         }
+        parent.dmlCount.total += dml;
+        parent.soqlCount.total += soql;
+        parent.soslCount.total += sosl;
+        parent.dmlRowCount.total += dmlRows;
+        parent.soqlRowCount.total += soqlRows;
+        parent.soslRowCount.total += soslRows;
         parent.duration.self -= childTime;
+        parent.thrownCount.total += thrown;
+        parent.heapAllocated.total += heapNet;
+        parent.heapGross.total += heapGross;
+        parent.heapAllocated.self += heapNetSelf;
+        parent.heapGross.self += heapGrossSelf;
+        parent.heapPeak = heapPeak;
       }
     }
     nodesByDepth.clear();
