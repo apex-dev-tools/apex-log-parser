@@ -426,9 +426,72 @@ from the tree, so folding it loses nothing. The maintainer confirmed this.
     reference). It is written to the entry (`onEnd`) and to the namespace set (`afterParse`).
 
   Every other exit field is never read today: its text, its other fields, its own
-  category/level. The `FLOW_START_INTERVIEWS_BEGIN` `onEnd` reads the stack, not the exit. If a
-  future feature needs exit text, an optional `exitStart` byte-offset column on frames would cost
-  4 bytes per frame; it is not stored by default.
+  category/level. The `FLOW_START_INTERVIEWS_BEGIN` `onEnd` reads the stack, not the exit.
+- **Exit details become fields on the entry** (§5.2.1). The exit row goes away, but the useful
+  part of it survives as typed detail on the entry, declared per type in the schema.
+
+#### 5.2.1 Exit details on the entry
+
+A schema entry for a frame type may declare `exitFields`, decoders over its exit line. They are
+exposed as `node.exit`, a typed detail object, or `null` when the frame never closed:
+
+```ts
+// generated
+interface SoqlExecuteBeginEvent {
+  readonly exit: { readonly type: 'SOQL_EXECUTE_END'; readonly timestamp: number;
+                   readonly rows: number | null; readonly durationMs: number | null } | null;
+}
+```
+
+The exit's `type` comes from the schema, because every entry but one has a single exit type. The
+exception is `WF_CRITERIA_BEGIN`, which closes on `WF_CRITERIA_END` or `WF_RULE_NOT_EVALUATED`,
+so 1 flag bit records which one closed it. The exit `timestamp` is the entry's `exitStamp`.
+
+There are two storage strategies, chosen per field in the schema:
+
+- **`scan`: numbers, booleans and enums**, decoded while the exit line is in hand and written to
+  a **per-type detail column**. A column holds one slot per row *of that type*, not per row of
+  the log. The slot index is the row's position in that type's `ofType` index; rows are
+  ascending there, so a binary search on it finds the slot without an extra column. The cost is
+  bytes per row of that type only.
+- **`lazy`: text** (`CALLOUT_RESPONSE` body, `WF_FIELD_UPDATE` old and new values, …). Only for
+  those types, keep the exit line's byte offset in a per-type column, and decode on read.
+
+Exit details worth declaring, from the event database (`data/…json`) and today's code:
+
+| Entry | Exit | Detail on the entry | Strategy |
+| --- | --- | --- | --- |
+| `SOQL_EXECUTE_BEGIN` | `SOQL_EXECUTE_END` | `rows` (today's row count), `durationMs` (the platform-stated duration) | scan |
+| `SOSL_EXECUTE_BEGIN` | `SOSL_EXECUTE_END` | `rows`, `durationMs` | scan |
+| `METHOD_ENTRY` | `METHOD_EXIT` | class-reference namespace (today's `onEnd`) | scan, into `namespace` |
+| `CURSOR_CREATE_BEGIN` | `CURSOR_CREATE_END` | `rows`, `queryId` | scan |
+| `FLOW_BULK_ELEMENT_BEGIN` | `FLOW_BULK_ELEMENT_END` | `records`, `executionTime` | scan |
+| `WF_CRITERIA_BEGIN` | `WF_CRITERIA_END` / `WF_RULE_NOT_EVALUATED` | `result` (true/false), which exit | scan |
+| `ORG_CACHE_GET_BEGIN`, `SESSION_CACHE_GET_BEGIN` | `…_END` | `hit` | scan |
+| `NBA_STRATEGY_BEGIN` | `NBA_STRATEGY_END` | `outputCount` | scan |
+| `FLOW_START_INTERVIEWS_BEGIN` | `FLOW_START_INTERVIEWS_END` | `requests` | scan |
+| `CALLOUT_REQUEST` | `CALLOUT_RESPONSE` | `responseBody` | lazy |
+
+Confirm each field's position and format against real logs before declaring it; use the repo's
+`log-event-fields` skill. "Report what the log stated" applies: a missing exit field is `null`,
+and an unterminated frame's `exit` is `null`.
+
+#### 5.2.2 Type-level metadata is looked up, never stored per row
+
+`category`, `debugCategory`, `debugLevel`, `kind`, shape, exit type(s), `suffix`,
+`hasValidSymbols`, the default `cpuType`, field docs and the description are properties of the
+**type**, not of each event. This holds for entry and exit types alike. They live once in the
+generated schema table and cost nothing per row:
+
+- `EVENT_TYPES[type]`, or `eventType(type)`, returns `{ category, debugCategory, level, kind,
+  shape, exits, fields, description }`. It works for exit types too, so an exit's category and
+  level stay available although no exit is stored.
+- Node getters such as `node.category` and `node.debugLevel` read that table by the row's type
+  id, so they are monomorphic and allocate nothing.
+- Only true per-row deviations are stored, in the flags column: `cpuType: 'loading'` for
+  `System.Type.forName(`, `codeUnitType`, and VF calls with their exits cleared.
+- A UI that colours or filters by category builds a lookup array once, from type id to colour,
+  and reads the `type` column: no per-row work.
 - **An unmatched exit keeps its row.** Today `endMethod` returns false, and the exit falls through
   to be pushed as a child, or onto the root at the top level. Class-reference `METHOD_EXIT` lines,
   with no `)` and no `METHOD_ENTRY`, are the common case. Their `Unexpected-Exit` issue points at
@@ -565,6 +628,8 @@ log.toBuffers(): ArrayBuffer[];  ApexLog.fromBuffers(buffers): ApexLog; // cachi
   `duration`, the counts with today's names (`soqlCount.total`, …), `heapAllocated`,
   `heapGross`, `heapPeak`, `isTruncated`, `index`, `text` (lazy) and `raw` (lazy).
 - **`is(node, type)`** is a type guard.
+- **`node.exit`** holds the typed exit details (§5.2.1). **`EVENT_TYPES` / `eventType(type)`** holds
+  type-level metadata (§5.2.2), with `node.category` and friends reading it.
 
 ### 5.8 Async, workers and builds
 
@@ -671,7 +736,8 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 | Managed package merge (`ENTERING_MANAGED_PKG`) | on frame close | eager |
 | `namespace`, including order-dependent inference | `namespace` column | **eager, required** |
 | `text`, `logLine`, per-class text rules, wrapped text, `suffix` | decoders | lazy |
-| `category`, `debugCategory`, `debugLevel`, `cpuType`, `exitTypes`, `hasValidSymbols` | schema constants, plus overrides in flags | constant |
+| `category`, `debugCategory`, `debugLevel`, `cpuType`, `exitTypes`, `hasValidSymbols` | type-level table (`EVENT_TYPES`), plus per-row overrides in flags (§5.2.2) | constant |
+| SOQL/SOSL row counts from the exit; exit details generally | `node.exit` and per-type detail columns (§5.2.1) | eager (scan) or lazy (text) |
 | `codeUnitType`, the `Type.forName` loading `cpuType`, VF calls with exits cleared | flags column | eager |
 | `isTruncated`, `discontinuity`, `nextLineIsExit`, `acceptsText`, `isExit`, `isParent` | flags and schema | eager |
 | `logIssues` (Unexpected-End/Exit, Skipped-Lines with bytes, Max-Size-reached, Multiple-Logs, …), deduped, sorted, with end times | side table | eager |
