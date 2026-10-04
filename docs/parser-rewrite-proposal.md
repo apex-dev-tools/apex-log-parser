@@ -119,6 +119,29 @@ What the numbers mean for "lazy":
 - **The worker hides the rest.** The scan time stays the same, but the UI is never blocked for
   more than a few milliseconds, and with streaming it can draw before the end arrives.
 
+### 1.2 Output shape (v3)
+
+The refactor may change the output's shape, so the shape was measured too. At 100 MB:
+
+- exit lines are 41% of rows;
+- only 0.6% of frames have any non-zero SOQL/DML/SOSL/thrown count.
+
+Prototype v3 folds each exit into its entry row, keeping the exit's byte offset, and stores the
+counts in a sparse pool. That took the scan from 385–433 ms to **240 ms** and the columns from 90
+to **41 MB**, with identical root totals. Per-method stats (calls, self, total), computed during
+the scan, add ~5%. A frames-only projection cuts the columns to 29 MB.
+
+Against today, that is ~11× faster and ~27× smaller for the tree. The full list of shape changes
+is in `docs/parser-rewrite-agent-brief.md` §5.11:
+
+- sparse rollups;
+- aggregates shipped built-in;
+- dictionary-encoded strings;
+- projection;
+- a frames table;
+- Arrow-compatible columns, with Perfetto and speedscope export;
+- a storeless visitor.
+
 ## 2. Where the time and memory go today
 
 The numbers are per event: about 1.27 KB retained on a 100 MB log.

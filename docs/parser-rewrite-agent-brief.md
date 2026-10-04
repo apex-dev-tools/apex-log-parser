@@ -238,11 +238,11 @@ the ranges, not the single figures.
   objects it adds ~200 ms.
 - **A worker only works with columns.** Cloning an object tree costs more than parsing it. A
   columnar store transfers at no cost, and the UI is never blocked for more than ~4 ms.
-- **Expected for the full parser** (v2 plus the omitted rules plus tuning), at 100 MB: about
-  300–500 ms to a drawn timeline, against ~3 s today, so **6–8× faster**. Memory should be
-  ~70–100 MB of columns plus the source bytes, so **~6× less including the source and ~13× for
-  the tree alone**. In worker mode the main thread is never blocked for more than a few
-  milliseconds.
+- **Expected for the full parser**, with the v3 output shape from §3.4 plus the omitted rules,
+  at 100 MB: about **250–400 ms** to a drawn timeline, against ~3 s today, so **8–11× faster**.
+  Memory should be **~40–50 MB of columns** plus the source bytes, against 1,100 MB plus the
+  pinned string: **~20× less for the tree, ~7–8× including the source**. In worker mode the main
+  thread is never blocked for more than a few milliseconds.
 
 ### 3.3 Monomorphism
 
@@ -257,6 +257,58 @@ Reading `.lineNumber` from 1M nodes of 60 types at one access site (`monomorphis
 
 **The trap:** generating a prototype per event type, the obvious way to build typed views, is 2×
 *slower* than today. Use one runtime class, and keep per-type variety in TypeScript only.
+
+### 3.4 Output shape: v3
+
+The rewrite may change the output's shape, so the shape was measured too (`shape.mjs`):
+
+| | 20 MB | 100 MB |
+| --- | ---: | ---: |
+| Exit lines, as a share of rows | 30.0% | 41.3% |
+| Frames (rows with children or a duration) | 30.1% | 41.3% |
+| Leaves | 39.9% | 17.5% |
+| Frames with **any** non-zero SOQL/DML/SOSL/thrown count | 3.1% | 0.6% |
+| Frames with a non-zero heap figure | 38.9% | 26.7% |
+| Deepest nesting | 25 | 37 |
+
+The top leaves are `STATEMENT_EXECUTE`, `HEAP_ALLOCATE`, `VARIABLE_ASSIGNMENT` and
+`VARIABLE_SCOPE_BEGIN`.
+
+**Prototype v3** (`scan-v3.mjs`) is v2 with the output shape that table suggests:
+
+- **Exit lines fold into their entry row.** The entry keeps the exit's byte offset (`exitStart`)
+  for lazy exit text, and an exit gets no row of its own.
+- **Counters are sparse.** A frame gets a slot in a shared pool only when its subtree has a
+  non-zero count.
+- **Optional per-method stats are computed during the scan:** calls, self time, and total time
+  with recursion counted once, keyed by the interned label.
+- **An optional projection** (`leaves: false`) gives leaves no row; their counts and heap still
+  roll into the open frame.
+
+v3bench.mjs, 7 runs, medians:
+
+| | 20 MB time | 20 MB columns | 100 MB time | 100 MB columns | rows at 100 MB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| v2: every line a row | 66–71 ms | 21.5 MB | 385–433 ms | 90.4 MB | 868,903 |
+| **v3: exits folded, sparse counts** | **46–49 ms** | **11.7 MB** | **240–242 ms** | **41.0 MB** | 510,460 |
+| v3 with method stats | 50 ms | | 253–257 ms | | |
+| v3 frames only (projection) | 44–45 ms | 5.1 MB | 248–251 ms | 28.9 MB | 358,458 |
+| A streaming visitor with no store (`shape2.mjs`), finding SOQL lines | | | 104 ms | 0 | |
+
+**Checks:** root durations are identical between v2 and v3, and root heap is identical between v2
+and frames-only. At 100 MB only 2,256 count slots were needed, for 358k frames.
+
+**What this means:**
+
+- **Folding exits and storing counts sparsely is the biggest single shape win**: 1.6–1.8× faster
+  and 2.2× smaller than v2. Against today at 100 MB that is ~11× faster and ~27× smaller for the
+  tree.
+- **Per-method stats cost ~5%.** They replace a full tree walk in every consumer that shows
+  "top methods", which is the analyzer's analysis view and MCP's summaries.
+- **Projection saves memory, not time:** 41 → 29 MB. Leaves are cheap to scan, and what they
+  cost is rows.
+- **A storeless visitor** is only ~2.4× faster than a full v3 scan. Offer it for memory-bound
+  one-shot queries, not as the main path.
 
 ---
 
@@ -326,25 +378,33 @@ Other facts used:
 
 ### 5.2 Event store (struct of arrays)
 
-One row per log line, plus row 0 for the root, so `row === eventIndex` exactly as today. Exit
-lines are rows flagged as exits; a matched entry's exit row is `subtreeEnd - 1`.
+One row per **non-exit** log line, plus row 0 for the root (the v3 shape, §3.4). An exit line
+gets no row: its entry row stores `exitStamp` and `exitStart`, the byte offset of the exit line,
+so the exit's text and fields stay readable through `node.exit`. An unmatched exit becomes an
+`Unexpected-Exit` issue that carries its byte offset. As a result `eventIndex` numbers change,
+since exits no longer take ids; this is OPEN decision 8 in §7, and `compat` recomputes the old
+numbers.
 
 | Column | Type | Note |
 | --- | --- | --- |
 | `type` | `Uint16Array` | schema id |
 | `start`, `end` | `Uint32Array` | byte range, including wrapped lines (or drop `end` and use the next row's `start`) |
 | `timestamp`, `exitStamp` | `Float64Array` | ns, held exactly by a double |
+| `exitStart` | `Uint32Array` | byte offset of the matched exit line (0 if none) |
 | `parent` | `Int32Array` | |
 | `subtreeEnd` | `Uint32Array` | children are `row+1 … subtreeEnd`; the next sibling is `subtreeEnd` |
 | `depth` | `Uint16Array` | |
 | `lineNumber` | `Int32Array` | sentinels: −1 for `EXTERNAL`, −2 for `null` |
 | `namespace`, `label` | `Int32Array` | string-table ids, −1 for none |
 | `flags` | `Uint8Array` | exit, truncated, discontinuity, overrides |
-| rollups | `Float64Array` (duration self, heap net, gross, peak) and `Int32Array` (counts, rows, thrown) | Totals only. Self derives from the row's own type for leaves. Columns can be dense over frame rows only, through a frame index. |
+| rollups: time and heap | `Float64Array`: duration self, heap net, gross, peak | dense; heap is non-zero on 27–39% of frames |
+| rollups: counts | `Int32Array` `countSlot` per row (−1 for none), plus a pool of 8 `Int32` per slot | sparse: 0.6–3% of frames have a non-zero count. Self derives from the row's own type for leaves. |
+| aggregates | per-label calls, self and total; per-namespace and per-type totals | built during the scan (§5.11) |
 | per-type indexes | `Uint32Array` per type | |
 | string table | byte ranges and hashes | values decoded once, then cached |
 
-**Size:** v2 measured ~68 MB at 100 MB with every column dense. Target ≤ 80 bytes per row.
+**Size:** v3 measured 41 MB at 100 MB (510k rows, ~80 bytes per row, all columns trimmed), and
+29 MB frames-only. Target ≤ 50 MB at 100 MB.
 
 **Source bytes** are kept for lazy text. `retainSource: false` drops them after the eager fields,
 for callers that need only the tree and the interned names.
@@ -481,6 +541,53 @@ purposes:
 - The column layout is the ABI. Revisit only if the scanner is more than ~50% of parse time
   after the rewrite.
 
+### 5.11 Output-shape wins to adopt
+
+These are the ways high-performance parsers and trace tools (Perfetto, Chrome trace, speedscope,
+Arrow) shape output, ranked by measured or expected impact:
+
+1. **Fold exit lines into their entries.** Measured −41% rows and 2.2× smaller with sparse
+   counts, and 1.6–1.8× faster. This is how trace formats store a span: one record with a start
+   and an end, not two events.
+2. **Store totals sparsely, with self derived.** Measured: only 0.6–3% of frames need count
+   slots. Store totals only; self is the row's own contribution for leaves, and
+   `total − Σ children` where needed.
+3. **Ship the aggregates consumers recompute today, built during the scan:**
+   - **methods:** per signature, calls, self, total (recursion once), plus SOQL/DML totals;
+     measured at ~5%;
+   - **namespaces:** time and counts per namespace;
+   - **queries:** SOQL and DML grouped by normalised statement text, with count, rows and time
+     (the analyzer's database view, MCP's query plans);
+   - **types:** a count per event type, which is free from the per-type indexes.
+
+   This removes the consumer walks that #34 lists.
+4. **Dictionary-encode strings.** Labels, namespaces, object types and SOQL text are interned
+   ids, and consumers group and filter by id (Arrow dictionary encoding). The string table is
+   part of the output.
+5. **Projection: `parse(input, { include })`.** For example `include: ['frames']` drops leaf
+   rows while keeping their totals: 41 → 29 MB measured. Further includes (`'variables'`,
+   `'heap'`, `'statements'`) let MCP keep only what a tool needs. OPEN decision 9 decides the
+   default.
+6. **A frames table for timelines.** A `Uint32Array` of frame rows built during the scan, and the
+   render index from §9.3 (frames by depth, sorted by start). A flame chart then never touches
+   leaf rows.
+7. **Time is the order.** Rows are in timestamp order, so `at(time)` and visible-range queries are
+   a binary search on `timestamp`, with no extra index.
+8. **Arrow-compatible columns and standard exports.** Lay out the columns so Apache Arrow JS can
+   wrap them without copying. That gives DuckDB-wasm and Arrow tooling for free, and it is a
+   documented format for `toBuffers`. Add exporters to the Chrome trace event format and to
+   speedscope, so a user can open any log in Perfetto UI or speedscope.
+9. **A storeless streaming visitor**, `scan(input, visitor)`, for one-shot, memory-bound queries.
+   Measured ~2.4× faster than a full scan, with zero retained memory.
+10. **Append-only parsing**, for a log that is still being written (tailing), at no extra cost,
+    because the store is append-only.
+
+Not worth it:
+
+- **Delta-encoding timestamps.** Random access matters more, and a `Float64` holds the
+  nanosecond counter exactly.
+- **A table per event type.** It would break prefix order and make walking the tree harder.
+
 ---
 
 ## 6. Feature-parity checklist
@@ -489,7 +596,7 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 
 | Feature today | Where it lives | Eager or lazy |
 | --- | --- | --- |
-| Tree: `parent`, `children`, `eventIndex` (root = 0, exits included), `eventsById` | rows, `parent`, `subtreeEnd`, `node(i)` | eager |
+| Tree: `parent`, `children`, `eventIndex` (root = 0; exits included today), `eventsById` | rows, `parent`, `subtreeEnd`, `node(i)`. Exits fold into entries (`node.exit`), so new ids skip them, and `compat` recomputes the old ids. | eager |
 | `timestamp`, `exitStamp`, `duration.self` and `total` | columns | eager |
 | `dmlCount`, `soqlCount`, `soslCount`, `dmlRowCount`, `soqlRowCount`, `soslRowCount`, `thrownCount` (self and total) | rollup columns | eager |
 | `heapAllocated`, `heapGross` (self and total), `heapPeak` (max), the running live heap clamped at 0 | rollup columns | eager |
@@ -533,6 +640,10 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 6. **Parallel first stage** (§9.4). Is it worth `SharedArrayBuffer` and cross-origin isolation?
 7. **Repo layout.** Is the rewrite a new entry point in the same package during development, or a
    separate package until it reaches parity?
+8. **`eventIndex` numbering.** Folding exits changes the ids, because exits no longer take one.
+   Do the analyzer or MCP persist ids across parses (bookmarks, caches, URLs)? If so, keep a
+   mapping in `compat`, or keep exit rows.
+9. **Projection default.** Full rows, or frames only? And which aggregates ship in 1.0?
 
 ---
 
@@ -568,7 +679,8 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 
 - the corpus digest is identical to `main` on every log;
 - every existing test passes against compat;
-- at 100 MB, ≤ 500 ms and ≤ 100 MB of columns;
+- at 100 MB, ≤ 400 ms and ≤ 50 MB of columns;
+- aggregates (methods, namespaces, queries) match a tree walk over compat;
 - the deopt test is green.
 
 ### Phase 3: views
@@ -662,6 +774,9 @@ pnpm exec tsx bench/rewrite/gen-logs.ts bench/rewrite/logs          # ~120 MB of
 node --expose-gc --max-old-space-size=8000 --import tsx bench/rewrite/bench.ts bench/rewrite/logs
 node bench/rewrite/worker-bench.mjs bench/rewrite/logs
 node bench/rewrite/monomorphism.mjs
+node bench/rewrite/shape.mjs bench/rewrite/logs      # row mix and rollup density
+node bench/rewrite/v3bench.mjs bench/rewrite/logs    # v2 vs v3, method stats, projection
+node bench/rewrite/shape2.mjs bench/rewrite/logs     # storeless visitor vs scans
 pnpm exec tsc --ignoreConfig --noEmit --skipLibCheck --strict --noUncheckedIndexedAccess \
   --target es2022 --module nodenext bench/rewrite/types-sketch.ts
 ```
@@ -1144,6 +1259,228 @@ log.ofType('DML_BEGIN')[0]!.childrenOfType('METHOD_ENTRY');
 log.ofType('METHOD_ENTRY')[0]!.query;
 ````
 
+### `scan-v3.mjs`
+
+````js
+// Prototype v2: closer to the proposal. Every line is a row (eventIndex kept); real exit,
+// nextLineIsExit and acceptsText rules from type-table.json; wrapped lines; interned labels and
+// namespaces; 8 counters, heap net and peak, self duration; per-type indexes; arrays sized once.
+// Omits issues, limits, truncation, package merge and the per-event text rules.
+import { readFileSync } from 'node:fs';
+
+const table = JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'));
+export const names = ['?', ...table.map((r) => r.name)];
+const N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+export const isExitType = new Uint8Array(N);
+const nextIsExit = new Uint8Array(N), accepts = new Uint8Array(N), hasExits = new Uint8Array(N);
+const exitMatch = new Uint8Array(N * N);
+table.forEach((r, i) => {
+  const t = i + 1;
+  isExitType[t] = r.isExit && !(r.exitTypes?.length) ? 1 : 0;
+  nextIsExit[t] = r.nextLineIsExit ? 1 : 0; accepts[t] = r.acceptsText ? 1 : 0;
+  for (const x of r.exitTypes ?? []) { exitMatch[t * N + idOf.get(x)] = 1; hasExits[t] = 1; }
+});
+// Which pipe field holds the label to intern, for the frequent frames.
+const LABEL_FIELD = new Int8Array(N).fill(-1);
+for (const [n, f] of [['METHOD_ENTRY', 4], ['METHOD_EXIT', 4], ['CONSTRUCTOR_ENTRY', 5], ['SYSTEM_METHOD_ENTRY', 3], ['CODE_UNIT_STARTED', 4], ['VF_APEX_CALL_START', 3]]) LABEL_FIELD[idOf.get(n)] = f;
+const HB = 4096, hTab = new Int16Array(HB).fill(-1), nameHash = new Int32Array(N);
+for (let i = 1; i < N; i++) {
+  let h = 0; for (const ch of names[i]) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  nameHash[i] = h; let k = h & (HB - 1); while (hTab[k] !== -1) k = (k + 1) & (HB - 1); hTab[k] = i;
+}
+const SOQL = idOf.get('SOQL_EXECUTE_BEGIN'), DML = idOf.get('DML_BEGIN'), SOSL = idOf.get('SOSL_EXECUTE_BEGIN'),
+  HEAP = idOf.get('HEAP_ALLOCATE'), THROWN = idOf.get('EXCEPTION_THROWN'), EXEC = idOf.get('EXECUTION_STARTED');
+export const NC = 8; // soql, dml, sosl, soqlRows, dmlRows, soslRows, thrown, spare
+const grow = (a, n) => { const b = new a.constructor(n); b.set(a); return b; };
+
+export function scanV3(src, { methodStats = true, leaves = true } = {}) {
+  const len = src.length;
+  let cap = Math.max(1 << 12, Math.ceil(len / 90)), n = 0; // rows ~ bytes/115 in real logs: at most one grow
+  let type = new Uint16Array(cap), start = new Uint32Array(cap), end = new Uint32Array(cap), ts = new Float64Array(cap),
+    exitTs = new Float64Array(cap), parent = new Int32Array(cap), subEnd = new Uint32Array(cap), depth = new Uint16Array(cap),
+    lineNo = new Int32Array(cap), label = new Int32Array(cap), ns = new Int32Array(cap), selfDur = new Float64Array(cap),
+    exitStart = new Uint32Array(cap), cslot = new Int32Array(cap).fill(-1), heap = new Float64Array(cap), peak = new Float64Array(cap);
+  let pCap = 1 << 10, nSlots = 0, pool = new Int32Array(pCap * NC);
+  const slotOf = (e) => { let k = cslot[e]; if (k < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } k = cslot[e] = nSlots++; } return k; };
+  let mCap = 1 << 12, mCalls = new Uint32Array(mCap), mSelf = new Float64Array(mCap), mTotal = new Float64Array(mCap), mActive = new Uint16Array(mCap);
+  let sCap = 1 << 12, nStr = 0, strStart = new Uint32Array(sCap), strEnd = new Uint32Array(sCap), strHash = new Int32Array(sCap);
+  let IB = 1 << 14, iTab = new Int32Array(IB).fill(-1);
+  const intern = (a, b) => {
+    let h = 0; for (let i = a; i < b; i++) h = (Math.imul(h, 31) + src[i]) | 0;
+    let k = h & (IB - 1);
+    for (let e; (e = iTab[k]) !== -1; k = (k + 1) & (IB - 1)) {
+      if (strHash[e] === h && strEnd[e] - strStart[e] === b - a) { let j = strStart[e], i = a; while (i < b && src[i] === src[j]) { i++; j++; } if (i === b) return e; }
+    }
+    if (nStr === sCap) { sCap *= 2; strStart = grow(strStart, sCap); strEnd = grow(strEnd, sCap); strHash = grow(strHash, sCap); }
+    strStart[nStr] = a; strEnd[nStr] = b; strHash[nStr] = h; iTab[k] = nStr;
+    if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s = 0; s <= nStr; s++) { let kk = strHash[s] & (IB - 1); while (iTab[kk] !== -1) kk = (kk + 1) & (IB - 1); iTab[kk] = s; } }
+    return nStr++;
+  };
+  const byTypeN = new Uint32Array(N), byType = Array.from({ length: N }, () => new Uint32Array(16));
+  const stack = new Int32Array(8192); let sp = 0, last = -1, running = 0, pos = 0;
+  const rollInto = (p, e) => { const ck = cslot[e]; if (ck >= 0) { const pk = slotOf(p) * NC, cb = ck * NC; for (let c = 0; c < NC; c++) pool[pk + c] += pool[cb + c]; } heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; };
+  const close = (e, t, xs) => { exitTs[e] = t; exitStart[e] = xs; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; if (p >= 0) { selfDur[p] -= tot; rollInto(p, e); }
+    if (methodStats) { const l = label[e]; if (l >= 0) { if (--mActive[l] === 0) mTotal[l] += tot; mSelf[l] += selfDur[e]; } } };
+  while (pos < len) {
+    let eol = src.indexOf(10, pos); if (eol < 0) eol = len;
+    let lineEnd = eol; if (lineEnd > pos && src[lineEnd - 1] === 13) lineEnd--;
+    if (src[pos + 2] === 58 && src[pos + 5] === 58) {
+      let i = pos + 8; while (src[i] !== 40 && i < lineEnd) i++; i++;
+      let t = 0, c = 0; while ((c = src[i]) !== 41) { t = t * 10 + (c - 48); i++; }
+      i += 2; const t0 = i;
+      let h = 0; while (i < lineEnd && (c = src[i]) !== 124) { h = (Math.imul(h, 31) + c) | 0; i++; }
+      let k = h & (HB - 1), id = 0;
+      for (let e; (e = hTab[k]) !== -1; k = (k + 1) & (HB - 1)) if (nameHash[e] === h) { id = e; break; }
+      if (id === 0 && i === t0) { pos = eol + 1; continue; }
+      if (n === cap) { cap *= 2; type = grow(type, cap); start = grow(start, cap); end = grow(end, cap); ts = grow(ts, cap); exitTs = grow(exitTs, cap); parent = grow(parent, cap); subEnd = grow(subEnd, cap); depth = grow(depth, cap); lineNo = grow(lineNo, cap); label = grow(label, cap); ns = grow(ns, cap); selfDur = grow(selfDur, cap); exitStart = grow(exitStart, cap); { const o = cslot; cslot = new Int32Array(cap).fill(-1); cslot.set(o); } heap = grow(heap, cap); peak = grow(peak, cap); }
+      if (isExitType[id]) {
+        if (last >= 0 && nextIsExit[type[last]] && exitTs[last] === 0) exitTs[last] = t;
+        let m = sp - 1; while (m >= 0 && !exitMatch[type[stack[m]] * N + id]) m--;
+        if (m >= 0) while (sp > m) close(stack[--sp], t, pos);
+        // an unmatched exit would be recorded as an Unexpected-Exit issue here
+        last = -1; pos = eol + 1; continue;
+      }
+      if (!leaves && !hasExits[id] && sp) {
+        // Projection: a leaf adds to the open frame's totals but gets no row of its own.
+        const p = stack[sp - 1];
+        if (id === SOQL) pool[slotOf(p) * NC]++; else if (id === DML) pool[slotOf(p) * NC + 1]++; else if (id === SOSL) pool[slotOf(p) * NC + 2]++; else if (id === THROWN) pool[slotOf(p) * NC + 6]++;
+        else if (id === HEAP) { let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let b = 0, neg = false; j++; if (src[j] === 45) { neg = true; j++; } while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { b = b * 10 + (c - 48); j++; } if (neg) b = -b; heap[p] += b; running = Math.max(0, running + b); if (running > peak[p]) peak[p] = running; }
+        last = -1; pos = eol + 1; continue;
+      }
+      const e = n++;
+      type[e] = id; start[e] = pos; end[e] = lineEnd; ts[e] = t; label[e] = -1; ns[e] = -1;
+      let ln = -2; // -2 null, -1 EXTERNAL
+      if (src[i] === 124 && src[i + 1] === 91) { let j = i + 2; ln = 0; while ((c = src[j]) >= 48 && c <= 57) { ln = ln * 10 + (c - 48); j++; } if (c !== 93) ln = -1; }
+      lineNo[e] = ln;
+      const lf = LABEL_FIELD[id];
+      if (lf > 0) {
+        let f = 2, a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && src[a] !== 124) a++; f++; }
+        a++; let b = a; while (b < lineEnd && src[b] !== 124) b++;
+        if (a < b) { label[e] = intern(a, b); let d = a; while (d < b && src[d] !== 46) d++; if (d < b) ns[e] = intern(a, d); }
+      }
+      if (byTypeN[id] === byType[id].length) byType[id] = grow(byType[id], byType[id].length * 2);
+      byType[id][byTypeN[id]++] = e;
+      if (id === SOQL) pool[slotOf(e) * NC] = 1; else if (id === DML) pool[slotOf(e) * NC + 1] = 1; else if (id === SOSL) pool[slotOf(e) * NC + 2] = 1; else if (id === THROWN) pool[slotOf(e) * NC + 6] = 1;
+      else if (id === HEAP) { let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let b = 0, neg = false; j++; if (src[j] === 45) { neg = true; j++; } while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { b = b * 10 + (c - 48); j++; } if (neg) b = -b; heap[e] = b; running = Math.max(0, running + b); peak[e] = running; }
+      if (last >= 0 && nextIsExit[type[last]] && exitTs[last] === 0) exitTs[last] = t;
+      {
+        if (id === EXEC) while (sp) close(stack[--sp], t, pos);
+        const p = sp ? stack[sp - 1] : -1; parent[e] = p; depth[e] = sp; subEnd[e] = e + 1;
+        if (hasExits[id]) { stack[sp++] = e; if (methodStats) { const l = label[e]; if (l >= 0) { if (l >= mCap) { const o = mCap; mCap = Math.max(mCap * 2, l + 1); mCalls = grow(mCalls, mCap); mSelf = grow(mSelf, mCap); mTotal = grow(mTotal, mCap); mActive = grow(mActive, mCap); } mCalls[l]++; mActive[l]++; } } } else if (p >= 0) rollInto(p, e);
+      }
+      last = e;
+    } else if (last >= 0 && accepts[type[last]]) {
+      end[last] = lineEnd; // wrapped text extends the previous row
+    }
+    pos = eol + 1;
+  }
+  while (sp) close(stack[--sp], n ? ts[n - 1] : 0, len);
+  return { n, src, type, start, end, ts, exitTs, exitStart, parent, subEnd, depth, lineNo, label, ns, selfDur, cslot, pool, nSlots, heap, peak, mCalls, mSelf, mTotal, strStart, strEnd, nStr, byType, byTypeN };
+}
+
+const dec = new TextDecoder();
+function decodeRange(src, a, b) {
+  if (b - a < 64) { let ascii = true; for (let i = a; i < b; i++) if (src[i] > 127) { ascii = false; break; } if (ascii) return String.fromCharCode.apply(null, src.subarray(a, b)); }
+  return dec.decode(src.subarray(a, b));
+}
+/** Lazy views: one class for every node, cached by row so === holds. */
+export class LogView {
+  constructor(s) { this.s = s; this.strCache = []; this.nodes = []; }
+  str(id) { return (this.strCache[id] ??= decodeRange(this.s.src, this.s.strStart[id], this.s.strEnd[id])); }
+  node(i) { return (this.nodes[i] ??= new NodeView(this, i)); }
+}
+export class NodeView {
+  constructor(log, index) { this.log = log; this.index = index; this._children = undefined; }
+  get type() { return names[this.log.s.type[this.index]]; }
+  get timestamp() { return this.log.s.ts[this.index]; }
+  get exitStamp() { return this.log.s.exitTs[this.index]; }
+  get durationTotal() { return this.log.s.exitTs[this.index] - this.log.s.ts[this.index]; }
+  get durationSelf() { return this.log.s.selfDur[this.index]; }
+  get depth() { return this.log.s.depth[this.index]; }
+  get text() { const l = this.log.s.label[this.index]; return l >= 0 ? this.log.str(l) : names[this.log.s.type[this.index]]; }
+  get raw() { return decodeRange(this.log.s.src, this.log.s.start[this.index], this.log.s.end[this.index]); }
+  get children() {
+    if (this._children) return this._children;
+    const s = this.log.s, out = [];
+    for (let c = this.index + 1; c < s.subEnd[this.index]; c = s.subEnd[c]) if (!isExitType[s.type[c]]) out.push(this.log.node(c));
+    return (this._children = out);
+  }
+}
+````
+
+### `shape.mjs`
+
+````js
+import { readFileSync } from 'node:fs';
+import { scanV2, names, isExitType, NC } from './scan-v2.mjs';
+for (const f of ['dev20.log', 'large100.log']) {
+  const s = scanV2(new Uint8Array(readFileSync(process.argv[2] + '/' + f)));
+  let exits = 0, frames = 0, leaves = 0, framesAnyCount = 0, framesAnyHeap = 0, maxDepth = 0;
+  const byType = new Map();
+  for (let i = 0; i < s.n; i++) {
+    const t = s.type[i];
+    if (isExitType[t]) { exits++; continue; }
+    const isFrame = s.subEnd[i] > i + 1 || s.exitTs[i] > 0;
+    if (isFrame) { frames++; let any = false; for (let c = 0; c < NC; c++) if (s.cnt[i * NC + c]) any = true; if (any) framesAnyCount++; if (s.heap[i] || s.peak[i]) framesAnyHeap++; }
+    else { leaves++; byType.set(names[t], (byType.get(names[t]) ?? 0) + 1); }
+    if (s.depth[i] > maxDepth) maxDepth = s.depth[i];
+  }
+  const pct = (x) => (100 * x / s.n).toFixed(1) + '%';
+  console.log(`== ${f}: rows ${s.n}; exits ${exits} (${pct(exits)}); frames ${frames} (${pct(frames)}); leaves ${leaves} (${pct(leaves)}); maxDepth ${maxDepth}`);
+  console.log(`   frames with any non-zero count ${(100*framesAnyCount/frames).toFixed(1)}%, with heap ${(100*framesAnyHeap/frames).toFixed(1)}%`);
+  console.log('   top leaves', [...byType].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>k+' '+(100*v/s.n).toFixed(1)+'%').join(', '));
+}
+````
+
+### `v3bench.mjs`
+
+````js
+import { readFileSync } from 'node:fs';
+import { scanV2 } from './scan-v2.mjs';
+import { scanV3 } from './scan-v3.mjs';
+const bytesOf = (o) => Object.values(o).reduce((sum, v) => sum + (ArrayBuffer.isView(v) && v !== o.src ? v.byteLength : Array.isArray(v) ? v.reduce((a, x) => a + (x?.byteLength ?? 0), 0) : 0), 0);
+// Trim each column to n rows, as a finished store would, so sizes compare like for like.
+const trimmed = (o) => { let t = 0; for (const [k, v] of Object.entries(o)) { if (!ArrayBuffer.isView(v) || k === 'src') continue; const per = k === 'pool' ? 8 * 4 : v.BYTES_PER_ELEMENT * (k === 'cnt' ? 8 : 1); const rows = k === 'pool' ? o.nSlots : k.startsWith('m') || k.startsWith('str') ? v.length : o.n; t += Math.min(v.byteLength, rows * per); } return t; };
+function time(fn, runs = 7) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+for (const f of ['dev20.log', 'large100.log']) {
+  const b = new Uint8Array(readFileSync(process.argv[2] + '/' + f));
+  const v2 = scanV2(b), v3 = scanV3(b), v3f = scanV3(b, { leaves: false }), v3n = scanV3(b, { methodStats: false });
+  console.log(`== ${f}`);
+  console.log(`v2  every line a row       ${time(() => scanV2(b)).toFixed(0).padStart(5)} ms  rows ${String(v2.n).padStart(7)}  columns ${(trimmed(v2) / 1e6).toFixed(1)} MB`);
+  console.log(`v3  exits folded, sparse   ${time(() => scanV3(b, { methodStats: false })).toFixed(0).padStart(5)} ms  rows ${String(v3n.n).padStart(7)}  columns ${(trimmed(v3n) / 1e6).toFixed(1)} MB  count slots ${v3n.nSlots}`);
+  console.log(`v3  + method stats         ${time(() => scanV3(b)).toFixed(0).padStart(5)} ms`);
+  console.log(`v3  frames only (projection) ${time(() => scanV3(b, { leaves: false })).toFixed(0).padStart(3)} ms  rows ${String(v3f.n).padStart(7)}  columns ${(trimmed(v3f) / 1e6).toFixed(1)} MB`);
+  // checks: v3 frame totals agree with v2 at the root frames
+  const rootsV2 = [], rootsV3 = [];
+  for (let i = 0; i < v2.n; i++) if (v2.parent[i] === -1 && v2.exitTs[i]) rootsV2.push(v2.exitTs[i] - v2.ts[i]);
+  for (let i = 0; i < v3.n; i++) if (v3.parent[i] === -1 && v3.exitTs[i]) rootsV3.push(v3.exitTs[i] - v3.ts[i]);
+  const heapV2 = v2.heap.slice(0, v2.n).reduce((a, x, i) => a + (v2.parent[i] === -1 ? x : 0), 0), heapV3 = v3f.heap.slice(0, v3f.n).reduce((a, x, i) => a + (v3f.parent[i] === -1 ? x : 0), 0);
+  console.log(`check: root durations equal ${JSON.stringify(rootsV2) === JSON.stringify(rootsV3)}; root heap v2 ${heapV2} vs frames-only ${heapV3}`);
+  const top = [...v3.mCalls.keys()].filter((l) => v3.mCalls[l]).sort((a, b) => v3.mSelf[b] - v3.mSelf[a]).slice(0, 3);
+  const dec = new TextDecoder();
+  console.log('top methods by self time:', top.map((l) => `${dec.decode(b.subarray(v3.strStart[l], v3.strEnd[l])).slice(0, 40)} calls=${v3.mCalls[l]} self=${(v3.mSelf[l] / 1e6).toFixed(0)}ms total=${(v3.mTotal[l] / 1e6).toFixed(0)}ms`).join(' | '));
+}
+````
+
+### `shape2.mjs`
+
+````js
+// How much would per-statement SOQL/DML aggregation and a no-store streaming visitor cost or save?
+import { readFileSync } from 'node:fs';
+import { scanV1 } from './scan-v1.mjs';
+import { scanV3 } from './scan-v3.mjs';
+function time(fn, runs = 7) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+for (const f of ['large100.log']) {
+  const b = new Uint8Array(readFileSync(process.argv[2] + '/' + f));
+  // A visitor with no store: count SOQL lines and sum their row counts, the shape of an MCP one-shot query.
+  const visitorOnly = () => { let n = 0, pos = 0; const pat = new TextEncoder().encode('|SOQL_EXECUTE_BEGIN|'); const len = b.length;
+    while (pos < len) { let eol = b.indexOf(10, pos); if (eol < 0) eol = len; let i = pos; while (i < eol && b[i] !== 124) i++; let ok = true; for (let j = 0; j < pat.length; j++) if (b[i + j] !== pat[j]) { ok = false; break; } if (ok) n++; pos = eol + 1; } return n; };
+  console.log('streaming visitor, no store (find SOQL lines):', time(visitorOnly).toFixed(0), 'ms');
+  console.log('v1 floor scan with tree:', time(() => scanV1(b)).toFixed(0), 'ms');
+  console.log('v3 full scan:', time(() => scanV3(b)).toFixed(0), 'ms');
+}
+````
+
 ### Raw output of the final `bench.ts` run
 
 ````text
@@ -1183,4 +1520,32 @@ V2 scan + raw text of every row (worst-case decode)               707 ms   14 MB
 V2 read file as bytes + scan (MCP path)                           531 ms   23 MB kept
 structuredClone: a plain object per row                          4989 ms  368 MB kept
 structuredClone: the v2 columns                                   643 ms  116 MB kept
+````
+
+### Raw output of `shape.mjs`, `v3bench.mjs` and `shape2.mjs`
+
+````text
+== dev20.log: rows 206573; exits 61984 (30.0%); frames 62150 (30.1%); leaves 82439 (39.9%); maxDepth 25
+   frames with any non-zero count 3.1%, with heap 38.9%
+   top leaves STATEMENT_EXECUTE 11.2%, HEAP_ALLOCATE 10.5%, VARIABLE_ASSIGNMENT 6.1%, ENTERING_MANAGED_PKG 3.9%, SYSTEM_MODE_ENTER 3.1%, VARIABLE_SCOPE_BEGIN 2.4%
+== large100.log: rows 868903; exits 358443 (41.3%); frames 358457 (41.3%); leaves 152003 (17.5%); maxDepth 37
+   frames with any non-zero count 0.6%, with heap 26.7%
+   top leaves STATEMENT_EXECUTE 9.6%, HEAP_ALLOCATE 4.8%, VARIABLE_ASSIGNMENT 1.5%, VARIABLE_SCOPE_BEGIN 1.0%, USER_DEBUG 0.2%, SYSTEM_MODE_EXIT 0.2%
+== dev20.log
+v2  every line a row          66 ms  rows  206573  columns 21.5 MB
+v3  exits folded, sparse      46 ms  rows  144589  columns 11.7 MB  count slots 2059
+v3  + method stats            50 ms
+v3  frames only (projection)  45 ms  rows   62151  columns 5.1 MB
+check: root durations equal true; root heap v2 5574690 vs frames-only 5574690
+top methods by self time: MyAccountsSelector.selectByIdWithContact calls=5793 self=4099ms total=24501ms | ns.MyAccountService.calculateRollupTotal calls=5801 self=4052ms total=25909ms | MyClass.getDefaultCurrencyIsoCode() calls=5759 self=3984ms total=25214ms
+== large100.log
+v2  every line a row         385 ms  rows  868903  columns 90.4 MB
+v3  exits folded, sparse     240 ms  rows  510460  columns 41.0 MB  count slots 2256
+v3  + method stats           253 ms
+v3  frames only (projection) 248 ms  rows  358458  columns 28.9 MB
+check: root durations equal true; root heap v2 10682183 vs frames-only 10682183
+top methods by self time: ns.MyInvoiceService.postInvoicesAndUpdat calls=37890 self=18220ms total=128231ms | MyTriggerHandler.beforeUpdate(Map<Id,SOb calls=37718 self=18158ms total=127411ms | MyClass.getDefaultCurrencyIsoCode() calls=37714 self=18152ms total=129001ms
+streaming visitor, no store (find SOQL lines): 104 ms
+v1 floor scan with tree: 134 ms
+v3 full scan: 291 ms
 ````
