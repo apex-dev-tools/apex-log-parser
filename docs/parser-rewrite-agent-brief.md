@@ -163,6 +163,54 @@ optional Phase 2b, not a commitment.**
   real log arrives.
 - Measure this in the Phase 2 gate.
 
+### 0.3 What can be backported to today's parser, and is it worth it?
+
+**The most impactful changes in the new design,** ranked by measured contribution:
+
+| # | Change | Measured effect | Backportable without breaking the API? |
+| --- | --- | --- | --- |
+| 1 | **No object per event:** columns plus lazy views | Today ~930 B per event; the JS core ~80 B per row. Parse 10–15× faster: allocation and GC were the cost, not scanning (§3.2). | No. This is the redesign itself. |
+| 2 | **Columns drive the timeline,** with a per-depth render index | Building the timeline +245 ms → ~0; each redraw 6.2 ms → 0.09 ms (§3.5) | **Partly, on the consumer side.** The analyzer can build per-depth typed arrays from today's tree once, which costs a walk, and get the ~70× redraw win now. |
+| 3 | **Worker plus transfer** | The main thread is never blocked for more than 4 ms | No for the analyzer: today's tree costs ~3 s to clone. **Yes for MCP:** parse in a worker thread and keep the tree there, answering tool queries in the worker, so nothing is cloned. |
+| 4 | **Fold exits into entries** | 30–41% fewer rows; with sparse counts, store 2.2× smaller | No: exits take `eventIndex` today. **Shared zero counters (row 6) remove most of the exits' memory anyway.** |
+| 5 | **Bytes instead of `split`, interning** | `split` alone is ~6% of today's parse | Not worth it: every one of 175 constructors indexes `parts`. |
+| 6 | **Sparse counters, and type-level constants not stored per event** | 0.6–3% of frames have a count | **Yes, measured below.** |
+| 7 | **Caching** (`toBuffers`) | A reopen takes ~0 ms | No: today's tree is not cheaply serialisable. |
+
+**Backport experiments on today's code,** on top of #107 and #109 (`origin/perf/single-pass-totals`).
+Synthetic logs, two rounds each. The output digest (every event's numbers, issues and limits) is
+identical to the baseline, and all 317 tests pass at each step:
+
+| Step | 20 MB time / heap | 100 MB time / heap |
+| --- | --- | --- |
+| `main` | ~953 ms / 259 MB | ~3,638 ms / 1,100 MB |
+| #107 + #109 | 904–936 ms / 190 MB | 3,320–3,548 ms / 808 MB |
+| **A.** Shared arrays: one `exitTypes` array per distinct list, and leaves share one empty `children` array (only `DurationLogEvent` and the root own one) | 900–920 ms / 179 MB | 3,298–3,388 ms / 764 MB |
+| **B.** A, plus shared **frozen** zero counter objects: an event takes its own `{self, total}` only when it writes one (frames, heap and exception leaves, SOQL/SOSL ends) | **776–811 ms / 124 MB** | **2,976–3,027 ms / 555 MB** |
+
+From `main` to B: **~15–20% faster and ~50% less heap.** The JS core, by comparison, is ~20×
+faster with ~20× less memory.
+
+**Opinion:**
+
+- **A: do it.** It is safe and shape-preserving: properties stay own properties, so
+  serialisation is unchanged. It saves ~5% of heap. The only risk is a consumer pushing into a
+  leaf's `children` or an event's `exitTypes`, which nothing should do.
+- **B: worth it, if the maintainers accept one rule.** Counters on events that never write them
+  are frozen shared zeros. A consumer that writes to a leaf's or an exit's counter then gets a
+  `TypeError`, because ESM is strict, instead of silently changing another event. That is the
+  "shared frozen objects" #108 rejected to keep the API mutable. The measured price of keeping
+  that rule is ~30% of heap and ~10% of time. **Ask:** do the analyzer or MCP ever write to a
+  leaf's or an exit's counters? Frames, and the root, keep their own mutable counters.
+- **Consumer-side, now:** build the timeline render index from today's tree (the ~70× redraw win),
+  and run MCP's parse in a worker thread with the tree kept there.
+- **Not worth it on today's parser:** removing `split`, folding exits, async yielding (the
+  recursive `parseTree` would need to become async throughout), and a webview worker (the clone
+  cost). Put that effort into the JS core.
+
+The patch for A and B is in §B (`backport.diff`, against `origin/perf/single-pass-totals`
+`e80a701`).
+
 ---
 
 ## 1. Context
@@ -3270,6 +3318,271 @@ else { const { wasmCore } = await import('./wasm/core.mjs' as string); const t1 
 console.log(`${engine} first parse incl. load: ${(performance.now() - t0).toFixed(1)} ms (rows ${rows})`);
 ````
 
+### `backport.diff` (§0.3, experiments A and B on today's parser)
+
+Apply on `origin/perf/single-pass-totals` (`e80a701`) with `git apply`. Verify with the digest script below and `pnpm run ci`.
+
+````diff
+diff --git a/src/LogEvents.ts b/src/LogEvents.ts
+index 3d04c65..c1f2ea2 100644
+--- a/src/LogEvents.ts
++++ b/src/LogEvents.ts
+@@ -39,6 +39,34 @@ function zeroDuration(): SelfTotal {
+   return duration;
+ }
+ 
++// Shared by every event that has none, so a leaf allocates no array. Only DurationLogEvent and the
++// root get their own children array, because only they are given children.
++const noChildren: LogEvent[] = [];
++// EXPERIMENT B: one zero counter object per field, shared by every event whose counters stay zero.
++// An event that writes a counter first takes its own object (ownCounters / own()).
++const Z = {
++  duration: zeroDuration(), dmlRowCount: { self: 0, total: 0 }, soqlRowCount: { self: 0, total: 0 },
++  soslRowCount: { self: 0, total: 0 }, dmlCount: { self: 0, total: 0 }, soqlCount: { self: 0, total: 0 },
++  soslCount: { self: 0, total: 0 }, thrownCount: { self: 0, total: 0 }, heapAllocated: { self: 0, total: 0 },
++  heapGross: { self: 0, total: 0 },
++};
++for (const zero of Object.values(Z)) Object.freeze(zero);
++const noExitTypes: LogEventType[] = [];
++// One exitTypes array per distinct list, shared by every event of that type.
++const exitTypesByKey = new Map<string, LogEventType[]>();
++function sharedExitTypes(exitTypes: LogEventType[]): LogEventType[] {
++  if (!exitTypes.length) {
++    return noExitTypes;
++  }
++  const key = exitTypes.join('|');
++  let shared = exitTypesByKey.get(key);
++  if (!shared) {
++    shared = exitTypes.slice();
++    exitTypesByKey.set(key, shared);
++  }
++  return shared;
++}
++
+ /**
+  * All log lines extend this base class.
+  */
+@@ -50,7 +78,7 @@ export abstract class LogEvent {
+   /**
+    * All child nodes of the current node
+    */
+-  children: LogEvent[] = [];
++  children: LogEvent[] = noChildren;
+ 
+   /**
+    * The type of this log line from the log file e.g METHOD_ENTRY
+@@ -161,39 +189,39 @@ export abstract class LogEvent {
+    * The time spent: `self` is the net (wall) time spent in the node (when not inside children), and
+    * `total` is the total (wall) time spent in the node.
+    */
+-  duration: SelfTotal = zeroDuration();
++  duration: SelfTotal = Z.duration;
+ 
+   /**
+    * Total + self row counts for DML: `self` excludes child nodes, `total` includes them.
+    */
+-  dmlRowCount: SelfTotal = { self: 0, total: 0 };
++  dmlRowCount: SelfTotal = Z.dmlRowCount;
+ 
+   /**
+    * Total + self row counts for SOQL: `self` excludes child nodes, `total` includes them.
+    */
+-  soqlRowCount: SelfTotal = { self: 0, total: 0 };
++  soqlRowCount: SelfTotal = Z.soqlRowCount;
+ 
+   /**
+    * Total + self row counts for SOSL: `self` excludes child nodes, `total` includes them.
+    */
+-  soslRowCount: SelfTotal = { self: 0, total: 0 };
++  soslRowCount: SelfTotal = Z.soslRowCount;
+ 
+   /**
+    * DML operations (DML_BEGIN): `self` is the net number in this node, `total` includes child nodes.
+    */
+-  dmlCount: SelfTotal = { self: 0, total: 0 };
++  dmlCount: SelfTotal = Z.dmlCount;
+ 
+   /**
+    * SOQL operations (SOQL_EXECUTE_BEGIN): `self` is the net number in this node, `total` includes
+    * child nodes.
+    */
+-  soqlCount: SelfTotal = { self: 0, total: 0 };
++  soqlCount: SelfTotal = Z.soqlCount;
+ 
+   /**
+    * SOSL operations (SOSL_EXECUTE_BEGIN): `self` is the net number in this node, `total` includes
+    * child nodes.
+    */
+-  soslCount: SelfTotal = { self: 0, total: 0 };
++  soslCount: SelfTotal = Z.soslCount;
+ 
+   /**
+    * Total + self counts for exceptions thrown (EXCEPTION_THROWN): `self` is the number thrown
+@@ -205,7 +233,7 @@ export abstract class LogEvent {
+    * Throws tooltip row, because it would only ever read "(self 0)". The field keeps the SelfTotal
+    * shape for consistency with the other metrics and so the leaf carries `self: 1`.
+    */
+-  thrownCount: SelfTotal = { self: 0, total: 0 };
++  thrownCount: SelfTotal = Z.thrownCount;
+ 
+   /**
+    * Signed NET heap bytes (alloc − free) for HEAP_ALLOCATE / BULK_HEAP_ALLOCATE / HEAP_DEALLOCATE.
+@@ -219,7 +247,7 @@ export abstract class LogEvent {
+    * children only, so a method's `self` excludes allocations in sub-methods. `total` is the
+    * net across this node and all descendants.
+    */
+-  heapAllocated: SelfTotal = { self: 0, total: 0 };
++  heapAllocated: SelfTotal = Z.heapAllocated;
+ 
+   /**
+    * GROSS heap bytes allocated (positive HEAP_ALLOCATE only; frees ignored): the churn / GC
+@@ -227,7 +255,7 @@ export abstract class LogEvent {
+    * (net) and {@link heapPeak} (max live): an allocate-then-free loop has net ≈ 0 and a small
+    * peak but a large gross. Same self/total aggregation as {@link heapAllocated}.
+    */
+-  heapGross: SelfTotal = { self: 0, total: 0 };
++  heapGross: SelfTotal = Z.heapGross;
+ 
+   /**
+    * Peak live heap (bytes) for this node's subtree: the highest running live-heap total reached
+@@ -240,7 +268,7 @@ export abstract class LogEvent {
+   /**
+    * The line types which would legitimately end this method
+    */
+-  exitTypes: LogEventType[] = [];
++  exitTypes: LogEventType[] = noExitTypes;
+ 
+   constructor(parser: ApexLogParser, parts: string[]) {
+     this.logParser = parser;
+@@ -261,7 +289,23 @@ export abstract class LogEvent {
+   /** Called when the Log event after this one is created in the line parser*/
+   onAfter?(parser: ApexLogParser, next?: LogEvent): void;
+ 
++  protected ownCounters(): void {
++    this.duration = zeroDuration();
++    this.dmlRowCount = { self: 0, total: 0 };
++    this.soqlRowCount = { self: 0, total: 0 };
++    this.soslRowCount = { self: 0, total: 0 };
++    this.dmlCount = { self: 0, total: 0 };
++    this.soqlCount = { self: 0, total: 0 };
++    this.soslCount = { self: 0, total: 0 };
++    this.thrownCount = { self: 0, total: 0 };
++    this.heapAllocated = { self: 0, total: 0 };
++    this.heapGross = { self: 0, total: 0 };
++  }
++
+   public recalculateDurations(): void {
++    if (this.duration === Z.duration) {
++      this.duration = zeroDuration();
++    }
+     if (this.exitStamp) {
+       this.duration.total = this.duration.self = this.exitStamp - this.timestamp;
+     }
+@@ -272,6 +316,8 @@ export abstract class LogEvent {
+    * (negative = deallocation) and advances the parser's running live-heap total.
+    */
+   protected seedHeapLeaf(parser: ApexLogParser, bytes: number): void {
++    this.heapAllocated = { self: 0, total: 0 };
++    this.heapGross = { self: 0, total: 0 };
+     this.heapAllocated.self = this.heapAllocated.total = bytes || 0;
+     this.heapGross.self = this.heapGross.total = bytes > 0 ? bytes : 0;
+     this.heapPeak = parser.trackHeapAllocation(bytes);
+@@ -312,7 +358,9 @@ export class DurationLogEvent extends LogEvent {
+     cpuType: CPUType,
+   ) {
+     super(parser, parts);
+-    this.exitTypes = exitTypes;
++    this.children = [];
++    this.ownCounters();
++    this.exitTypes = sharedExitTypes(exitTypes);
+     this.category = category;
+     this.cpuType = cpuType;
+   }
+@@ -333,7 +381,8 @@ export class ApexLog extends LogEvent {
+   text = 'LOG_ROOT';
+   timestamp = 0;
+   exitStamp = 0;
+-  exitTypes: LogEventType[] = [];
++  override children: LogEvent[] = [];
++  exitTypes: LogEventType[] = noExitTypes;
+   override category: LogCategory = '';
+   cpuType: CPUType = '';
+ 
+@@ -424,6 +473,7 @@ export class ApexLog extends LogEvent {
+ 
+   constructor(parser: ApexLogParser) {
+     super(parser, []);
++    this.ownCounters();
+   }
+ 
+   setTimes(): void {
+@@ -892,7 +942,7 @@ export class VFApexCallStartLine extends DurationLogEvent {
+       // we have a system entry and they do not have exits
+       // e.g |VF_APEX_CALL_START|[EXTERNAL]|/apexpage/pagemessagescomponentcontroller.apex <init>
+       // and they really mess with the logs so skip handling them.
+-      this.exitTypes = [];
++      this.exitTypes = noExitTypes;
+       this.hasValidSymbols = false;
+     } else if (methodtext) {
+       // method call
+@@ -1047,6 +1097,7 @@ export class SOQLExecuteEndLine extends LogEvent {
+   constructor(parser: ApexLogParser, parts: string[]) {
+     super(parser, parts);
+     this.lineNumber = this.parseLineNumber(parts[2]);
++    this.soqlRowCount = { self: 0, total: 0 };
+     this.soqlRowCount.total = this.soqlRowCount.self = parseRows(parts[3] || '');
+   }
+ }
+@@ -1123,6 +1174,7 @@ export class SOSLExecuteEndLine extends LogEvent {
+   constructor(parser: ApexLogParser, parts: string[]) {
+     super(parser, parts);
+     this.lineNumber = this.parseLineNumber(parts[2]);
++    this.soslRowCount = { self: 0, total: 0 };
+     this.soslRowCount.total = this.soslRowCount.self = parseRows(parts[3] || '');
+   }
+ }
+@@ -2472,6 +2524,7 @@ export class ExceptionThrownLine extends LogEvent {
+ 
+   constructor(parser: ApexLogParser, parts: string[]) {
+     super(parser, parts);
++    this.thrownCount = { self: 0, total: 0 };
+     this.thrownCount.self = this.thrownCount.total = 1;
+     this.lineNumber = this.parseLineNumber(parts[2]);
+     this.text = parts[3] || '';
+````
+
+### `digest.mts` (proves a backport changes no output)
+
+````ts
+// A digest of every event's public numbers, to prove an experiment changes no output.
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+const { parse } = await import(process.cwd() + '/src/index.ts');
+for (const f of process.argv.slice(2)) {
+  const log = parse(readFileSync(f, 'utf8')); const h = createHash('sha256');
+  const keys = ['duration', 'dmlRowCount', 'soqlRowCount', 'soslRowCount', 'dmlCount', 'soqlCount', 'soslCount', 'thrownCount', 'heapAllocated', 'heapGross'];
+  for (const e of log.eventsById) { h.update(`${e.eventIndex}|${e.type}|${e.timestamp}|${e.exitStamp}|${e.text}|${e.namespace}|${e.heapPeak}|${e.children.length}|${e.exitTypes.join(',')}|`); for (const k of keys) h.update(`${e[k].self},${e[k].total};`); }
+  h.update(JSON.stringify(log.logIssues) + JSON.stringify(log.governorLimits));
+  console.log(f.split('/').pop(), h.digest('hex').slice(0, 16));
+}
+````
+
+### `bp-measure.mts` (time and heap of `parse()` from the current checkout)
+
+````ts
+// Time and retained heap of parse() from the worktree's src, on the given logs.
+import { readFileSync } from 'node:fs';
+const { parse } = await import(process.cwd() + '/src/index.ts');
+const gc = (globalThis as any).gc as () => void;
+for (const f of process.argv.slice(2)) {
+  const str = readFileSync(f, 'utf8'); parse(str); parse(str);
+  const ts: number[] = []; let heap = 0, keep: unknown;
+  for (let r = 0; r < 5; r++) { keep = null; gc(); const b = process.memoryUsage().heapUsed; const t = performance.now(); keep = parse(str); ts.push(performance.now() - t); gc(); heap = process.memoryUsage().heapUsed - b; }
+  void keep; ts.sort((a, b) => a - b);
+  console.log(`${f.split('/').pop()!.padEnd(16)} ${ts[2]!.toFixed(0).padStart(5)} ms  ${(heap / 1e6).toFixed(0).padStart(5)} MB`);
+}
+````
+
 ### Raw output of the final `bench.ts` run
 
 ````text
@@ -3401,4 +3714,24 @@ today: 8112.3 5698.9 5125.4  ms
 js: 447.4 408.6 449.3  ms
 wasm: 417.8 449.0 409.9  ms
 simd: 319.9 315.0 319.5  ms
+````
+
+### Raw output: backport rounds (`bp-measure.mts`)
+
+````text
+== e80a701
+dev20.log          904 ms    190 MB
+large100.log      3548 ms    808 MB
+dev20.log          936 ms    190 MB
+large100.log      3320 ms    808 MB
+== 9071808
+dev20.log          920 ms    179 MB
+large100.log      3388 ms    764 MB
+dev20.log          900 ms    179 MB
+large100.log      3298 ms    764 MB
+== 12410fc
+dev20.log          811 ms    124 MB
+large100.log      2976 ms    555 MB
+dev20.log          776 ms    124 MB
+large100.log      3027 ms    555 MB
 ````
