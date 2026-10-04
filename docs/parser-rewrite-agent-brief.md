@@ -276,8 +276,9 @@ The top leaves are `STATEMENT_EXECUTE`, `HEAP_ALLOCATE`, `VARIABLE_ASSIGNMENT` a
 
 **Prototype v3** (`scan-v3.mjs`) is v2 with the output shape that table suggests:
 
-- **Exit lines fold into their entry row.** The entry keeps the exit's byte offset (`exitStart`)
-  for lazy exit text, and an exit gets no row of its own.
+- **Exit lines fold into their entry row**, and an exit gets no row of its own. The prototype
+  still stores the exit's byte offset (`exitStart`); the design drops it (§5.2), which saves
+  another ~2 MB at 100 MB.
 - **Counters are sparse.** A frame gets a slot in a shared pool only when its subtree has a
   non-zero count.
 - **Optional per-method stats are computed during the scan:** calls, self time, and total time
@@ -413,11 +414,21 @@ from the tree, so folding it loses nothing. The maintainer confirmed this.
 
 **Folding rules,** verified against `src/` on 2026-10-04:
 
-- **A matched pure exit gets no row.** A pure exit has `isExit` and no `exitTypes`. Its entry row
-  stores `exitStamp` and `exitStart`, the byte offset of the exit line, so `node.exit` can still
-  decode the exit's text and fields on demand. The `onEnd` equivalents read exit fields at close
-  time, from those bytes: `SOQL_EXECUTE_END` and `SOSL_EXECUTE_END` rows, and the `METHOD_EXIT`
-  namespace.
+- **A matched pure exit leaves nothing behind.** A pure exit has `isExit` and no `exitTypes`; it
+  gets no row and nothing about it is stored. The maintainer confirmed that exits are not needed
+  beyond this, and `src/` agrees: today's parser reads only these from an exit line, and the
+  scanner reads them in place while scanning:
+  - its **type id, timestamp and line number**, for matching (`isMatchingEnd`) and the entry's
+    `exitStamp`;
+  - **`Rows:` on `SOQL_EXECUTE_END` and `SOSL_EXECUTE_END`**, which becomes the entry's row count
+    (`onEnd`);
+  - **the namespace on `METHOD_EXIT`**, only when its text does not end with `)` (a class
+    reference). It is written to the entry (`onEnd`) and to the namespace set (`afterParse`).
+
+  Every other exit field is never read today: its text, its other fields, its own
+  category/level. The `FLOW_START_INTERVIEWS_BEGIN` `onEnd` reads the stack, not the exit. If a
+  future feature needs exit text, an optional `exitStart` byte-offset column on frames would cost
+  4 bytes per frame; it is not stored by default.
 - **An unmatched exit keeps its row.** Today `endMethod` returns false, and the exit falls through
   to be pushed as a child, or onto the root at the top level. Class-reference `METHOD_EXIT` lines,
   with no `)` and no `METHOD_ENTRY`, are the common case. Their `Unexpected-Exit` issue points at
@@ -446,7 +457,6 @@ recomputes today's numbers for the digest gate.
 | `type` | `Uint16Array` | schema id |
 | `start`, `end` | `Uint32Array` | byte range, including wrapped lines (or drop `end` and use the next row's `start`) |
 | `timestamp`, `exitStamp` | `Float64Array` | ns, held exactly by a double |
-| `exitStart` | `Uint32Array` | byte offset of the matched exit line (0 if none) |
 | `parent` | `Int32Array` | |
 | `subtreeEnd` | `Uint32Array` | children are `row+1 … subtreeEnd`; the next sibling is `subtreeEnd` |
 | `depth` | `Uint16Array` | |
@@ -552,7 +562,7 @@ log.toBuffers(): ArrayBuffer[];  ApexLog.fromBuffers(buffers): ApexLog; // cachi
   on `start`), `columns`, `limits`, `issues`, `truncation`, `namespaces`, `entryPoints`,
   `userInfo`, `debugLevels`, `debugLevelSettings`, `size`, `startTime` and `executionEndTime`.
 - **A node:** `type`, its named fields, `children` (frames only), `childrenOfType`, `parent`,
-  `exit`, `duration`, the counts with today's names (`soqlCount.total`, …), `heapAllocated`,
+  `duration`, the counts with today's names (`soqlCount.total`, …), `heapAllocated`,
   `heapGross`, `heapPeak`, `isTruncated`, `index`, `text` (lazy) and `raw` (lazy).
 - **`is(node, type)`** is a type guard.
 
@@ -652,7 +662,7 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 
 | Feature today | Where it lives | Eager or lazy |
 | --- | --- | --- |
-| Tree: `parent`, `children`, `eventIndex` (root = 0; exits included today), `eventsById` | rows, `parent`, `subtreeEnd`, `node(i)`. Matched pure exits fold into their entries (`node.exit`); unmatched exits and the dual `WF_*` types keep rows (§5.2). Ids stay unique, stable and deterministic per parse; `compat` recomputes today's numbers. | eager |
+| Tree: `parent`, `children`, `eventIndex` (root = 0; exits included today), `eventsById` | rows, `parent`, `subtreeEnd`, `node(i)`. Matched pure exits fold into their entries, and only their type, timestamp, line number, SOQL/SOSL rows and class-reference namespace are read; unmatched exits and the dual `WF_*` types keep rows (§5.2). Ids stay unique, stable and deterministic per parse; `compat` recomputes today's numbers. | eager |
 | `timestamp`, `exitStamp`, `duration.self` and `total` | columns | eager |
 | `dmlCount`, `soqlCount`, `soslCount`, `dmlRowCount`, `soqlRowCount`, `soslRowCount`, `thrownCount` (self and total) | rollup columns | eager |
 | `heapAllocated`, `heapGross` (self and total), `heapPeak` (max), the running live heap clamped at 0 | rollup columns | eager |
