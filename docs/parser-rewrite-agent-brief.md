@@ -52,6 +52,67 @@ measurements. You can work from this file and a checkout of the repo alone.
 - **Run `pnpm run ci` before every commit.** Never `pnpm ci`, which is a clean install.
 - **Decisions marked OPEN in §7 belong to the user.** Ask; do not guess.
 
+### 0.1 Is this the right approach? Verdict and go/no-go
+
+**Verdict: yes, the direction is right, but commit to it only after one decisive spike.**
+
+**Why it is right:**
+
+- The cost is structural: an allocation per event and per field. #107 and #109 show that tuning
+  the object model reaches ~28%.
+- The measured gains are an order of magnitude. At the 20 MB Salesforce log cap, today takes
+  833 ms and 259 MB to a timeline, against ~55–100 ms and ~12–19 MB.
+- It is the only design in which a worker is viable: an object tree costs more to clone than to
+  parse.
+- It answers #34, #35, #71 and #72, and the cast-free typing goal, rather than adding to them.
+
+**What would make it wrong. Check each before committing:**
+
+1. **Real logs behave differently.** The synthetic logs hold ~31 distinct names, and real logs
+   hold thousands. Interning, long `USER_DEBUG` lines and non-ASCII text are untested.
+2. **The full rules cost more than v3.** Line-number matching, discontinuity, max size, package
+   merge, flow residuals, issues, limits and text decoders are all missing from the prototype.
+3. **Parity cannot be proven.** Without the private corpus and its digest, the subtle tree rules
+   cannot be shown equal.
+4. **Consumer migration costs more than the rewrite.** The analyzer is large, and mutation
+   (OPEN 1) could block lazy views.
+5. **Parse is not what users wait for.** Profile an analyzer open from end to end. If rendering
+   or the call tree dominates, the parser win shrinks in practice.
+6. **Maintainability.** A byte scanner, a state machine, codegen and typed arrays are harder to
+   contribute to than classes. The schema, tests and the digest gate must carry that.
+
+**The decisive spike, so do this first** (Phase 2 alone, roughly 1–2 weeks): build the real
+sync scanner, the store and `toLegacyTree`, with the full rules but no views, async or workers.
+
+**Go only if all of these hold:**
+
+- the corpus digest is identical to `main` on every log;
+- on real corpus logs of 20 MB or less, at least **5× faster** and at most **⅕ of the
+  memory**, median and p95;
+- a timeline built from the columns costs < 10% of parse time;
+- `src/` lines and test coverage are comparable to today, and a second maintainer can follow the
+  scanner;
+- an analyzer profile shows parse plus tree building is at least half of the time to open a log.
+
+**If it is a no-go,** keep the benchmark harness and the corpus digest, ship #107 and #109, and
+take the smaller wins that need no columnar store:
+
+- remove `split` from the hot path;
+- fold exits (they are already dropped from the tree);
+- type-level metadata;
+- sparse counters;
+- `parseAsync` with yielding.
+
+**Ways to reduce the risk inside the plan:**
+
+- **Ship the new core under today's API first, through `compat`.** Consumers get the parse win
+  with no migration. Only the analyzer's timeline needs to move to the columns early, because
+  that is where the extra UI win is.
+- **Start with leaf vs frame typing only.** That is the biggest typing win, and it changes no tree
+  semantics. Add enforced containers later, and only where the corpus shows them closed.
+- **Defer** the parallel first stage, Arrow layout and exporters, projection, the storeless
+  visitor, append parsing and WASM until after 1.0.
+
 ---
 
 ## 1. Context
