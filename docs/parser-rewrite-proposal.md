@@ -29,10 +29,14 @@ The store is a few `ArrayBuffer`s, so it **transfers to and from a worker at no 
 property is what makes `parseInWorker`, `parseAsync` with progress, streaming, and disk caching
 in MCP practical. Today none of them is.
 
-On a 100 MB log, a rough prototype of layers 1 and 2 parses in **~100 ms with ~30 MB retained**.
-Today's parser takes **~2.9 s and keeps ~1.1 GB**. After adding everything the prototype leaves
-out, I expect a full implementation to land around **5–10× faster with 7–10× less memory**,
-with no main-thread blocking at all in worker mode.
+On a 100 MB log, today's parser takes **~3.2 s to return and keeps ~1.1 GB**. A fuller prototype
+returns in **~0.45–0.53 s with ~80 MB of columns**. It keeps every line as a row and includes
+wrapped text, interned names, every counter, heap peak and per-type indexes. Rollups happen
+during the scan, so the root's total time and a whole flame chart cost nothing extra after it
+returns. In a worker, the main thread is blocked for **3.5 ms at worst**. See
+[What a consumer waits for](#11-what-a-consumer-waits-for). The full implementation should land at
+**6–8× faster to a drawn timeline, with about 6× less memory including the source bytes**
+(~13× for the tree alone).
 
 Skip WASM for now; the reasons are under [WASM](#71-wasm). Keep the store layout stable, so a WASM
 scanner could replace the JS one later without changing the API.
@@ -70,6 +74,50 @@ How to read this:
 The prototype is a floor, not a forecast. It omits text fields, namespaces, issues, limits,
 truncation and package merging, and its exit matching is simplified. Its loop is in the
 [appendix](#appendix-prototype-core-loop).
+
+### 1.1 What a consumer waits for
+
+The first table times the scan alone. This one times what a UI or MCP actually does after a
+parse, using a fuller prototype ("v2") that is closer to the proposal:
+
+- every line is a row, so `eventIndex` is kept
+- the real exit, `nextLineIsExit` and `acceptsText` rules, read from today's classes
+- wrapped lines
+- interned labels and namespaces
+- all 8 counters, heap net and peak, and self duration
+- per-type indexes
+- arrays sized once from the byte length
+
+It still omits issues, limits, truncation, package merge and per-event text rules. It is not
+tuned beyond the profile pass: about 22% of its time is still closures.
+
+| 100 MB log | Today | v2 |
+| --- | ---: | ---: |
+| Parse returns | 3,243 ms | 454–528 ms |
+| … then the root's total time | +0, because totals are post-passes inside `parse` | +0, because totals roll up during the scan |
+| … then a flame chart: every frame's rect and depth | +343 ms walking objects, labels included | +0–30 ms reading columns |
+| … then a flame chart with every label | included above | +0–30 ms, because labels are interned |
+| … then a node object for **every** row, walked by `children`, with label | — | +200 ms (658 ms in total) |
+| … then decode the raw text of every row (worst case) | — | +330 ms (783 ms in total) |
+| MCP path: read the file, then parse | 3,731 ms | 652 ms |
+| In a worker: transfer in, scan, transfer out | not viable (3 s to clone) | 475 ms, worst main-thread gap 3.5 ms |
+| Retained | 1,100 MB plus the pinned string | ~80 MB of columns plus 100 MB of source bytes |
+
+At 20 MB: today 826 ms (882 ms with a full walk); v2 75–88 ms with a flame chart, 136 ms with an
+object per row, and 114 ms as a worker round trip.
+
+What the numbers mean for "lazy":
+
+- **The structure is not lazy.** The scan builds the whole tree, every rollup and every index
+  before it returns. That is what makes the root's total, `ofType` and the flame chart free
+  afterwards.
+- **Objects and strings are lazy.** A consumer pays for them only when it reads them. The worst
+  case, an object for every row, still lands 5× under today's parse.
+- **Rendering from columns costs about nothing.** A flame chart that reads `timestamp`,
+  `exitStamp` and `depth` straight from the arrays adds no measurable time. Built from node
+  objects it adds ~200 ms at 100 MB. That is why `log.columns` is public.
+- **The worker hides the rest.** The scan time stays the same, but the UI is never blocked for
+  more than a few milliseconds, and with streaming it can draw before the end arrives.
 
 ## 2. Where the time and memory go today
 
@@ -417,7 +465,75 @@ nothing at runtime:
 - One pass. Anything that needs "later" waits on a small pending list resolved by row id, as
   issue end times do.
 
-## 10. How this lands
+## 10. Does it keep every feature?
+
+**Every piece of information is kept.** The `compat` digest gate in [How this lands](#12-how-this-lands) is what proves it. The
+API shape changes in the ways listed after the table.
+
+| Feature today | In the rewrite |
+| --- | --- |
+| Tree, `parent`, `children`, `eventIndex`, `eventsById` | Prefix-order rows. `node(i)` replaces `eventsById[i]`, and exit lines stay rows. |
+| `timestamp`, `exitStamp`, `duration.self`/`total` | Columns. Self time is subtracted when each child closes. |
+| SOQL/DML/SOSL counts and rows, `thrownCount` | Rollup columns |
+| `heapAllocated`, `heapGross`, `heapPeak` | Rollup columns. The running heap is kept during the scan, in log order, as today. |
+| Governor limits, snapshots, granular `limitUsage` | Parsed eagerly when the block's last line arrives. It is a rare, cold path. |
+| Flow DB residuals, managed package merge | Applied when the frame closes, not as a post-pass |
+| `namespace` | **Must stay eager.** `_parseMethodNamespace` reads the namespaces *seen so far*, so a lazy decode would see the final set and answer differently. It is an interned id column, decided during the scan. |
+| `text`, `logLine`, per-class text rules (VF, named credentials, …) | Lazy decoders, one per event, with the same output. Wrapped lines are joined with `\n` and `\r` is stripped, as today. |
+| `category`, `debugCategory`, `debugLevel`, `exitTypes`, `suffix`, `hasValidSymbols` | Constants per type in the schema, costing nothing per row |
+| Per-row overrides (`cpuType: 'loading'` for `Type.forName`, `codeUnitType`, a VF call with its exits cleared) | Decided during the scan into a flags column, because they change matching or rollups |
+| `logIssues`, `parsingErrors`, `truncation`, `truncatedEvents`, `isTruncated` | Side tables, filled in the same pass |
+| `debugLevels`, `debugLevelSettings`, `userInfo`, `entryPoints`, `startTime`, `executionEndTime`, `exceptions`, `namespaces` | Unchanged. They come from the header or from the indexes. |
+| `size` (UTF-8 bytes) | Free for byte input (`byteLength`). A string input keeps `utf8ByteLength`. |
+
+**What changes for consumers:**
+
+- **Mutation.** #108 rejected frozen objects because "the API must stay mutable". Views can keep
+  setters for the scalar fields, which write to the columns or to an overlay for strings. But
+  `children` is no longer an array a consumer can push to or splice. Before committing, we need
+  to know exactly what the analyzer and MCP mutate today. Adding new properties to a node object
+  would still work, because node objects are cached, but it costs monomorphism.
+- **`instanceof` event classes** become `node.type` and `is(node, type)`.
+- **`ApexLogParser` subclassing and custom event constructors** go away. Extending the parser
+  would mean extending the schema.
+- **`JSON.stringify` on the tree** never worked anyway, because of `parent` cycles. `toJSON()` and
+  `toBuffers()` replace it.
+
+The `compat` adapter rebuilds today's classes for any code that needs the old shape, at today's
+cost, but only for that code.
+
+## 11. Other changes with a large impact
+
+These go beyond the scanner and the store, roughly in order of impact per unit of work:
+
+1. **Do not parse twice.** `toBuffers()` / `fromBuffers()` turns reopening a log into ~0 ms.
+   MCP caches to disk instead of holding one slot in memory for five minutes, and the analyzer
+   caches in IndexedDB keyed by a content hash. For repeat opens, this beats any parser
+   speed-up.
+2. **Draw while parsing.** The store is append-only and in prefix order, so every closed subtree
+   is final the moment it closes. `createLogBuilder().snapshot()` lets the timeline draw the start
+   of a log while the rest streams in. Time to first paint becomes the first chunk, not the
+   whole file.
+3. **A render index for the flame chart.** The analyzer draws every frame today. A lazily built
+   index, with rows grouped by depth and sorted by start time, lets the chart binary-search the
+   visible time range at each depth. Rendering then costs O(visible frames), not O(all frames),
+   which matters on every pan and zoom, not just once. Building it costs about one pass over the
+   columns.
+4. **A parallel first stage in workers**, like simdjson. Splitting the bytes at newlines and
+   finding each line's type id, timestamp and fields is independent per chunk. Only the stack
+   matching is sequential, and it is cheap. With 4 workers, 100 MB should drop from ~0.5 s
+   towards ~0.2 s. It needs `SharedArrayBuffer` (cross-origin isolation in browsers, which VS
+   Code webviews may not grant) or one transfer per chunk. It is an optional later phase, worth
+   it only for logs of 50 MB or more.
+5. **Size the arrays once.** Allocating from `byteLength / 90` removed about 10% of the scan
+   time in the profile, against doubling.
+6. **Cancel stale work.** An `AbortSignal` per parse, so switching logs in the UI never waits
+   for the previous one.
+7. **Never decode what is never shown.** The UI draws labels only for frames wide enough to
+   show text, and only those labels are decoded. The columns make that the default rather than
+   an optimisation.
+
+## 12. How this lands
 
 The rule from #37 holds: no step merges without a before-and-after number from the harness in
 #106. Correctness is held to the private 440-log corpus digest that #107 and #109 already use.
@@ -436,7 +552,7 @@ The rule from #37 holds: no step merges without a before-and-after number from t
 6. **Migrate the analyzer and MCP.** Release 1.0. Keep `compat` for one major, so the analyzer can
    move one view at a time; `compat` costs today's memory, but only for code that still uses it.
 
-## 11. Risks
+## 13. Risks
 
 - **Exactness of the matching rules.** `parseTree`/`endMethod`, discontinuities, max-size
   truncation, package merge and flow residuals are subtle and tested mainly through real logs.
