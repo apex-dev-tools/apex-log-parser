@@ -38,8 +38,11 @@ returns. In a worker, the main thread is blocked for **3.5 ms at worst**. See
 **6–8× faster to a drawn timeline, with about 6× less memory including the source bytes**
 (~13× for the tree alone).
 
-Skip WASM for now; the reasons are under [WASM](#71-wasm). Keep the store layout stable, so a WASM
-scanner could replace the JS one later without changing the API.
+**WASM, revised after measurement:** a WASM SIMD core running the same single pass produced an
+identical tree ~2× faster than the best JS in Node and ~3× in Chromium: 105–111 ms at 100 MB. So
+the design has two cores behind one column layout. The JS core is the reference implementation
+and fallback; the WASM SIMD core is the default where WASM is allowed. See
+`docs/parser-rewrite-agent-brief.md` §3.6 and §3.7 for the review and the final numbers.
 
 ## 1. What we measured
 
@@ -172,7 +175,7 @@ remaining cause above is structural.
 | --- | --- | --- |
 | **oxc** (Rust → JS) | The AST is written to one raw buffer and deserialised lazily in JS. Only the nodes a visitor touches become objects; [~3× faster than eager deserialisation, and transfer cost near zero](https://oxc.rs/blog/2025-10-09-oxlint-js-plugins.html). | A buffer is the source of truth; objects are an on-demand view. |
 | **Lezer** (CodeMirror) | [`TreeBuffer`](https://lezer.codemirror.net/docs/ref/): `(type, start, end, endIndex)` quads in a typed array, nodes in prefix order, and the parent's `endIndex` bounding its children. `SyntaxNode` objects are created on demand; `TreeCursor` walks with no allocation. | Prefix-order rows with a subtree end. Two access styles: ergonomic nodes and an allocation-free cursor. |
-| **simdjson** | Stage 1 finds structural characters in bulk; stage 2 builds a flat "tape" of fixed-width records. Strings stay as offsets. | Scan for `\n` and `\|` with native `indexOf` (memchr), and keep fixed-width rows that reference the source. |
+| **simdjson** | Stage 1 finds structural characters in bulk; stage 2 builds a flat "tape" of fixed-width records. Strings stay as offsets. | Scan for `\n` with the fastest search per platform (memchr through Node's `Buffer.indexOf`, SIMD in WASM; V8's `Uint8Array.indexOf` is a scalar loop), and keep fixed-width rows that reference the source. |
 | **uDSV** | [The fastest JS CSV parser](https://github.com/leeoniya/uDSV): code specialised per shape, no per-field allocation on the hot path, incremental chunk input. | One specialised loop per input kind (bytes or string), with chunked input. |
 | **acorn, meriyah, esbuild** | Hand-written scanners that switch on char codes, never on regexes or `split`. Token values are sliced only when needed. | Dispatch on char codes. The only regexes are on cold paths (the header). |
 | **tree-sitter (WASM)** | A cursor API over a native tree, with node objects created per access. | The cursor model, and evidence that WASM pays off only when the scanner is the bottleneck. |
@@ -423,18 +426,9 @@ location, and a `blob:` fallback inlines the worker. `sideEffects: false` stays:
 
 ## 7.1 WASM
 
-Not now. The reasons:
-
-- **The scan is no longer the cost.** The JS byte scanner already runs at ~1 GB/s. After the
-  rewrite, field decoding, interning and rollups dominate, and much of that ends up as JS strings
-  and objects that WASM cannot create more cheaply.
-- **The boundary costs.** Bytes must be copied into linear memory (or streamed in), and every
-  string a consumer reads crosses back.
-- **The operational cost is real.** It needs a Rust or Zig toolchain in CI, async instantiation,
-  more bundle size, and `wasm-unsafe-eval` in the CSP of VS Code webviews and other strict
-  hosts.
-- **Keep the door open.** The store's column layout is the ABI. Revisit only if the benchmark
-  shows the scanner above about half the parse time after the rewrite.
+Superseded by measurement. A WASM SIMD core is ~2–3× faster than the JS core, with an identical
+tree. It ships as a second core behind the same column layout, after the JS core reaches parity.
+Details and numbers are in `docs/parser-rewrite-agent-brief.md` §3.6, §3.7 and §5.10.
 
 ## 8. Monomorphism
 

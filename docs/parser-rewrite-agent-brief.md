@@ -111,7 +111,8 @@ take the smaller wins that need no columnar store:
 - **Start with leaf vs frame typing only.** That is the biggest typing win, and it changes no tree
   semantics. Add enforced containers later, and only where the corpus shows them closed.
 - **Defer** the parallel first stage, Arrow layout and exporters, projection, the storeless
-  visitor, append parsing and WASM until after 1.0.
+  visitor and append parsing until after 1.0. **The WASM SIMD core follows the JS core**
+  (Phase 2b), once the JS core has corpus parity; §3.6 measured it at ~2–3× the JS core.
 
 ---
 
@@ -401,6 +402,147 @@ from the columns, and 73–98 ms from node objects. A redraw is 1.06 ms against 
   ~0.1 ms, because a per-depth binary search finds the visible frames instead of testing every
   rect. A frame at 60 fps has 16.7 ms, and today's redraw already takes a third of it before
   drawing anything.
+### 3.6 Architecture review: is this the best structure?
+
+The design was tested against the alternatives that the fastest parsers and trace tools use. All
+runs: Node 22.22 (V8 12.4), 4-core Linux container, synthetic logs from #106, median of 7–15 runs.
+Chromium 141 headless for the browser rows. The scripts are in §B.
+
+**Prior art checked, with sources in §4.** These systems were checked for how they store and
+process data:
+
+- Perfetto trace processor:
+  [`slice_tables.py`](https://github.com/google/perfetto/blob/main/src/trace_processor/tables/slice_tables.py),
+  [`string_pool.h`](https://github.com/google/perfetto/blob/main/src/trace_processor/containers/string_pool.h),
+  and the [architecture doc](https://github.com/google/perfetto/blob/main/docs/design-docs/trace-processor-architecture.md).
+- The Firefox Profiler
+  [processed format](https://github.com/firefox-devtools/profiler/blob/main/docs-developer/processed-profile-format.md).
+- The Chrome DevTools
+  [trace engine](https://github.com/ChromeDevTools/devtools-frontend/blob/main/front_end/models/trace/README.md).
+- The simdjson [tape](https://github.com/simdjson/simdjson/blob/master/doc/tape.md) and
+  [On-Demand](https://github.com/simdjson/simdjson/blob/master/doc/ondemand_design.md) designs.
+- oxc [raw transfer](https://github.com/oxc-project/oxc/issues/2409).
+- The Lezer [`tree.ts`](https://github.com/lezer-parser/common/blob/main/src/tree.ts).
+- Apache Arrow JS.
+- V8 source.
+
+**Where the experiments and prior art agree with the design:**
+
+| Decision | Evidence | Verdict |
+| --- | --- | --- |
+| **Columnar typed arrays (struct of arrays)** | Measured against array-of-structs (Lezer/oxc style), on 510k rows: writes about equal (16.0 vs 16.7 ms at 100 MB; at 20 MB array-of-structs wrote faster, 3.2 vs 4.2 ms); flame-chart read 4.5 vs 6.3 ms; one column 0.5 vs 1.0 ms; tree walk 7.3 vs 12.3 ms; 30.6 vs 32.7 MB. Perfetto, Firefox Profiler and Arrow all store this way. | **Keep.** |
+| **Prefix order with a skip pointer** (`subtreeEnd`) | simdjson's tape (`{` holds the index past its scope), Lezer's `endIndex`, Perfetto's `depth` + `parent_id`. | **Keep.** |
+| **Interned strings, a side table for sparse data** | Perfetto's string pool and `arg_set_id`; the Firefox Profiler's single `stringArray`; Arrow dictionary encoding. Sparse counts measured: 0.6–3% of frames need a slot. | **Keep.** |
+| **One node class** | V8 `DEFAULT_MAX_POLYMORPHIC_MAP_COUNT 4`. Measured: per-type prototypes 2× slower than today, one class 2.2× faster (§3.3). | **Keep.** |
+| **Eager structure, lazy objects and strings** | simdjson On-Demand: laziness wins for sparse access, loses for random access and revisits. A timeline reads everything, so the structure must be eager. oxc's laziness is mainly about GC. Measured: rollups cost nothing extra after the scan. | **Keep.** |
+| **Single pass, one handler per type** | The Chrome DevTools trace engine loops once and calls handlers. Its 4× speed-up came from removing per-event Map growth. | **Keep.** No per-event Maps, objects or arrays. |
+| **Transfer, not SharedArrayBuffer, in webviews** | VS Code cross-origin isolation is behind a flag (1.72 release notes), so `SharedArrayBuffer` is unavailable in webviews by default. | **Keep.** |
+| **Uint32 offsets, not Lezer's 16-bit buffers** | Lezer caps buffers at 1,024 characters to stay in 16 bits; a 100 MB log cannot. | **Keep.** Uint32 limits a log to 4 GB. |
+
+**Where they change the design:**
+
+1. **WASM: from "no" to "yes, as the accelerated core".** The same full single pass (scan, tree,
+   exit matching, interning, sparse counts, heap, self time) was written in C and compiled to WASM.
+   It produced **the identical tree** to the JS v5 on all three logs, and the result columns are
+   read **in place** through typed-array views over WASM memory, oxc's "raw transfer". WASM times
+   include copying the input in.
+
+   | | JS v5 (Node) | WASM scalar | **WASM SIMD128** | JS v5 (Chromium) | **WASM SIMD (Chromium)** |
+   | --- | ---: | ---: | ---: | ---: | ---: |
+   | 20 MB | 43–56 ms | 31 ms | **23 ms** | 68–136 ms | **23–24 ms** |
+   | 100 MB | 226–303 ms | 156 ms | **105 ms** | 323–327 ms | **110–111 ms** |
+   | 90 MB, 282k distinct names | 307–387 ms | 221 ms | **202 ms** | — | — |
+
+   WASM SIMD is **~2× faster in Node and ~3× in Chromium**, the analyzer's engine, and it varies
+   far less between runs. The published "JS is enough" cases (mraleph on source maps, OpenUI)
+   lost to boundary copying and string conversion. This design avoids both: one copy in, zero
+   copies out, and strings stay lazy in JS.
+
+   **Costs:**
+   - a C or Rust toolchain in CI;
+   - `wasm-unsafe-eval` in the webview CSP, which the extension controls;
+   - WASM memory cannot be transferred, so a worker copies the ~40 MB of columns out (~10 ms) or
+     keeps the parse and its views inside the worker;
+   - memory never shrinks, so use a fresh `Memory` per parse.
+2. **Newline search depends on the platform.** V8's `Uint8Array.prototype.indexOf` is a scalar
+   C++ loop ([elements.cc](https://github.com/v8/v8/blob/main/src/objects/elements.cc)), not
+   memchr. Measured over 100 MB:
+
+   | Search | Time |
+   | --- | ---: |
+   | `Uint8Array.indexOf` | 67.5 ms |
+   | Node `Buffer.indexOf` (memchr) | 28.8 ms |
+   | SWAR, 4 bytes at a time in JS | 49.8 ms |
+   | WASM `i8x16` SIMD | inside the 105 ms above |
+   | plain JS byte loop | 120.5 ms |
+
+   So the Node build uses `Buffer.indexOf`, the browser JS core uses SWAR, and the WASM core uses
+   SIMD.
+3. **Interning is the next cost after newlines.** v4's line profile: newline search 15.6%,
+   column writes ~15%, interning ~22%, timestamp ~5%. v5 fused label hashing into the field scan
+   and derived the namespace once per distinct label: 267 → 226 ms at 100 MB. Skipping the byte
+   check after a hash match saves another ~20% (179 ms) but risks a wrong name on a collision.
+   **Keep the check**, or use a 64-bit hash pair if a profile on real logs demands it.
+4. **The parallel first stage is not worth it in the browser.** 4 worker threads in Node:
+
+   | Log | 1 thread | 4 workers | Speed-up |
+   | --- | ---: | ---: | ---: |
+   | 20 MB | 52 ms | 31 ms | 1.7× |
+   | 100 MB | 303 ms | 131 ms | 2.3× |
+   | 90 MB, high cardinality | 314 ms | 216 ms | 1.45× |
+
+   The sequential tree and interning stage caps the gain. It needs `SharedArrayBuffer`, which
+   webviews lack, and it does not combine with WASM without WASM threads. **Defer**; it is an
+   option for MCP only, and WASM single-thread is already faster.
+5. **High cardinality is the real-log risk, and it holds.** With 282,345 distinct strings (90 MB),
+   v5 still parses in 307–387 ms against today's 3,467 ms (9–11×), and keeps 72 MB against
+   1,109 MB. Today's string also turns two-byte (180 MB) when one non-ASCII character appears.
+6. **Not adopted:** a native Node addon. It is faster again for MCP, but needs prebuilt binaries
+   per platform and cannot run in a browser; WASM covers both.
+
+**Verdict:**
+
+- The structure is the one the fastest systems converge on: a byte scanner, columnar store,
+  prefix order, interned strings, sparse side tables, one node class, eager structure with lazy
+  strings, and transfer.
+- The best model for performance is that structure with **two interchangeable cores behind one
+  column ABI:**
+  - a **JS core**: the reference implementation, the fallback, and the oracle for differential
+    tests;
+  - a **WASM SIMD core**: the default where WASM is allowed.
+- Both are generated from the same schema tables, and the store, views, types and API are
+  identical whichever core ran.
+
+### 3.7 Final performance numbers
+
+**Measured** means prototype output was verified identical between engines; **projected** adds
+the rules the prototypes still omit (issues text, limits blocks, truncation, package merge, flow
+residuals, discontinuity, exit details, parsing errors), estimated at +10–25% on the scan.
+
+| | Today (measured) | JS core (measured → projected) | **WASM SIMD core (measured → projected)** |
+| --- | ---: | ---: | ---: |
+| **20 MB** parse, Node | 745–862 ms | 43–56 → **50–70 ms** | 23 → **25–30 ms** |
+| **20 MB** parse, Chromium | — | 68–136 → **80–150 ms** | 23–24 → **25–30 ms** |
+| **20 MB** to a drawn timeline (Node) | 833–873 ms | **50–70 ms** (the columns add ~0) | **25–30 ms** |
+| **100 MB** parse, Node | 2,738–3,243 ms | 226–303 → **260–380 ms** | 105 → **120–140 ms** |
+| **100 MB** parse, Chromium | — | 323–327 → **370–410 ms** | 110–111 → **125–140 ms** |
+| **100 MB** to a drawn timeline | 3,190–3,388 ms | **260–380 ms** | **120–140 ms** |
+| **100 MB** MCP path (read the file, then parse) | 3,477–3,731 ms | ~**330–450 ms** (bytes read straight in) | ~**180–220 ms** |
+| **90 MB, 282k names** | 3,467 ms | 307–387 → **350–480 ms** | 202 → **220–260 ms** |
+| Redraw of a 1% window (pan or zoom) | 6.2–7 ms | **0.09 ms** | **0.09 ms** |
+| Main thread blocked, worker mode | not viable | **≤ 4 ms** | **≤ 4 ms** plus a ~10 ms column copy, or none if the views stay in the worker |
+| Memory for the tree, 100 MB | 1,100 MB plus the 100–200 MB pinned string | ~41 MB (72 MB at high cardinality) plus 100 MB of source bytes | the same |
+
+**Speed-up against today:**
+
+- JS core: **~10–15×** to a drawn timeline.
+- WASM SIMD core: **~25–30×**.
+- Memory: **~15–25× less** for the tree, and **~6–8×** including the source bytes, which lazy
+  text needs.
+- Every pan and zoom: **~70×** cheaper.
+
+All of this is synthetic until the corpus runs; the go/no-go gate in §0.1 uses real logs.
+
 ---
 
 ## 4. Prior art, and what to take from each
@@ -409,7 +551,7 @@ from the columns, and 73–98 ms from node objects. A redraw is 1.06 ms against 
 | --- | --- | --- |
 | **oxc** (Rust → JS) | Raw transfer: the AST sits in one buffer and is deserialised lazily in JS, so only the nodes a visitor touches become objects. ~3× faster than eager deserialisation, and transfer cost near zero. [oxc.rs/blog/2025-10-09-oxlint-js-plugins](https://oxc.rs/blog/2025-10-09-oxlint-js-plugins.html) | A buffer is the truth; objects are an on-demand view. |
 | **Lezer** (CodeMirror) | `TreeBuffer`: `(type, start, end, endIndex)` in a typed array, prefix order, with the parent's end bounding its children. `SyntaxNode` objects on demand, and a `TreeCursor` that allocates nothing. [lezer.codemirror.net/docs/ref](https://lezer.codemirror.net/docs/ref/) | Prefix-order rows with a subtree end. Nodes plus a cursor. |
-| **simdjson** | Stage 1 finds structural characters in bulk; stage 2 builds a flat tape of fixed-width records, with strings as offsets. | `indexOf` (memchr) for `\n` and `\|`. Fixed-width rows. A parallel first stage. |
+| **simdjson** | Stage 1 finds structural characters in bulk; stage 2 builds a flat tape of fixed-width records, with strings as offsets. | Fast newline search (memchr in Node, SIMD in WASM; V8's `Uint8Array.indexOf` is a scalar loop, see §3.6). Fixed-width rows. A parallel first stage. |
 | **uDSV** | The fastest JS CSV parser: specialised loops, no per-field allocation, chunked input. [github.com/leeoniya/uDSV](https://github.com/leeoniya/uDSV) | One loop specialised per input kind. Chunks. |
 | **acorn, meriyah, esbuild** | Hand-written char-code scanners, with no regex or `split` on the hot path. | Char-code dispatch. Regexes only on cold paths. |
 | **tree-sitter (WASM)** | A cursor over a native tree. | WASM pays only when the scanner dominates. |
@@ -665,6 +807,11 @@ expected-error lines.
 - No closures and no generators in the loop. v2 still has closures, and that cost ~22% in its
   profile.
 - Arrays sized once from `byteLength / 90`, then grown by doubling. That removed ~10% of scan time.
+- Newline search depends on the platform (§3.6): `Buffer.indexOf` in the Node build (memchr), SWAR
+  in the browser JS core, `i8x16` SIMD in the WASM core. Never `Uint8Array.indexOf` on the hot
+  path, because it is a scalar loop in V8.
+- Hash the label while finding its field boundaries, and derive anything that depends only on the
+  label (namespace) once per distinct label, cached by string id.
 - Interned names are numbers. Free text is a byte range until read.
 - One pass. Anything that needs "later" waits on a pending list keyed by row.
 
@@ -722,16 +869,34 @@ purposes:
 2. **It is the migration path.** It lasts one major version, so the analyzer can move one view
    at a time.
 
-### 5.10 WASM: no, for now
+### 5.10 Two cores, JS and WASM SIMD, behind one column ABI (revised after §3.6)
 
-- The JS byte scanner already runs at ~1 GB/s.
-- After the rewrite, the cost is strings, objects and rollups, which WASM cannot create more
-  cheaply.
-- There is a boundary copy each way.
-- It needs a Rust or Zig toolchain, async instantiation, more bundle size, and
-  `wasm-unsafe-eval` in strict CSPs such as VS Code webviews.
-- The column layout is the ABI. Revisit only if the scanner is more than ~50% of parse time
-  after the rewrite.
+The earlier "no WASM" call was a judgement; §3.6 measured it. A WASM SIMD core is ~2× faster than
+the best JS in Node and ~3× in Chromium, with an identical tree. So:
+
+- **The column layout is the ABI.** Both cores write the same columns, string table, count pool
+  and per-type indexes. Everything above them is shared: views, types, `compat` and the API.
+- **Each core has its job:**
+  - **The JS core is built first.** It is the reference implementation, the fallback where WASM
+    is not allowed, and the differential-test oracle.
+  - **The WASM SIMD core is the default wherever WASM is available.** That covers Node ≥ 16.4,
+    every current browser (Safari ≥ 16.4) and Electron. Detect it with `WebAssembly.validate` on a
+    SIMD probe.
+- **The WASM core does only the hot pass:** scan, match, intern and roll up, about 300 lines.
+  Field decoders, text, issues text and limits parsing stay in JS, reading the same bytes.
+  `grammar/` generates its tables into both cores from the one schema.
+- **Data flow:**
+  - Read or stream the input straight into WASM memory, so it is never in JS memory twice.
+  - The result columns are typed-array views over WASM memory, with no copy out (oxc's raw
+    transfer).
+  - In a worker, either copy the columns into transferable buffers (~10 ms at 100 MB), or keep the
+    parse and its views in the worker and answer queries there.
+  - Use a fresh `WebAssembly.Memory` per parse, because WASM memory never shrinks.
+- **Language:** OPEN decision 10. C with clang needs no extra dependencies, and the prototype
+  module is 5 KB. Rust adds memory safety and is common in CI. Zig is another option.
+- **CSP:** the analyzer's webview CSP needs `'wasm-unsafe-eval'`. The extension owns that CSP.
+- **Differential tests:** every corpus log runs through both cores and must give identical
+  columns. That catches core divergence for free.
 
 ### 5.11 Output-shape wins to adopt
 
@@ -899,6 +1064,9 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
    confirm that nothing **persists** ids across package versions; a cache keyed by content hash
    plus parser version is safe.
 9. **Projection default.** Full rows, or frames only? And which aggregates ship in 1.0?
+10. **WASM core language and timing.** C (clang, no extra dependencies), Rust or Zig? And does it
+    ship in 1.0, or follow once the JS core has corpus parity? The recommendation is to follow, in
+    Phase 2b.
 
 ---
 
@@ -937,6 +1105,18 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 - at 100 MB, ≤ 400 ms and ≤ 50 MB of columns;
 - aggregates (methods, namespaces, queries) match a tree walk over compat;
 - the deopt test is green.
+
+### Phase 2b: the WASM SIMD core
+
+- Port the hot pass to WASM SIMD, with tables generated from the same `grammar/`.
+- Add the input-straight-into-memory path and the views over WASM memory.
+- Fall back to the JS core when WASM SIMD is unavailable.
+
+**Gate:**
+
+- identical columns to the JS core on every corpus log;
+- at 100 MB, ≤ 150 ms in Node and in Chromium;
+- the analyzer webview loads it under its CSP.
 
 ### Phase 3: views
 
@@ -1997,6 +2177,937 @@ for (const f of ['dev20.log', 'large100.log']) {
 }
 ````
 
+### Architecture-review experiments (§3.6)
+
+Save each file below under `bench/rewrite/` with its heading's path. For example, `wasm/full.c`
+goes in `bench/rewrite/wasm/full.c`. Then, from the repo root:
+
+```sh
+# generate the high-cardinality logs
+python3 bench/rewrite/make-hc.py bench/rewrite/logs/large100.log bench/rewrite/logs/large100-hc.log
+python3 bench/rewrite/make-hc.py bench/rewrite/logs/dev20.log bench/rewrite/logs/dev20-hc.log
+# JS scanners
+node bench/rewrite/v4bench.mjs bench/rewrite/logs dev20.log large100.log
+node bench/rewrite/v5bench.mjs bench/rewrite/logs dev20.log large100.log
+node --cpu-prof --cpu-prof-interval 100 bench/rewrite/prof4.mjs bench/rewrite/logs/large100.log   # line profile of v4
+node --expose-gc --max-old-space-size=8000 --import tsx bench/rewrite/hcbench.ts bench/rewrite/logs dev20-hc.log large100-hc.log
+node bench/rewrite/par-bench.mjs bench/rewrite/logs dev20.log large100.log large100-hc.log
+node bench/rewrite/layout.mjs bench/rewrite/logs/large100.log
+node bench/rewrite/nl.mjs bench/rewrite/logs/large100.log && node bench/rewrite/swar.mjs bench/rewrite/logs/large100.log
+# C / WASM (clang 18 with wasm-ld)
+cd bench/rewrite/wasm
+clang -O3 -march=native -DNATIVE_MAIN stage1.c -o stage1-native
+W='--target=wasm32 -O3 -nostdlib -Wl,--no-entry -Wl,--export-all -Wl,--export-memory'
+clang $W -Wl,--initial-memory=268435456 -Wl,--max-memory=1073741824 stage1.c -o stage1.wasm
+clang $W -msimd128 -Wl,--initial-memory=268435456 -Wl,--max-memory=1073741824 stage1.c -o stage1-simd.wasm
+clang $W -Wl,--initial-memory=67108864 -Wl,--max-memory=2147483648 full.c -o full.wasm
+clang $W -msimd128 -Wl,--initial-memory=67108864 -Wl,--max-memory=2147483648 full.c -o full-simd.wasm
+node wasm-bench.mjs ../logs dev20.log large100.log large100-hc.log
+node full-bench.mjs ../logs dev20.log large100.log large100-hc.log
+# browser: JS v5 vs WASM SIMD in Chromium
+cd .. && python3 web/make-web.py logs && cd web/out && node ../server.mjs &
+chromium --headless=new http://127.0.0.1:8766/    # results are written to web/out/result.txt
+```
+
+### `scan-v4.mjs`
+
+````js
+// Prototype v4: v3's output shape, tuned. One function, no closures in the loop. Adds today's
+// line-number exit matching, unwinding to a match further down the stack, unmatched exits kept
+// as rows, SOQL/SOSL rows read from the exit line, and a root row 0. Still omits issues text,
+// limits, truncation, package merge, flow residuals, discontinuity and the per-event text rules.
+import { readFileSync } from 'node:fs';
+
+const table = JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'));
+export const names = ['<root>', ...table.map((r) => r.name)];
+const N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+export const PURE_EXIT = new Uint8Array(N);
+const NEXT_IS_EXIT = new Uint8Array(N), ACCEPTS = new Uint8Array(N), HAS_EXITS = new Uint8Array(N), EXIT_MATCH = new Uint8Array(N * N);
+table.forEach((r, i) => {
+  const t = i + 1;
+  PURE_EXIT[t] = r.isExit && !(r.exitTypes?.length) ? 1 : 0;
+  NEXT_IS_EXIT[t] = r.nextLineIsExit ? 1 : 0; ACCEPTS[t] = r.acceptsText ? 1 : 0;
+  for (const x of r.exitTypes ?? []) { EXIT_MATCH[t * N + idOf.get(x)] = 1; HAS_EXITS[t] = 1; }
+});
+const LABEL_FIELD = new Int8Array(N).fill(-1);
+for (const [n, f] of [['METHOD_ENTRY', 4], ['CONSTRUCTOR_ENTRY', 5], ['SYSTEM_METHOD_ENTRY', 3], ['CODE_UNIT_STARTED', 4], ['VF_APEX_CALL_START', 3]]) LABEL_FIELD[idOf.get(n)] = f;
+// Counter kind contributed by a leaf of this type: 1 soql, 2 dml, 3 sosl, 7 thrown (slot index + 1)
+const OWN_COUNT = new Int8Array(N);
+OWN_COUNT[idOf.get('SOQL_EXECUTE_BEGIN')] = 1; OWN_COUNT[idOf.get('DML_BEGIN')] = 2; OWN_COUNT[idOf.get('SOSL_EXECUTE_BEGIN')] = 3; OWN_COUNT[idOf.get('EXCEPTION_THROWN')] = 7;
+const ROWS_FROM_EXIT = new Int8Array(N); // exit type -> row-count slot (+1)
+ROWS_FROM_EXIT[idOf.get('SOQL_EXECUTE_END')] = 4; ROWS_FROM_EXIT[idOf.get('SOSL_EXECUTE_END')] = 6;
+const HEAP = idOf.get('HEAP_ALLOCATE'), EXEC = idOf.get('EXECUTION_STARTED');
+const HB = 4096, H_TAB = new Int16Array(HB).fill(-1), NAME_HASH = new Int32Array(N), NAME_LEN = new Uint8Array(N);
+for (let i = 1; i < N; i++) {
+  let h = 0; for (const ch of names[i]) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  NAME_HASH[i] = h; NAME_LEN[i] = names[i].length; let k = h & (HB - 1); while (H_TAB[k] !== -1) k = (k + 1) & (HB - 1); H_TAB[k] = i;
+}
+export const NC = 8;
+const LN_NULL = -2, LN_EXTERNAL = -1;
+
+function grow(a, n) { const b = new a.constructor(n); b.set(a.subarray(0, Math.min(a.length, n))); return b; }
+
+export function scanV4(src, opts = {}) {
+  const methodStats = opts.methodStats !== false;
+  const len = src.length;
+  let cap = Math.max(1 << 12, Math.ceil(len / 120)), n = 0;
+  let type = new Uint16Array(cap), start = new Uint32Array(cap), end = new Uint32Array(cap), ts = new Float64Array(cap),
+    exitTs = new Float64Array(cap), parent = new Int32Array(cap), subEnd = new Uint32Array(cap), depth = new Uint16Array(cap),
+    lineNo = new Int32Array(cap), label = new Int32Array(cap), ns = new Int32Array(cap), selfDur = new Float64Array(cap),
+    cslot = new Int32Array(cap), heap = new Float64Array(cap), peak = new Float64Array(cap);
+  let pCap = 1 << 10, nSlots = 0, pool = new Int32Array(pCap * NC);
+  let sCap = 1 << 12, nStr = 0, strStart = new Uint32Array(sCap), strEnd = new Uint32Array(sCap), strHash = new Int32Array(sCap);
+  let IB = 1 << 14, iTab = new Int32Array(IB).fill(-1);
+  let mCap = 1 << 12, mCalls = new Uint32Array(mCap), mSelf = new Float64Array(mCap), mTotal = new Float64Array(mCap), mActive = new Uint16Array(mCap);
+  const byTypeN = new Uint32Array(N), byType = new Array(N); for (let t = 0; t < N; t++) byType[t] = new Uint32Array(8);
+  const stack = new Int32Array(16384); let sp = 0, last = -1, running = 0, unmatchedExits = 0;
+  // root row 0
+  type[0] = 0; parent[0] = -1; label[0] = -1; ns[0] = -1; cslot[0] = -1; n = 1; stack[sp++] = 0;
+  let pos = 0;
+  while (pos < len) {
+    let eol = src.indexOf(10, pos); if (eol < 0) eol = len;
+    let lineEnd = eol; if (lineEnd > pos && src[lineEnd - 1] === 13) lineEnd--;
+    if (src[pos + 2] === 58 && src[pos + 5] === 58) {
+      let i = pos + 8; while (i < lineEnd && src[i] !== 40) i++; i++;
+      let t = 0, c = 0; while ((c = src[i]) !== 41 && i < lineEnd) { t = t * 10 + (c - 48); i++; }
+      i += 2; const t0 = i;
+      let h = 0; while (i < lineEnd && (c = src[i]) !== 124) { h = (Math.imul(h, 31) + c) | 0; i++; }
+      let k = h & (HB - 1), id = 0;
+      for (let e; (e = H_TAB[k]) !== -1; k = (k + 1) & (HB - 1)) if (NAME_HASH[e] === h && NAME_LEN[e] === i - t0) { id = e; break; }
+      if (id === 0) { pos = eol + 1; continue; } // unsupported name: a parsing error in the real engine
+      let ln = LN_NULL;
+      if (src[i] === 124 && src[i + 1] === 91) { let j = i + 2; if (src[j] === 69) ln = LN_EXTERNAL; else { ln = 0; while ((c = src[j]) >= 48 && c <= 57) { ln = ln * 10 + (c - 48); j++; } } }
+      if (last >= 0 && NEXT_IS_EXIT[type[last]] && exitTs[last] === 0) exitTs[last] = t;
+      if (PURE_EXIT[id]) {
+        // find the frame this exit closes: the top, or one further down (unwind)
+        let m = sp - 1;
+        for (; m > 0; m--) { const f = stack[m], fl = lineNo[f]; if (EXIT_MATCH[type[f] * N + id] && (ln === fl || ln < 0 || fl < 0)) break; }
+        if (m > 0) {
+          const rs = ROWS_FROM_EXIT[id];
+          if (rs) { // Rows:N from the exit line, onto the frame being closed
+            let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let rows = 0; j++; while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { rows = rows * 10 + (c - 48); j++; }
+            const f = stack[m]; let sl = cslot[f]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[f] = nSlots++; } pool[sl * NC + rs - 1] += rows;
+          }
+          while (sp > m) {
+            const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n;
+            const p = parent[e];
+            selfDur[p] -= tot; const ck = cslot[e];
+            if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } const pb = pk * NC, cb = ck * NC; for (let q = 0; q < NC; q++) pool[pb + q] += pool[cb + q]; }
+            heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+            if (methodStats) { const l = label[e]; if (l >= 0) { if (--mActive[l] === 0) mTotal[l] += tot; mSelf[l] += selfDur[e]; } }
+          }
+          last = -1; pos = eol + 1; continue;
+        }
+        unmatchedExits++; // kept as a leaf row, as today
+      }
+      if (n === cap) { cap *= 2; type = grow(type, cap); start = grow(start, cap); end = grow(end, cap); ts = grow(ts, cap); exitTs = grow(exitTs, cap); parent = grow(parent, cap); subEnd = grow(subEnd, cap); depth = grow(depth, cap); lineNo = grow(lineNo, cap); label = grow(label, cap); ns = grow(ns, cap); selfDur = grow(selfDur, cap); cslot = grow(cslot, cap); heap = grow(heap, cap); peak = grow(peak, cap); }
+      if (id === EXEC) {
+        while (sp > 1) { const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; } }
+      }
+      const e = n++; const p = stack[sp - 1];
+      type[e] = id; start[e] = pos; end[e] = lineEnd; ts[e] = t; lineNo[e] = ln; label[e] = -1; ns[e] = -1; cslot[e] = -1;
+      parent[e] = p; depth[e] = sp - 1; subEnd[e] = e + 1;
+      const lf = LABEL_FIELD[id];
+      if (lf > 0) {
+        let f = 2, a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && src[a] !== 124) a++; f++; }
+        a++; let b = a; while (b < lineEnd && src[b] !== 124) b++;
+        if (a < b) {
+          // intern [a,b), then the namespace prefix [a,d)
+          for (let pass = 0; pass < 2; pass++) {
+            let lo = a, hi = b;
+            if (pass === 1) { let d = a; while (d < b && src[d] !== 46) d++; if (d === b) break; hi = d; }
+            let hh = 0; for (let q = lo; q < hi; q++) hh = (Math.imul(hh, 31) + src[q]) | 0;
+            let kk = hh & (IB - 1), sid = -1;
+            for (let s2; (s2 = iTab[kk]) !== -1; kk = (kk + 1) & (IB - 1)) {
+              if (strHash[s2] === hh && strEnd[s2] - strStart[s2] === hi - lo) { let x = strStart[s2], y = lo; while (y < hi && src[y] === src[x]) { x++; y++; } if (y === hi) { sid = s2; break; } }
+            }
+            if (sid < 0) {
+              if (nStr === sCap) { sCap *= 2; strStart = grow(strStart, sCap); strEnd = grow(strEnd, sCap); strHash = grow(strHash, sCap); }
+              sid = nStr++; strStart[sid] = lo; strEnd[sid] = hi; strHash[sid] = hh; iTab[kk] = sid;
+              if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = strHash[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } }
+            }
+            if (pass === 0) label[e] = sid; else ns[e] = sid;
+          }
+        }
+      }
+      if (byTypeN[id] === byType[id].length) byType[id] = grow(byType[id], byType[id].length * 2);
+      byType[id][byTypeN[id]++] = e;
+      const own = OWN_COUNT[id];
+      if (own) { let sl = cslot[e]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[e] = nSlots++; } pool[sl * NC + own - 1] = 1; }
+      else if (id === HEAP) { let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let b = 0, neg = false; j++; if (src[j] === 45) { neg = true; j++; } while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { b = b * 10 + (c - 48); j++; } if (neg) b = -b; heap[e] = b; running = running + b; if (running < 0) running = 0; peak[e] = running; }
+      if (HAS_EXITS[id]) {
+        stack[sp++] = e;
+        if (methodStats) { const l = label[e]; if (l >= 0) { if (l >= mCap) { mCap = Math.max(mCap * 2, l + 1); mCalls = grow(mCalls, mCap); mSelf = grow(mSelf, mCap); mTotal = grow(mTotal, mCap); mActive = grow(mActive, mCap); } mCalls[l]++; mActive[l]++; } }
+      } else {
+        // a leaf rolls straight into its parent
+        const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; }
+        heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+      }
+      last = e;
+    } else if (last >= 0 && ACCEPTS[type[last]] && src[pos] !== 42) {
+      end[last] = lineEnd;
+    }
+    pos = eol + 1;
+  }
+  const lastTs = n > 1 ? ts[n - 1] : 0;
+  while (sp > 1) { const e = stack[--sp]; exitTs[e] = lastTs; const tot = lastTs - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; }
+  ts[0] = n > 1 ? ts[1] : 0; exitTs[0] = lastTs; subEnd[0] = n;
+  return { n, src, type, start, end, ts, exitTs, parent, subEnd, depth, lineNo, label, ns, selfDur, cslot, pool, nSlots, heap, peak, strStart, strEnd, nStr, byType, byTypeN, mCalls, mSelf, mTotal, unmatchedExits };
+}
+````
+
+### `scan-v5.mjs`
+
+````js
+// Prototype v5: v4 with label hashing fused into the field scan, namespace derived once per
+// distinct label, end offsets stored only for wrapped rows. (Header from v4 follows.)
+// Prototype v4: v3's output shape, tuned. One function, no closures in the loop. Adds today's
+// line-number exit matching, unwinding to a match further down the stack, unmatched exits kept
+// as rows, SOQL/SOSL rows read from the exit line, and a root row 0. Still omits issues text,
+// limits, truncation, package merge, flow residuals, discontinuity and the per-event text rules.
+import { readFileSync } from 'node:fs';
+
+const table = JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'));
+export const names = ['<root>', ...table.map((r) => r.name)];
+const N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+export const PURE_EXIT = new Uint8Array(N);
+const NEXT_IS_EXIT = new Uint8Array(N), ACCEPTS = new Uint8Array(N), HAS_EXITS = new Uint8Array(N), EXIT_MATCH = new Uint8Array(N * N);
+table.forEach((r, i) => {
+  const t = i + 1;
+  PURE_EXIT[t] = r.isExit && !(r.exitTypes?.length) ? 1 : 0;
+  NEXT_IS_EXIT[t] = r.nextLineIsExit ? 1 : 0; ACCEPTS[t] = r.acceptsText ? 1 : 0;
+  for (const x of r.exitTypes ?? []) { EXIT_MATCH[t * N + idOf.get(x)] = 1; HAS_EXITS[t] = 1; }
+});
+const LABEL_FIELD = new Int8Array(N).fill(-1);
+for (const [n, f] of [['METHOD_ENTRY', 4], ['CONSTRUCTOR_ENTRY', 5], ['SYSTEM_METHOD_ENTRY', 3], ['CODE_UNIT_STARTED', 4], ['VF_APEX_CALL_START', 3]]) LABEL_FIELD[idOf.get(n)] = f;
+// Counter kind contributed by a leaf of this type: 1 soql, 2 dml, 3 sosl, 7 thrown (slot index + 1)
+const OWN_COUNT = new Int8Array(N);
+OWN_COUNT[idOf.get('SOQL_EXECUTE_BEGIN')] = 1; OWN_COUNT[idOf.get('DML_BEGIN')] = 2; OWN_COUNT[idOf.get('SOSL_EXECUTE_BEGIN')] = 3; OWN_COUNT[idOf.get('EXCEPTION_THROWN')] = 7;
+const ROWS_FROM_EXIT = new Int8Array(N); // exit type -> row-count slot (+1)
+ROWS_FROM_EXIT[idOf.get('SOQL_EXECUTE_END')] = 4; ROWS_FROM_EXIT[idOf.get('SOSL_EXECUTE_END')] = 6;
+const HEAP = idOf.get('HEAP_ALLOCATE'), EXEC = idOf.get('EXECUTION_STARTED');
+const HB = 4096, H_TAB = new Int16Array(HB).fill(-1), NAME_HASH = new Int32Array(N), NAME_LEN = new Uint8Array(N);
+for (let i = 1; i < N; i++) {
+  let h = 0; for (const ch of names[i]) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  NAME_HASH[i] = h; NAME_LEN[i] = names[i].length; let k = h & (HB - 1); while (H_TAB[k] !== -1) k = (k + 1) & (HB - 1); H_TAB[k] = i;
+}
+export const NC = 8;
+const LN_NULL = -2, LN_EXTERNAL = -1;
+
+function grow(a, n) { const b = new a.constructor(n); b.set(a.subarray(0, Math.min(a.length, n))); return b; }
+
+export function scanV5(src, opts = {}) {
+  const verify = opts.verify !== false;
+  const methodStats = opts.methodStats !== false;
+  const len = src.length;
+  let cap = Math.max(1 << 12, Math.ceil(len / 120)), n = 0;
+  let type = new Uint16Array(cap), start = new Uint32Array(cap), ts = new Float64Array(cap),
+    exitTs = new Float64Array(cap), parent = new Int32Array(cap), subEnd = new Uint32Array(cap), depth = new Uint16Array(cap),
+    lineNo = new Int32Array(cap), label = new Int32Array(cap), ns = new Int32Array(cap), selfDur = new Float64Array(cap),
+    cslot = new Int32Array(cap), heap = new Float64Array(cap), peak = new Float64Array(cap);
+  let pCap = 1 << 10, nSlots = 0, pool = new Int32Array(pCap * NC);
+  let sCap = 1 << 12, nStr = 0, strStart = new Uint32Array(sCap), strEnd = new Uint32Array(sCap), strHash = new Int32Array(sCap);
+  let IB = 1 << 14, iTab = new Int32Array(IB).fill(-1);
+  let mCap = 1 << 12, mCalls = new Uint32Array(mCap), mSelf = new Float64Array(mCap), mTotal = new Float64Array(mCap), mActive = new Uint16Array(mCap);
+  const byTypeN = new Uint32Array(N), byType = new Array(N); for (let t = 0; t < N; t++) byType[t] = new Uint32Array(8);
+  const wrappedEnd = new Map(); let nsOfLabel = new Int32Array(1 << 12).fill(-2);
+  const stack = new Int32Array(16384); let sp = 0, last = -1, running = 0, unmatchedExits = 0;
+  // root row 0
+  type[0] = 0; parent[0] = -1; label[0] = -1; ns[0] = -1; cslot[0] = -1; n = 1; stack[sp++] = 0;
+  let pos = 0;
+  while (pos < len) {
+    let eol = src.indexOf(10, pos); if (eol < 0) eol = len;
+    let lineEnd = eol; if (lineEnd > pos && src[lineEnd - 1] === 13) lineEnd--;
+    if (src[pos + 2] === 58 && src[pos + 5] === 58) {
+      let i = pos + 8; while (i < lineEnd && src[i] !== 40) i++; i++;
+      let t = 0, c = 0; while ((c = src[i]) !== 41 && i < lineEnd) { t = t * 10 + (c - 48); i++; }
+      i += 2; const t0 = i;
+      let h = 0; while (i < lineEnd && (c = src[i]) !== 124) { h = (Math.imul(h, 31) + c) | 0; i++; }
+      let k = h & (HB - 1), id = 0;
+      for (let e; (e = H_TAB[k]) !== -1; k = (k + 1) & (HB - 1)) if (NAME_HASH[e] === h && NAME_LEN[e] === i - t0) { id = e; break; }
+      if (id === 0) { pos = eol + 1; continue; } // unsupported name: a parsing error in the real engine
+      let ln = LN_NULL;
+      if (src[i] === 124 && src[i + 1] === 91) { let j = i + 2; if (src[j] === 69) ln = LN_EXTERNAL; else { ln = 0; while ((c = src[j]) >= 48 && c <= 57) { ln = ln * 10 + (c - 48); j++; } } }
+      if (last >= 0 && NEXT_IS_EXIT[type[last]] && exitTs[last] === 0) exitTs[last] = t;
+      if (PURE_EXIT[id]) {
+        // find the frame this exit closes: the top, or one further down (unwind)
+        let m = sp - 1;
+        for (; m > 0; m--) { const f = stack[m], fl = lineNo[f]; if (EXIT_MATCH[type[f] * N + id] && (ln === fl || ln < 0 || fl < 0)) break; }
+        if (m > 0) {
+          const rs = ROWS_FROM_EXIT[id];
+          if (rs) { // Rows:N from the exit line, onto the frame being closed
+            let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let rows = 0; j++; while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { rows = rows * 10 + (c - 48); j++; }
+            const f = stack[m]; let sl = cslot[f]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[f] = nSlots++; } pool[sl * NC + rs - 1] += rows;
+          }
+          while (sp > m) {
+            const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n;
+            const p = parent[e];
+            selfDur[p] -= tot; const ck = cslot[e];
+            if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } const pb = pk * NC, cb = ck * NC; for (let q = 0; q < NC; q++) pool[pb + q] += pool[cb + q]; }
+            heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+            if (methodStats) { const l = label[e]; if (l >= 0) { if (--mActive[l] === 0) mTotal[l] += tot; mSelf[l] += selfDur[e]; } }
+          }
+          last = -1; pos = eol + 1; continue;
+        }
+        unmatchedExits++; // kept as a leaf row, as today
+      }
+      if (n === cap) { cap *= 2; type = grow(type, cap); start = grow(start, cap); ts = grow(ts, cap); exitTs = grow(exitTs, cap); parent = grow(parent, cap); subEnd = grow(subEnd, cap); depth = grow(depth, cap); lineNo = grow(lineNo, cap); label = grow(label, cap); ns = grow(ns, cap); selfDur = grow(selfDur, cap); cslot = grow(cslot, cap); heap = grow(heap, cap); peak = grow(peak, cap); }
+      if (id === EXEC) {
+        while (sp > 1) { const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; } }
+      }
+      const e = n++; const p = stack[sp - 1];
+      type[e] = id; start[e] = pos; ts[e] = t; lineNo[e] = ln; label[e] = -1; ns[e] = -1; cslot[e] = -1;
+      parent[e] = p; depth[e] = sp - 1; subEnd[e] = e + 1;
+      const lf = LABEL_FIELD[id];
+      if (lf > 0) {
+        let f = 2, a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && src[a] !== 124) a++; f++; }
+        a++; let b = a, hh = 0, dot = -1;
+        while (b < lineEnd && (c = src[b]) !== 124) { hh = (Math.imul(hh, 31) + c) | 0; if (c === 46 && dot < 0) dot = b; b++; }
+        if (a < b) {
+          let kk = hh & (IB - 1), sid = -1;
+          for (let s2; (s2 = iTab[kk]) !== -1; kk = (kk + 1) & (IB - 1)) {
+            if (strHash[s2] === hh && strEnd[s2] - strStart[s2] === b - a) {
+              if (!verify) { sid = s2; break; }
+              let x = strStart[s2], y = a; while (y < b && src[y] === src[x]) { x++; y++; } if (y === b) { sid = s2; break; }
+            }
+          }
+          if (sid < 0) {
+            if (nStr + 2 >= sCap) { sCap *= 2; strStart = grow(strStart, sCap); strEnd = grow(strEnd, sCap); strHash = grow(strHash, sCap); }
+            sid = nStr++; strStart[sid] = a; strEnd[sid] = b; strHash[sid] = hh; iTab[kk] = sid;
+            if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = strHash[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } }
+          }
+          label[e] = sid;
+          if (sid >= nsOfLabel.length) { const o = nsOfLabel; nsOfLabel = new Int32Array(o.length * 2).fill(-2); nsOfLabel.set(o); }
+          let nsid = nsOfLabel[sid];
+          if (nsid === -2) {
+            // first sight of this label: intern its namespace prefix once
+            nsid = -1;
+            if (dot > a) {
+              let h2 = 0; for (let q = a; q < dot; q++) h2 = (Math.imul(h2, 31) + src[q]) | 0;
+              let k2 = h2 & (IB - 1);
+              for (let s2; (s2 = iTab[k2]) !== -1; k2 = (k2 + 1) & (IB - 1)) { if (strHash[s2] === h2 && strEnd[s2] - strStart[s2] === dot - a) { let x = strStart[s2], y = a; while (y < dot && src[y] === src[x]) { x++; y++; } if (y === dot) { nsid = s2; break; } } }
+              if (nsid < 0) { nsid = nStr++; strStart[nsid] = a; strEnd[nsid] = dot; strHash[nsid] = h2; iTab[k2] = nsid; if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = strHash[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } } }
+            }
+            nsOfLabel[sid] = nsid;
+          }
+          ns[e] = nsid;
+        }
+      }
+      if (byTypeN[id] === byType[id].length) byType[id] = grow(byType[id], byType[id].length * 2);
+      byType[id][byTypeN[id]++] = e;
+      const own = OWN_COUNT[id];
+      if (own) { let sl = cslot[e]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[e] = nSlots++; } pool[sl * NC + own - 1] = 1; }
+      else if (id === HEAP) { let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let b = 0, neg = false; j++; if (src[j] === 45) { neg = true; j++; } while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { b = b * 10 + (c - 48); j++; } if (neg) b = -b; heap[e] = b; running = running + b; if (running < 0) running = 0; peak[e] = running; }
+      if (HAS_EXITS[id]) {
+        stack[sp++] = e;
+        if (methodStats) { const l = label[e]; if (l >= 0) { if (l >= mCap) { mCap = Math.max(mCap * 2, l + 1); mCalls = grow(mCalls, mCap); mSelf = grow(mSelf, mCap); mTotal = grow(mTotal, mCap); mActive = grow(mActive, mCap); } mCalls[l]++; mActive[l]++; } }
+      } else {
+        // a leaf rolls straight into its parent
+        const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; }
+        heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+      }
+      last = e;
+    } else if (last >= 0 && ACCEPTS[type[last]] && src[pos] !== 42) {
+      wrappedEnd.set(last, lineEnd);
+    }
+    pos = eol + 1;
+  }
+  const lastTs = n > 1 ? ts[n - 1] : 0;
+  while (sp > 1) { const e = stack[--sp]; exitTs[e] = lastTs; const tot = lastTs - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; }
+  ts[0] = n > 1 ? ts[1] : 0; exitTs[0] = lastTs; subEnd[0] = n;
+  return { n, src, type, start, wrappedEnd, ts, exitTs, parent, subEnd, depth, lineNo, label, ns, selfDur, cslot, pool, nSlots, heap, peak, strStart, strEnd, nStr, byType, byTypeN, mCalls, mSelf, mTotal, unmatchedExits };
+}
+````
+
+### `v4bench.mjs`
+
+````js
+import { readFileSync } from 'node:fs';
+import { scanV3 } from './scan-v3.mjs';
+import { scanV4 } from './scan-v4.mjs';
+function time(fn, runs = 9) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return [ts[runs >> 1], ts[1], ts[runs - 2]]; }
+const trimmedBytes = (o) => { let t = 0; for (const [k, v] of Object.entries(o)) { if (!ArrayBuffer.isView(v) || k === 'src') continue; if (k === 'pool') t += o.nSlots * 8 * 4; else if (k.startsWith('str')) t += o.nStr * v.BYTES_PER_ELEMENT; else if (k.startsWith('m')) t += v.byteLength; else t += o.n * v.BYTES_PER_ELEMENT; } return t; };
+const dir = process.argv[2]; const files = process.argv.slice(3);
+for (const f of files) {
+  const b = new Uint8Array(readFileSync(`${dir}/${f}`));
+  const s3 = scanV3(b), s4 = scanV4(b);
+  const [m3, lo3, hi3] = time(() => scanV3(b)), [m4, lo4, hi4] = time(() => scanV4(b)), [m4n] = time(() => scanV4(b, { methodStats: false }));
+  console.log(`== ${f} (${(b.length / 1e6).toFixed(0)} MB)`);
+  console.log(`v3 ${m3.toFixed(0)} ms [${lo3.toFixed(0)}-${hi3.toFixed(0)}] rows ${s3.n} strings ${s3.nStr}`);
+  console.log(`v4 ${m4.toFixed(0)} ms [${lo4.toFixed(0)}-${hi4.toFixed(0)}] rows ${s4.n} strings ${s4.nStr} unmatched exits ${s4.unmatchedExits} columns ${(trimmedBytes(s4) / 1e6).toFixed(1)} MB; without method stats ${m4n.toFixed(0)} ms`);
+  console.log(`   throughput v4 ${(b.length / 1e6 / (m4 / 1000)).toFixed(0)} MB/s`);
+}
+````
+
+### `v5bench.mjs`
+
+````js
+import { readFileSync } from 'node:fs';
+import { scanV4 } from './scan-v4.mjs';
+import { scanV5 } from './scan-v5.mjs';
+function time(fn, runs = 9) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+const dir = process.argv[2];
+for (const f of process.argv.slice(3)) {
+  const b = new Uint8Array(readFileSync(`${dir}/${f}`));
+  const a4 = scanV4(b), a5 = scanV5(b);
+  let same = a4.n === a5.n; for (let i = 0; same && i < a4.n; i++) if (a4.ts[i] !== a5.ts[i] || a4.exitTs[i] !== a5.exitTs[i] || a4.parent[i] !== a5.parent[i] || a4.selfDur[i] !== a5.selfDur[i]) same = false;
+  console.log(`== ${f} (${(b.length / 1e6).toFixed(0)} MB): rows ${a5.n}, strings ${a5.nStr}, v4==v5 tree ${same}`);
+  const t4 = time(() => scanV4(b)), t5 = time(() => scanV5(b)), t5n = time(() => scanV5(b, { verify: false }));
+  console.log(`v4 ${t4.toFixed(0)} ms | v5 ${t5.toFixed(0)} ms (${(b.length / 1e6 / (t5 / 1000)).toFixed(0)} MB/s) | v5 without byte verify ${t5n.toFixed(0)} ms`);
+}
+````
+
+### `prof4.mjs`
+
+````js
+import { readFileSync } from 'node:fs';
+import { scanV4 } from './scan-v4.mjs';
+const b = new Uint8Array(readFileSync(process.argv[2]));
+for (let i = 0; i < 12; i++) scanV4(b);
+````
+
+### `make-hc.py`
+
+````python
+# High-cardinality variant of a synthetic log: 20k distinct classes, ~100k distinct signatures,
+# entry/exit pairs keep the same name, 5% of USER_DEBUG messages carry non-ASCII text.
+import random, sys
+random.seed(7)
+src, dst = sys.argv[1], sys.argv[2]
+stack = []
+uni = ['ü', 'é', '日本語', 'Ω', '—']
+with open(src, encoding='utf-8') as fi, open(dst, 'w', encoding='utf-8') as fo:
+    for line in fi:
+        p = line.rstrip('\n').split('|')
+        if len(p) > 4 and p[1] in ('METHOD_ENTRY', 'CONSTRUCTOR_ENTRY'):
+            c = random.randrange(20000); m = random.randrange(5)
+            sig = p[4]
+            dot = sig.find('.')
+            name = f"ns.MyClass{c}.method{m}{sig[sig.find('('):] if '(' in sig else '()'}"
+            p[4] = name; stack.append(name)
+        elif len(p) > 4 and p[1] in ('METHOD_EXIT', 'CONSTRUCTOR_EXIT'):
+            if stack: p[4] = stack.pop()
+        elif len(p) > 4 and p[1] == 'USER_DEBUG' and random.random() < 0.05:
+            p[4] = p[4] + ' ' + random.choice(uni) * 3
+        fo.write('|'.join(p) + '\n')
+````
+
+### `hcbench.ts`
+
+````ts
+import { readFileSync } from 'node:fs';
+import { parse } from '../../src/index.js';
+// @ts-expect-error js
+import { scanV5 } from './scan-v5.mjs';
+const gc = (globalThis as any).gc as () => void;
+function bench(label: string, fn: () => unknown, runs = 5) { fn(); const ts: number[] = []; let heap = 0, keep: unknown; for (let r = 0; r < runs; r++) { keep = null; gc(); const b = process.memoryUsage(); const t = performance.now(); keep = fn(); ts.push(performance.now() - t); gc(); const a = process.memoryUsage(); heap = a.heapUsed + a.arrayBuffers - b.heapUsed - b.arrayBuffers; } void keep; ts.sort((x, y) => x - y); console.log(label.padEnd(46), `${ts[runs >> 1]!.toFixed(0)} ms`.padStart(8), `${(heap / 1e6).toFixed(0)} MB`.padStart(8)); }
+for (const f of process.argv.slice(3)) {
+  const path = `${process.argv[2]}/${f}`, str = readFileSync(path, 'utf8'), bytes = new Uint8Array(readFileSync(path));
+  const s = scanV5(bytes);
+  console.log(`== ${f}: ${(bytes.length / 1e6).toFixed(0)} MB, rows ${s.n}, interned strings ${s.nStr}, string ${str.length === bytes.length ? 'one-byte' : 'TWO-BYTE (non-Latin-1 present)'}`);
+  bench('TODAY parse(string)', () => parse(str), 3);
+  bench('v5 scan(bytes)', () => scanV5(bytes));
+  bench('v5 scan(bytes), no byte verify', () => scanV5(bytes, { verify: false }));
+}
+````
+
+### `par-stage1.mjs`
+
+````js
+// Stage 1 of a parallel scan (simdjson-style): per line, find type id, timestamp, line number,
+// label byte range + hash, and the numbers stage 2 needs (heap bytes, exit rows). No tree.
+import { readFileSync } from 'node:fs';
+const table = JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'));
+export const names = ['<root>', ...table.map((r) => r.name)];
+const N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+const HB = 4096, H_TAB = new Int16Array(HB).fill(-1), NAME_HASH = new Int32Array(N), NAME_LEN = new Uint8Array(N);
+for (let i = 1; i < N; i++) { let h = 0; for (const ch of names[i]) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0; NAME_HASH[i] = h; NAME_LEN[i] = names[i].length; let k = h & (HB - 1); while (H_TAB[k] !== -1) k = (k + 1) & (HB - 1); H_TAB[k] = i; }
+const LABEL_FIELD = new Int8Array(N).fill(-1);
+for (const [n, f] of [['METHOD_ENTRY', 4], ['CONSTRUCTOR_ENTRY', 5], ['SYSTEM_METHOD_ENTRY', 3], ['CODE_UNIT_STARTED', 4], ['VF_APEX_CALL_START', 3]]) LABEL_FIELD[idOf.get(n)] = f;
+const NUM_TAIL = new Uint8Array(N); NUM_TAIL[idOf.get('HEAP_ALLOCATE')] = 1; NUM_TAIL[idOf.get('SOQL_EXECUTE_END')] = 1; NUM_TAIL[idOf.get('SOSL_EXECUTE_END')] = 1;
+export const WRAP = 0xffff;
+export function stage1(src, from, to) {
+  let cap = Math.ceil((to - from) / 100) + 1024, n = 0;
+  let start = new Uint32Array(cap), type = new Uint16Array(cap), ts = new Float64Array(cap), ln = new Int32Array(cap), la = new Uint32Array(cap), lb = new Uint32Array(cap), lh = new Int32Array(cap), num = new Float64Array(cap);
+  const g = (a, m) => { const b = new a.constructor(m); b.set(a); return b; };
+  let pos = from;
+  while (pos < to) {
+    let eol = src.indexOf(10, pos); if (eol < 0 || eol > to) eol = to;
+    let lineEnd = eol; if (lineEnd > pos && src[lineEnd - 1] === 13) lineEnd--;
+    if (n === cap) { cap *= 2; start = g(start, cap); type = g(type, cap); ts = g(ts, cap); ln = g(ln, cap); la = g(la, cap); lb = g(lb, cap); lh = g(lh, cap); num = g(num, cap); }
+    if (src[pos + 2] === 58 && src[pos + 5] === 58) {
+      let i = pos + 8; while (i < lineEnd && src[i] !== 40) i++; i++;
+      let t = 0, c = 0; while ((c = src[i]) !== 41 && i < lineEnd) { t = t * 10 + (c - 48); i++; }
+      i += 2; const t0 = i;
+      let h = 0; while (i < lineEnd && (c = src[i]) !== 124) { h = (Math.imul(h, 31) + c) | 0; i++; }
+      let k = h & (HB - 1), id = 0;
+      for (let e; (e = H_TAB[k]) !== -1; k = (k + 1) & (HB - 1)) if (NAME_HASH[e] === h && NAME_LEN[e] === i - t0) { id = e; break; }
+      if (id === 0) { pos = eol + 1; continue; }
+      let l = -2; if (src[i] === 124 && src[i + 1] === 91) { let j = i + 2; if (src[j] === 69) l = -1; else { l = 0; while ((c = src[j]) >= 48 && c <= 57) { l = l * 10 + (c - 48); j++; } } }
+      const e = n++; start[e] = pos; type[e] = id; ts[e] = t; ln[e] = l; la[e] = 0; lb[e] = 0;
+      const lf = LABEL_FIELD[id];
+      if (lf > 0) { let f = 2, a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && src[a] !== 124) a++; f++; } a++; let b = a, hh = 0; while (b < lineEnd && (c = src[b]) !== 124) { hh = (Math.imul(hh, 31) + c) | 0; b++; } la[e] = a; lb[e] = b; lh[e] = hh; }
+      if (NUM_TAIL[id]) { let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let v = 0, neg = false; j++; if (src[j] === 45) { neg = true; j++; } while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { v = v * 10 + (c - 48); j++; } num[e] = neg ? -v : v; }
+    } else { const e = n++; start[e] = pos; type[e] = WRAP; }
+    pos = eol + 1;
+  }
+  return { n, start, type, ts, ln, la, lb, lh, num };
+}
+````
+
+### `par-worker.mjs`
+
+````js
+import { parentPort } from 'node:worker_threads';
+import { stage1 } from './par-stage1.mjs';
+parentPort.on('message', ({ sab, from, to }) => {
+  const r = stage1(new Uint8Array(sab), from, to);
+  const arrs = [r.start, r.type, r.ts, r.ln, r.la, r.lb, r.lh, r.num];
+  parentPort.postMessage({ ...r }, arrs.map((a) => a.buffer));
+});
+````
+
+### `par-bench.mjs`
+
+````js
+// Parallel stage 1 on W workers + sequential stage 2 (tree, rollups, interning) on the main thread.
+import { readFileSync } from 'node:fs';
+import { Worker } from 'node:worker_threads';
+import { stage1, WRAP, names } from './par-stage1.mjs';
+import { scanV5 } from './scan-v5.mjs';
+const table = JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'));
+const N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+const PURE_EXIT = new Uint8Array(N), HAS_EXITS = new Uint8Array(N), ACCEPTS = new Uint8Array(N), EXIT_MATCH = new Uint8Array(N * N);
+table.forEach((r, i) => { const t = i + 1; PURE_EXIT[t] = r.isExit && !(r.exitTypes?.length) ? 1 : 0; ACCEPTS[t] = r.acceptsText ? 1 : 0; for (const x of r.exitTypes ?? []) { EXIT_MATCH[t * N + idOf.get(x)] = 1; HAS_EXITS[t] = 1; } });
+const HEAP = idOf.get('HEAP_ALLOCATE');
+
+function stage2(src, parts) {
+  let total = 0; for (const p of parts) total += p.n;
+  const type = new Uint16Array(total + 1), start = new Uint32Array(total + 1), ts = new Float64Array(total + 1), exitTs = new Float64Array(total + 1), parent = new Int32Array(total + 1), subEnd = new Uint32Array(total + 1), depth = new Uint16Array(total + 1), lineNo = new Int32Array(total + 1), label = new Int32Array(total + 1), selfDur = new Float64Array(total + 1), heap = new Float64Array(total + 1), peak = new Float64Array(total + 1);
+  let IB = 1 << 14, iTab = new Int32Array(IB).fill(-1), sCap = 1 << 12, nStr = 0, sS = new Uint32Array(sCap), sE = new Uint32Array(sCap), sH = new Int32Array(sCap);
+  const stack = new Int32Array(16384); let sp = 1, n = 1, last = -1, running = 0; stack[0] = 0; parent[0] = -1;
+  for (const P of parts) {
+    for (let r = 0; r < P.n; r++) {
+      const id = P.type[r];
+      if (id === WRAP) continue; // wrapped text: would extend `last` when ACCEPTS
+      const t = P.ts[r], ln = P.ln[r];
+      if (PURE_EXIT[id]) {
+        let m = sp - 1; for (; m > 0; m--) { const f = stack[m], fl = lineNo[f]; if (EXIT_MATCH[type[f] * N + id] && (ln === fl || ln < 0 || fl < 0)) break; }
+        if (m > 0) { while (sp > m) { const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; } last = -1; continue; }
+      }
+      const e = n++; const p = stack[sp - 1];
+      type[e] = id; start[e] = P.start[r]; ts[e] = t; lineNo[e] = ln; parent[e] = p; depth[e] = sp - 1; subEnd[e] = e + 1; label[e] = -1;
+      const a = P.la[r], b = P.lb[r];
+      if (b > a) {
+        const hh = P.lh[r]; let kk = hh & (IB - 1), sid = -1;
+        for (let s2; (s2 = iTab[kk]) !== -1; kk = (kk + 1) & (IB - 1)) if (sH[s2] === hh && sE[s2] - sS[s2] === b - a) { let x = sS[s2], y = a; while (y < b && src[y] === src[x]) { x++; y++; } if (y === b) { sid = s2; break; } }
+        if (sid < 0) { if (nStr === sCap) { sCap *= 2; const g = (q) => { const z = new q.constructor(sCap); z.set(q); return z; }; sS = g(sS); sE = g(sE); sH = g(sH); } sid = nStr++; sS[sid] = a; sE[sid] = b; sH[sid] = hh; iTab[kk] = sid; if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = sH[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } } }
+        label[e] = sid;
+      }
+      if (id === HEAP) { const v = P.num[r]; heap[e] = v; running += v; if (running < 0) running = 0; peak[e] = running; }
+      if (HAS_EXITS[id]) stack[sp++] = e; else { heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; }
+      last = e;
+    }
+  }
+  return { n, nStr, ts, exitTs, parent, selfDur };
+}
+
+function splits(src, w) { const out = [0]; for (let k = 1; k < w; k++) { let p = Math.floor((src.length * k) / w); p = src.indexOf(10, p) + 1; out.push(p); } out.push(src.length); return out; }
+function time(fn, runs = 7) { const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+async function timeAsync(fn, runs = 7) { await fn(); await fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); await fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+
+const dir = process.argv[2];
+const pool = Array.from({ length: 4 }, () => new Worker(new URL('./par-worker.mjs', import.meta.url)));
+for (const f of process.argv.slice(3)) {
+  const buf = readFileSync(`${dir}/${f}`); const sab = new SharedArrayBuffer(buf.length); const src = new Uint8Array(sab); src.set(buf);
+  const plain = new Uint8Array(buf);
+  console.log(`== ${f} (${(buf.length / 1e6).toFixed(0)} MB)`);
+  console.log(`v5 single-thread scan: ${time(() => scanV5(plain)).toFixed(0)} ms`);
+  const s1only = time(() => stage1(src, 0, src.length)); 
+  const one = [stage1(src, 0, src.length)];
+  const s2only = time(() => stage2(src, one));
+  console.log(`stage 1 alone (1 thread): ${s1only.toFixed(0)} ms; stage 2 alone: ${s2only.toFixed(0)} ms`);
+  for (const W of [2, 3, 4]) {
+    const run = async () => { const sp = splits(src, W); const parts = await Promise.all(Array.from({ length: W }, (_, k) => new Promise((ok) => { pool[k].once('message', ok); pool[k].postMessage({ sab, from: sp[k], to: sp[k + 1] }); }))); return stage2(src, parts); };
+    const r = await run(); const ref = scanV5(plain);
+    console.log(`parallel W=${W}: ${(await timeAsync(run)).toFixed(0)} ms total  (rows ${r.n} vs v5 ${ref.n}, strings ${r.nStr})`);
+  }
+}
+await Promise.all(pool.map((w) => w.terminate()));
+````
+
+### `layout.mjs`
+
+````js
+// Struct-of-arrays (one typed array per field) vs array-of-structs (Lezer/oxc style: fields
+// interleaved in one buffer), on the real v5 rows: write cost, flame-chart read, tree walk.
+import { readFileSync } from 'node:fs';
+import { scanV5 } from './scan-v5.mjs';
+const s = scanV5(new Uint8Array(readFileSync(process.argv[2])));
+const n = s.n;
+function time(fn, runs = 15) { for (let w = 0; w < 3; w++) fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1].toFixed(2).padStart(7) + ' ms'; }
+// AoS: 8 x i32 per row (type, start, parent, subEnd, depth, lineNo, label, cslot) + 4 x f64 per row (ts, exitTs, selfDur, heap)
+const I = 8, F = 4;
+const writeSoA = () => { const c = { type: new Uint16Array(n), start: new Uint32Array(n), parent: new Int32Array(n), subEnd: new Uint32Array(n), depth: new Uint16Array(n), lineNo: new Int32Array(n), label: new Int32Array(n), cslot: new Int32Array(n), ts: new Float64Array(n), exitTs: new Float64Array(n), selfDur: new Float64Array(n), heap: new Float64Array(n) };
+  for (let e = 0; e < n; e++) { c.type[e] = s.type[e]; c.start[e] = s.start[e]; c.parent[e] = s.parent[e]; c.subEnd[e] = s.subEnd[e]; c.depth[e] = s.depth[e]; c.lineNo[e] = s.lineNo[e]; c.label[e] = s.label[e]; c.cslot[e] = s.cslot[e]; c.ts[e] = s.ts[e]; c.exitTs[e] = s.exitTs[e]; c.selfDur[e] = s.selfDur[e]; c.heap[e] = s.heap[e]; } return c; };
+const writeAoS = () => { const iv = new Int32Array(n * I), fv = new Float64Array(n * F);
+  for (let e = 0; e < n; e++) { const b = e * I, f = e * F; iv[b] = s.type[e]; iv[b + 1] = s.start[e]; iv[b + 2] = s.parent[e]; iv[b + 3] = s.subEnd[e]; iv[b + 4] = s.depth[e]; iv[b + 5] = s.lineNo[e]; iv[b + 6] = s.label[e]; iv[b + 7] = s.cslot[e]; fv[f] = s.ts[e]; fv[f + 1] = s.exitTs[e]; fv[f + 2] = s.selfDur[e]; fv[f + 3] = s.heap[e]; } return { iv, fv }; };
+const soa = writeSoA(), aos = writeAoS();
+console.log(`rows ${n}`);
+console.log('write all fields      SoA', time(writeSoA), ' AoS', time(writeAoS));
+console.log('flame chart read      SoA', time(() => { let x = 0; for (let e = 0; e < n; e++) if (soa.exitTs[e] > 0) x += soa.ts[e] + soa.exitTs[e] + soa.depth[e] + soa.type[e]; return x; }),
+  ' AoS', time(() => { let x = 0; const { iv, fv } = aos; for (let e = 0; e < n; e++) { const f = e * F; if (fv[f + 1] > 0) x += fv[f] + fv[f + 1] + iv[e * I + 4] + iv[e * I]; } return x; }));
+console.log('one column (exitTs)   SoA', time(() => { let x = 0; for (let e = 0; e < n; e++) x += soa.exitTs[e]; return x; }), ' AoS', time(() => { let x = 0; const fv = aos.fv; for (let e = 0; e < n; e++) x += fv[e * F + 1]; return x; }));
+console.log('tree walk (children)  SoA', time(() => { let x = 0; for (let e = 0; e < n; e++) for (let c = e + 1; c < soa.subEnd[e]; c = soa.subEnd[c]) x += soa.label[c]; return x; }),
+  ' AoS', time(() => { let x = 0; const iv = aos.iv; for (let e = 0; e < n; e++) for (let c = e + 1; c < iv[e * I + 3]; c = iv[c * I + 3]) x += iv[c * I + 6]; return x; }));
+console.log('bytes                 SoA', (Object.values(soa).reduce((a, v) => a + v.byteLength, 0) / 1e6).toFixed(1), 'MB  AoS', ((aos.iv.byteLength + aos.fv.byteLength) / 1e6).toFixed(1), 'MB (AoS cannot use narrow 16-bit fields without packing)');
+````
+
+### `nl.mjs`
+
+````js
+// Finding line ends: Uint8Array.indexOf (V8 scalar builtin) vs Node Buffer.indexOf (memchr) vs a JS loop vs String.indexOf.
+import { readFileSync } from 'node:fs';
+const buf = readFileSync(process.argv[2]); const u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.length); const str = buf.toString('latin1');
+function time(fn, runs = 9) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1].toFixed(1).padStart(6) + ' ms'; }
+console.log('Uint8Array.indexOf(10)', time(() => { let c = 0, p = 0; while ((p = u8.indexOf(10, p) + 1) > 0) c++; return c; }));
+console.log('Buffer.indexOf(10)    ', time(() => { let c = 0, p = 0; while ((p = buf.indexOf(10, p) + 1) > 0) c++; return c; }));
+console.log('JS byte loop          ', time(() => { let c = 0; const n = u8.length; for (let i = 0; i < n; i++) if (u8[i] === 10) c++; return c; }));
+console.log('string.indexOf("\\n")  ', time(() => { let c = 0, p = 0; while ((p = str.indexOf('\n', p) + 1) > 0) c++; return c; }));
+````
+
+### `swar.mjs`
+
+````js
+// SWAR newline search: 4 bytes at a time on a Uint32Array view with the has-zero-byte trick.
+import { readFileSync } from 'node:fs';
+const buf = readFileSync(process.argv[2]); const u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
+const n = u8.length, w = new Uint32Array(u8.buffer, u8.byteOffset, n >>> 2);
+function nextNl(p) {
+  while (p < n && (p & 3) !== 0) { if (u8[p] === 10) return p; p++; }
+  const kEnd = n >>> 2; let k = p >>> 2;
+  for (; k < kEnd; k++) { const x = (w[k] ^ 0x0a0a0a0a) | 0; if ((((x - 0x01010101) & ~x) & 0x80808080) !== 0) break; }
+  const q = k << 2; if (q > p) p = q; while (p < n) { if (u8[p] === 10) return p; p++; } return -1;
+}
+const run = () => { let c = 0, p = 0; while ((p = nextNl(p)) >= 0) { c++; p++; } return c; };
+let t = performance.now(); console.log('byteOffset', u8.byteOffset, 'lines', run(), (performance.now() - t).toFixed(1), 'ms first');
+const ts = []; for (let r = 0; r < 7; r++) { t = performance.now(); run(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); console.log('SWAR median', ts[3].toFixed(1), 'ms');
+````
+
+### `wasm/stage1.c`
+
+````c
+// Stage-1 scanner in C, identical logic to par-stage1.mjs: per line -> start, type id, ts, line
+// number, label range + hash, tail number. Built native (upper bound) and as WASM (with/without SIMD).
+#include <stdint.h>
+#ifdef __wasm_simd128__
+#include <wasm_simd128.h>
+#endif
+#define HB 4096
+int16_t H_TAB[HB]; int32_t NAME_HASH[512]; uint8_t NAME_LEN[512]; int8_t LABEL_FIELD[512]; uint8_t NUM_TAIL[512];
+
+static inline uint32_t next_nl(const uint8_t *s, uint32_t p, uint32_t n) {
+#ifdef __wasm_simd128__
+  v128_t nl = wasm_i8x16_splat(10);
+  while (p + 16 <= n) {
+    v128_t v = wasm_v128_load(s + p);
+    uint32_t m = wasm_i8x16_bitmask(wasm_i8x16_eq(v, nl));
+    if (m) return p + __builtin_ctz(m);
+    p += 16;
+  }
+#endif
+  while (p < n) { if (s[p] == 10) return p; p++; }
+  return n;
+}
+
+uint32_t stage1(const uint8_t *s, uint32_t from, uint32_t to, uint32_t *start, uint16_t *type, double *ts, int32_t *ln,
+                uint32_t *la, uint32_t *lb, int32_t *lh, double *num) {
+  uint32_t n = 0, pos = from;
+  while (pos < to) {
+    uint32_t eol = next_nl(s, pos, to), lineEnd = eol;
+    if (lineEnd > pos && s[lineEnd - 1] == 13) lineEnd--;
+    if (s[pos + 2] == 58 && s[pos + 5] == 58) {
+      uint32_t i = pos + 8; while (i < lineEnd && s[i] != 40) i++; i++;
+      double t = 0; uint8_t c; while ((c = s[i]) != 41 && i < lineEnd) { t = t * 10 + (c - 48); i++; }
+      i += 2; uint32_t t0 = i; int32_t h = 0;
+      while (i < lineEnd && (c = s[i]) != 124) { h = (int32_t)((uint32_t)h * 31u + c); i++; }
+      int k = h & (HB - 1), id = 0;
+      for (int e; (e = H_TAB[k]) != -1; k = (k + 1) & (HB - 1)) if (NAME_HASH[e] == h && NAME_LEN[e] == i - t0) { id = e; break; }
+      if (id == 0) { pos = eol + 1; continue; }
+      int32_t l = -2;
+      if (s[i] == 124 && s[i + 1] == 91) { uint32_t j = i + 2; if (s[j] == 69) l = -1; else { l = 0; while ((c = s[j]) >= 48 && c <= 57) { l = l * 10 + (c - 48); j++; } } }
+      uint32_t e = n++; start[e] = pos; type[e] = id; ts[e] = t; ln[e] = l; la[e] = 0; lb[e] = 0;
+      int lf = LABEL_FIELD[id];
+      if (lf > 0) { int f = 2; uint32_t a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && s[a] != 124) a++; f++; } a++; uint32_t b = a; int32_t hh = 0; while (b < lineEnd && (c = s[b]) != 124) { hh = (int32_t)((uint32_t)hh * 31u + c); b++; } la[e] = a; lb[e] = b; lh[e] = hh; }
+      if (NUM_TAIL[id]) { uint32_t j = lineEnd - 1; while (j > i && s[j] != 58) j--; double v = 0; int neg = 0; j++; if (s[j] == 45) { neg = 1; j++; } while (j < lineEnd && (c = s[j]) >= 48 && c <= 57) { v = v * 10 + (c - 48); j++; } num[e] = neg ? -v : v; }
+    } else { uint32_t e = n++; start[e] = pos; type[e] = 0xffff; }
+    pos = eol + 1;
+  }
+  return n;
+}
+#ifdef NATIVE_MAIN
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+int main(int argc, char **argv) {
+  FILE *f = fopen(argv[1], "rb"); fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+  uint8_t *s = malloc(n + 64); fread(s, 1, n, f); fclose(f);
+  // type table from a file of "name hash len labelField numTail" lines written by the JS driver
+  memset(H_TAB, 0xff, sizeof H_TAB); FILE *tf = fopen(argv[2], "r"); int id, hsh, len, lf, nt;
+  while (fscanf(tf, "%d %d %d %d %d", &id, &hsh, &len, &lf, &nt) == 5) { NAME_HASH[id] = hsh; NAME_LEN[id] = len; LABEL_FIELD[id] = lf; NUM_TAIL[id] = nt; int k = hsh & (HB - 1); while (H_TAB[k] != -1) k = (k + 1) & (HB - 1); H_TAB[k] = id; }
+  uint32_t cap = n / 40 + 1024;
+  uint32_t *st = malloc(cap * 4), *la = malloc(cap * 4), *lb = malloc(cap * 4); uint16_t *ty = malloc(cap * 2); double *ts = malloc(cap * 8), *num = malloc(cap * 8); int32_t *ln = malloc(cap * 4), *lh = malloc(cap * 4);
+  double best[9]; uint32_t lines = 0;
+  for (int r = 0; r < 9; r++) { struct timespec a, b; clock_gettime(CLOCK_MONOTONIC, &a); lines = stage1(s, 0, n, st, ty, ts, ln, la, lb, lh, num); clock_gettime(CLOCK_MONOTONIC, &b); best[r] = (b.tv_sec - a.tv_sec) * 1e3 + (b.tv_nsec - a.tv_nsec) / 1e6; }
+  for (int i = 0; i < 9; i++) for (int j = i + 1; j < 9; j++) if (best[j] < best[i]) { double t = best[i]; best[i] = best[j]; best[j] = t; }
+  printf("native C -O3: %u lines, median %.1f ms\n", lines, best[4]);
+}
+#endif
+````
+
+### `wasm/wasm-bench.mjs`
+
+````js
+// JS stage 1 vs WASM stage 1 (scalar and SIMD) vs native C, same logic. WASM time includes copying
+// the input into linear memory; outputs are read in place through typed-array views.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { stage1 } from '../par-stage1.mjs';
+const table = JSON.parse(readFileSync(new URL('../type-table.json', import.meta.url), 'utf8'));
+const names = ['<root>', ...table.map((r) => r.name)];
+const LABEL = { METHOD_ENTRY: 4, CONSTRUCTOR_ENTRY: 5, SYSTEM_METHOD_ENTRY: 3, CODE_UNIT_STARTED: 4, VF_APEX_CALL_START: 3 }, TAIL = new Set(['HEAP_ALLOCATE', 'SOQL_EXECUTE_END', 'SOSL_EXECUTE_END']);
+const rows = names.map((nm, id) => { let h = 0; for (const ch of nm) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0; return [id, h, nm.length, LABEL[nm] ?? -1, TAIL.has(nm) ? 1 : 0]; }).slice(1);
+writeFileSync('types.txt', rows.map((r) => r.join(' ')).join('\n'));
+function time(fn, runs = 9) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+async function load(file) {
+  const { instance } = await WebAssembly.instantiate(readFileSync(file));
+  const ex = instance.exports, mem = ex.memory;
+  const H = new Int16Array(mem.buffer, ex.H_TAB.value, 4096); H.fill(-1);
+  const NH = new Int32Array(mem.buffer, ex.NAME_HASH.value, 512), NL = new Uint8Array(mem.buffer, ex.NAME_LEN.value, 512), LF = new Int8Array(mem.buffer, ex.LABEL_FIELD.value, 512), NT = new Uint8Array(mem.buffer, ex.NUM_TAIL.value, 512);
+  for (const [id, h, len, lf, nt] of rows) { NH[id] = h; NL[id] = len; LF[id] = lf; NT[id] = nt; let k = h & 4095; while (H[k] !== -1) k = (k + 1) & 4095; H[k] = id; }
+  return ex;
+}
+const dir = process.argv[2];
+const exScalar = await load('stage1.wasm'), exSimd = await load('stage1-simd.wasm');
+for (const f of process.argv.slice(3)) {
+  const bytes = new Uint8Array(readFileSync(`${dir}/${f}`)); const n = bytes.length;
+  console.log(`== ${f} (${(n / 1e6).toFixed(0)} MB)`);
+  console.log(`JS stage 1:                 ${time(() => stage1(bytes, 0, n)).toFixed(0)} ms (${stage1(bytes, 0, n).n} lines)`);
+  for (const [label, ex] of [['WASM scalar', exScalar], ['WASM SIMD128', exSimd]]) {
+    const mem = ex.memory; const base = (ex.__heap_base.value + 15) & ~15; const cap = Math.ceil(n / 40) + 1024;
+    const need = base + n + 64 + cap * (4 + 2 + 8 + 4 + 4 + 4 + 4 + 8) + 64 * 8;
+    if (mem.buffer.byteLength < need) mem.grow(Math.ceil((need - mem.buffer.byteLength) / 65536));
+    let off = base + n + 64; const al = (a) => (off = (off + 7) & ~7, off += a, off - a);
+    const pS = al(cap * 4), pT = al(cap * 2), pTs = al(cap * 8), pLn = al(cap * 4), pLa = al(cap * 4), pLb = al(cap * 4), pLh = al(cap * 4), pNum = al(cap * 8);
+    const copyAndScan = () => { new Uint8Array(mem.buffer, base, n).set(bytes); return ex.stage1(base, base, base + n, pS, pT, pTs, pLn, pLa, pLb, pLh, pNum); };
+    const scanOnly = () => ex.stage1(base, base, base + n, pS, pT, pTs, pLn, pLa, pLb, pLh, pNum);
+    console.log(`${label.padEnd(13)} copy+scan: ${time(copyAndScan).toFixed(0)} ms; scan only ${time(scanOnly).toFixed(0)} ms (${copyAndScan()} lines)`);
+  }
+  console.log(execFileSync('./stage1-native', [`${dir}/${f}`, 'types.txt']).toString().trim());
+}
+````
+
+### `wasm/full.c`
+
+````c
+// Full single pass in C (the v5 algorithm): scan + tree + exit matching + interning (label, ns once
+// per label) + sparse counts + heap/peak + self time. Columns live in linear memory for JS to view.
+#include <stdint.h>
+#ifdef __wasm_simd128__
+#include <wasm_simd128.h>
+#endif
+#define HB 4096
+#define NT 512
+#define NC 8
+int16_t H_TAB[HB]; int32_t NAME_HASH[NT]; uint8_t NAME_LEN[NT]; int8_t LABEL_FIELD[NT];
+uint8_t PURE_EXIT[NT], NEXT_IS_EXIT[NT], ACCEPTS[NT], HAS_EXITS[NT]; uint8_t EXIT_MATCH[NT * NT];
+int8_t OWN_COUNT[NT], ROWS_FROM_EXIT[NT]; int32_t HEAP_ID, EXEC_ID;
+
+// column pointers, set by JS before scan
+uint16_t *type; uint32_t *start; double *ts, *exitTs, *selfDur, *heap, *peak; int32_t *parent, *lineNo, *label, *ns, *cslot; uint32_t *subEnd; uint16_t *depth;
+int32_t *pool; uint32_t *strStart, *strEnd; int32_t *strHash, *iTab, *nsOfLabel; uint32_t IB; int32_t stack[16384];
+uint32_t nRows, nStr, nSlots;
+
+static inline uint32_t next_nl(const uint8_t *s, uint32_t p, uint32_t n) {
+#ifdef __wasm_simd128__
+  v128_t nl = wasm_i8x16_splat(10);
+  while (p + 16 <= n) { uint32_t m = wasm_i8x16_bitmask(wasm_i8x16_eq(wasm_v128_load(s + p), nl)); if (m) return p + __builtin_ctz(m); p += 16; }
+#endif
+  while (p < n) { if (s[p] == 10) return p; p++; } return n;
+}
+static inline int32_t slot(int32_t e) { int32_t k = cslot[e]; if (k < 0) { k = cslot[e] = nSlots++; for (int q = 0; q < NC; q++) pool[k * NC + q] = 0; } return k; }
+static inline int32_t intern(const uint8_t *s, uint32_t a, uint32_t b, int32_t h) {
+  uint32_t k = h & (IB - 1);
+  for (int32_t e; (e = iTab[k]) != -1; k = (k + 1) & (IB - 1)) {
+    if (strHash[e] == h && strEnd[e] - strStart[e] == b - a) { uint32_t x = strStart[e], y = a; while (y < b && s[y] == s[x]) { x++; y++; } if (y == b) return e; }
+  }
+  int32_t id = nStr++; strStart[id] = a; strEnd[id] = b; strHash[id] = h; iTab[k] = id; nsOfLabel[id] = -2; return id; // IB sized by JS for the worst case
+}
+static inline void roll(int32_t p, int32_t e) {
+  int32_t ck = cslot[e]; if (ck >= 0) { int32_t pk = slot(p); for (int q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; }
+  heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+}
+static inline void close_frame(int32_t e, double t) { exitTs[e] = t; double tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = nRows; int32_t p = parent[e]; selfDur[p] -= tot; roll(p, e); }
+
+uint32_t parse(const uint8_t *s, uint32_t len) {
+  uint32_t n = 1, sp = 0, pos = 0; int32_t last = -1; double running = 0;
+  nStr = 0; nSlots = 0; nRows = 1;
+  type[0] = 0; parent[0] = -1; label[0] = -1; ns[0] = -1; cslot[0] = -1; selfDur[0] = 0; heap[0] = 0; peak[0] = 0; stack[sp++] = 0;
+  while (pos < len) {
+    uint32_t eol = next_nl(s, pos, len), lineEnd = eol; if (lineEnd > pos && s[lineEnd - 1] == 13) lineEnd--;
+    if (s[pos + 2] == 58 && s[pos + 5] == 58) {
+      uint32_t i = pos + 8; while (i < lineEnd && s[i] != 40) i++; i++;
+      double t = 0; uint8_t c; while ((c = s[i]) != 41 && i < lineEnd) { t = t * 10 + (c - 48); i++; }
+      i += 2; uint32_t t0 = i; int32_t h = 0;
+      while (i < lineEnd && (c = s[i]) != 124) { h = (int32_t)((uint32_t)h * 31u + c); i++; }
+      int k = h & (HB - 1), id = 0;
+      for (int e; (e = H_TAB[k]) != -1; k = (k + 1) & (HB - 1)) if (NAME_HASH[e] == h && NAME_LEN[e] == i - t0) { id = e; break; }
+      if (id == 0) { pos = eol + 1; continue; }
+      int32_t ln = -2; if (s[i] == 124 && s[i + 1] == 91) { uint32_t j = i + 2; if (s[j] == 69) ln = -1; else { ln = 0; while ((c = s[j]) >= 48 && c <= 57) { ln = ln * 10 + (c - 48); j++; } } }
+      if (last >= 0 && NEXT_IS_EXIT[type[last]] && exitTs[last] == 0) exitTs[last] = t;
+      if (PURE_EXIT[id]) {
+        int m = (int)sp - 1;
+        for (; m > 0; m--) { int32_t f = stack[m], fl = lineNo[f]; if (EXIT_MATCH[type[f] * NT + id] && (ln == fl || ln < 0 || fl < 0)) break; }
+        if (m > 0) {
+          int rs = ROWS_FROM_EXIT[id];
+          if (rs) { uint32_t j = lineEnd - 1; while (j > i && s[j] != 58) j--; int32_t rows = 0; j++; while (j < lineEnd && (c = s[j]) >= 48 && c <= 57) { rows = rows * 10 + (c - 48); j++; } pool[slot(stack[m]) * NC + rs - 1] += rows; }
+          nRows = n; while ((int)sp > m) close_frame(stack[--sp], t);
+          last = -1; pos = eol + 1; continue;
+        }
+      }
+      if (id == EXEC_ID) { nRows = n; while (sp > 1) close_frame(stack[--sp], t); }
+      uint32_t e = n++; int32_t p = stack[sp - 1];
+      type[e] = id; start[e] = pos; ts[e] = t; exitTs[e] = 0; lineNo[e] = ln; label[e] = -1; ns[e] = -1; cslot[e] = -1; selfDur[e] = 0; heap[e] = 0; peak[e] = 0;
+      parent[e] = p; depth[e] = sp - 1; subEnd[e] = e + 1;
+      int lf = LABEL_FIELD[id];
+      if (lf > 0) {
+        int f = 2; uint32_t a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && s[a] != 124) a++; f++; }
+        a++; uint32_t b = a; int32_t hh = 0; int32_t dot = -1;
+        while (b < lineEnd && (c = s[b]) != 124) { hh = (int32_t)((uint32_t)hh * 31u + c); if (c == 46 && dot < 0) dot = b; b++; }
+        if (a < b) {
+          int32_t sid = intern(s, a, b, hh); label[e] = sid;
+          if (nsOfLabel[sid] == -2) { int32_t nsid = -1; if (dot > (int32_t)a) { int32_t h2 = 0; for (uint32_t q = a; q < (uint32_t)dot; q++) h2 = (int32_t)((uint32_t)h2 * 31u + s[q]); nsid = intern(s, a, dot, h2); } nsOfLabel[sid] = nsid; }
+          ns[e] = nsOfLabel[sid];
+        }
+      }
+      int own = OWN_COUNT[id];
+      if (own) pool[slot(e) * NC + own - 1] = 1;
+      else if (id == HEAP_ID) { uint32_t j = lineEnd - 1; while (j > i && s[j] != 58) j--; double b = 0; int neg = 0; j++; if (s[j] == 45) { neg = 1; j++; } while (j < lineEnd && (c = s[j]) >= 48 && c <= 57) { b = b * 10 + (c - 48); j++; } if (neg) b = -b; heap[e] = b; running += b; if (running < 0) running = 0; peak[e] = running; }
+      if (HAS_EXITS[id]) stack[sp++] = e; else roll(p, e);
+      last = e;
+    }
+    pos = eol + 1;
+  }
+  nRows = n; double lastTs = n > 1 ? ts[n - 1] : 0;
+  while (sp > 1) close_frame(stack[--sp], lastTs);
+  return n;
+}
+````
+
+### `wasm/full-bench.mjs`
+
+````js
+// Full single pass: JS (v5) vs WASM (scalar, SIMD128). WASM time includes copying the input into
+// linear memory; JS reads the result columns in place through typed-array views (raw transfer).
+import { readFileSync } from 'node:fs';
+import { scanV5 } from '../scan-v5.mjs';
+const table = JSON.parse(readFileSync(new URL('../type-table.json', import.meta.url), 'utf8'));
+const names = ['<root>', ...table.map((r) => r.name)], N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+const NT = 512, NC = 8;
+function time(fn, runs = 9) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+async function load(file) {
+  const { instance } = await WebAssembly.instantiate(readFileSync(file)); const ex = instance.exports;
+  const u8 = (g, l) => new Uint8Array(ex.memory.buffer, ex[g].value, l), i8 = (g, l) => new Int8Array(ex.memory.buffer, ex[g].value, l);
+  const H = new Int16Array(ex.memory.buffer, ex.H_TAB.value, 4096); H.fill(-1);
+  const NH = new Int32Array(ex.memory.buffer, ex.NAME_HASH.value, NT), NL = u8('NAME_LEN', NT), LF = i8('LABEL_FIELD', NT), PE = u8('PURE_EXIT', NT), NX = u8('NEXT_IS_EXIT', NT), AC = u8('ACCEPTS', NT), HX = u8('HAS_EXITS', NT), EM = u8('EXIT_MATCH', NT * NT), OC = i8('OWN_COUNT', NT), RX = i8('ROWS_FROM_EXIT', NT);
+  for (let id = 1; id < N; id++) { const nm = names[id]; let h = 0; for (const ch of nm) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0; NH[id] = h; NL[id] = nm.length; let k = h & 4095; while (H[k] !== -1) k = (k + 1) & 4095; H[k] = id; }
+  table.forEach((r, i) => { const t = i + 1; PE[t] = r.isExit && !(r.exitTypes?.length) ? 1 : 0; NX[t] = r.nextLineIsExit ? 1 : 0; AC[t] = r.acceptsText ? 1 : 0; for (const x of r.exitTypes ?? []) { EM[t * NT + idOf.get(x)] = 1; HX[t] = 1; } });
+  for (const [n, f] of [['METHOD_ENTRY', 4], ['CONSTRUCTOR_ENTRY', 5], ['SYSTEM_METHOD_ENTRY', 3], ['CODE_UNIT_STARTED', 4], ['VF_APEX_CALL_START', 3]]) LF[idOf.get(n)] = f;
+  OC[idOf.get('SOQL_EXECUTE_BEGIN')] = 1; OC[idOf.get('DML_BEGIN')] = 2; OC[idOf.get('SOSL_EXECUTE_BEGIN')] = 3; OC[idOf.get('EXCEPTION_THROWN')] = 7;
+  RX[idOf.get('SOQL_EXECUTE_END')] = 4; RX[idOf.get('SOSL_EXECUTE_END')] = 6;
+  new Int32Array(ex.memory.buffer, ex.HEAP_ID.value, 1)[0] = idOf.get('HEAP_ALLOCATE'); new Int32Array(ex.memory.buffer, ex.EXEC_ID.value, 1)[0] = idOf.get('EXECUTION_STARTED');
+  return ex;
+}
+function setup(ex, n) {
+  const cap = Math.ceil(n / 60) + 4096, sCap = cap, IB = 1 << Math.ceil(Math.log2(sCap * 2 + 16));
+  const base = (ex.__heap_base.value + 63) & ~63; let off = base + n + 64;
+  const al = (bytes) => { off = (off + 7) & ~7; const p = off; off += bytes; return p; };
+  const L = { type: [al(cap * 2), Uint16Array], start: [al(cap * 4), Uint32Array], ts: [al(cap * 8), Float64Array], exitTs: [al(cap * 8), Float64Array], selfDur: [al(cap * 8), Float64Array], heap: [al(cap * 8), Float64Array], peak: [al(cap * 8), Float64Array], parent: [al(cap * 4), Int32Array], lineNo: [al(cap * 4), Int32Array], label: [al(cap * 4), Int32Array], ns: [al(cap * 4), Int32Array], cslot: [al(cap * 4), Int32Array], subEnd: [al(cap * 4), Uint32Array], depth: [al(cap * 2), Uint16Array], pool: [al(cap * NC * 4), Int32Array], strStart: [al(sCap * 4), Uint32Array], strEnd: [al(sCap * 4), Uint32Array], strHash: [al(sCap * 4), Int32Array], iTab: [al(IB * 4), Int32Array], nsOfLabel: [al(sCap * 4), Int32Array] };
+  if (ex.memory.buffer.byteLength < off) ex.memory.grow(Math.ceil((off - ex.memory.buffer.byteLength) / 65536));
+  const ptr = new Uint32Array(ex.memory.buffer);
+  for (const [k, [p]] of Object.entries(L)) ptr[ex[k].value >>> 2] = p;
+  ptr[ex.IB.value >>> 2] = IB;
+  return { base, L, IB };
+}
+const dir = process.argv[2];
+const variants = [['WASM scalar', await load('full.wasm')], ['WASM SIMD128', await load('full-simd.wasm')]];
+for (const f of process.argv.slice(3)) {
+  const bytes = new Uint8Array(readFileSync(`${dir}/${f}`)); const n = bytes.length; const ref = scanV5(bytes);
+  console.log(`== ${f} (${(n / 1e6).toFixed(0)} MB): JS v5 ${time(() => scanV5(bytes)).toFixed(0)} ms, rows ${ref.n}, strings ${ref.nStr}`);
+  for (const [label, ex] of variants) {
+    const { base, L, IB } = setup(ex, n);
+    const run = () => { new Uint8Array(ex.memory.buffer, base, n).set(bytes); new Int32Array(ex.memory.buffer, L.iTab[0], IB).fill(-1); return ex.parse(base, n); };
+    const rows = run(); const v = (k) => new L[k][1](ex.memory.buffer, L[k][0], rows);
+    const ts = v('ts'), exitTs = v('exitTs'), parent = v('parent'), selfDur = v('selfDur');
+    let same = rows === ref.n; for (let i = 1; same && i < rows; i++) if (ts[i] !== ref.ts[i] || exitTs[i] !== ref.exitTs[i] || parent[i] !== ref.parent[i] || Math.abs(selfDur[i] - ref.selfDur[i]) > 1e-6) { same = false; console.log('  first diff at row', i); }
+    const nStr = new Uint32Array(ex.memory.buffer, ex.nStr.value, 1)[0];
+    console.log(`${label.padEnd(13)} copy+parse ${time(run).toFixed(0)} ms; rows ${rows}, strings ${nStr}; same tree as JS: ${same}`);
+  }
+}
+````
+
+### `web/make-web.py`
+
+````python
+# Builds web/out/: index.html (JS v5 vs WASM SIMD in a browser), scan-v5.web.mjs, full-simd.wasm.
+# Run from bench/rewrite: python3 web/make-web.py <logsDir>; then cd web/out && node ../server.mjs
+# and open http://127.0.0.1:8766/ in Chromium (headless works); results are POSTed to result.txt.
+import sys, os, shutil
+logs = sys.argv[1]
+os.makedirs('web/out', exist_ok=True)
+tbl = open('type-table.json').read().strip()
+v5 = open('scan-v5.mjs').read().replace("import { readFileSync } from 'node:fs';\n", "").replace("JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'))", tbl)
+open('web/out/scan-v5.web.mjs', 'w').write(v5)
+fb = open('wasm/full-bench.mjs').read()
+helpers = fb[fb.index('const NT = 512'):fb.index('const dir = process.argv[2];')].replace("readFileSync(file)", "await (await fetch(file)).arrayBuffer()")
+page = """<!doctype html><meta charset=utf-8><body><script type=module>
+import { scanV5 } from './scan-v5.web.mjs';
+const table = %s;
+const names = ['<root>', ...table.map((r) => r.name)], N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+%s
+const out = [];
+try {
+  const ex = await load('full-simd.wasm');
+  for (const f of ['dev20.log', 'large100.log']) {
+    const bytes = new Uint8Array(await (await fetch(f)).arrayBuffer()); const n = bytes.length; const ref = scanV5(bytes);
+    out.push(`${f}: JS v5 ${time(() => scanV5(bytes)).toFixed(0)} ms (rows ${ref.n})`);
+    const { base, L, IB } = setup(ex, n);
+    const run = () => { new Uint8Array(ex.memory.buffer, base, n).set(bytes); new Int32Array(ex.memory.buffer, L.iTab[0], IB).fill(-1); return ex.parse(base, n); };
+    const rows = run(); out.push(`   WASM SIMD128 ${time(run).toFixed(0)} ms (rows ${rows})`);
+  }
+} catch (e) { out.push('ERROR ' + e.stack); }
+await fetch('/result', { method: 'POST', body: out.join('\\n') + '\\nDONE ' + navigator.userAgent });
+</script>""" % (tbl, helpers)
+open('web/out/index.html', 'w').write(page)
+shutil.copy('wasm/full-simd.wasm', 'web/out/full-simd.wasm')
+for f in ('dev20.log', 'large100.log'):
+    dst = 'web/out/' + f
+    if not os.path.exists(dst): os.symlink(os.path.abspath(os.path.join(logs, f)), dst)
+print('built web/out')
+````
+
+### `web/server.mjs`
+
+````js
+import { createServer } from 'node:http'; import { readFileSync, writeFileSync } from 'node:fs'; import { extname } from 'node:path';
+const types = { '.html': 'text/html', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.log': 'text/plain' };
+createServer((req, res) => {
+  if (req.method === 'POST') { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => { writeFileSync('result.txt', b); res.end('ok'); }); return; }
+  let body; const f = '.' + (req.url === '/' ? '/index.html' : req.url); try { body = readFileSync(f); } catch { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'content-type': types[extname(f)] ?? 'application/octet-stream' }); res.end(body);
+}).listen(8766);
+````
+
 ### Raw output of the final `bench.ts` run
 
 ````text
@@ -2087,4 +3198,14 @@ V3 scan + timeline from node objects (rect objects)          386.41 ms   150 MB
 V3 scan + timeline from columns (per-depth row arrays)       285.67 ms    46 MB
 one redraw, 1% window: scan all rect objects (today-style)    6.22 ms     0 MB
 one redraw, 1% window: binary search on columns               0.09 ms     0 MB
+````
+
+### Raw output: Chromium 141 (`web/make-web.py`)
+
+````text
+dev20.log: JS v5 136 ms (rows 144590)
+   WASM SIMD128 23 ms (rows 144590)
+large100.log: JS v5 327 ms (rows 510461)
+   WASM SIMD128 110 ms (rows 510461)
+DONE Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36
 ````
