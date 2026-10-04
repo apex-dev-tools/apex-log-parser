@@ -310,6 +310,35 @@ and frames-only. At 100 MB only 2,256 count slots were needed, for 358k frames.
 - **A storeless visitor** is only ~2.4× faster than a full v3 scan. Offer it for memory-bound
   one-shot queries, not as the main path.
 
+### 3.5 Parse to timeline: tree vs arrays
+
+`timeline.ts` measures what a timeline needs: one rect per frame (start, duration, depth, label),
+grouped by depth and in time order. Two runs; the ranges show the run-to-run spread.
+
+| 100 MB log | Time | Extra over the parse | Memory added |
+| --- | ---: | ---: | ---: |
+| **Today** parse | 2,943–3,144 ms | | 1,100 MB |
+| Today: parse, then a timeline from the tree (rect objects) | 3,190–3,388 ms | **+244–247 ms** | +35 MB |
+| **v3** scan | 279–341 ms | | ~50 MB |
+| v3: scan, then a timeline from node objects (rect objects) | 386–389 ms | +45–110 ms | +7 to +95 MB |
+| **v3: scan, then a timeline from the columns** (per-depth `Uint32Array`s of row ids) | 272–286 ms | **~0, within noise** | ~1.4 MB |
+| One redraw of a 1% window: test every rect object (today's style) | 6.2–7 ms | | |
+| **One redraw of a 1% window: binary search on the columns** | **0.09 ms** | | |
+
+At 20 MB: today 745–856 ms to parse and 833–873 ms to a timeline. v3 is 55–62 ms to a timeline
+from the columns, and 73–98 ms from node objects. A redraw is 1.06 ms against 0.05 ms.
+
+**What this means:**
+
+- **Before and after, to a drawn timeline at 100 MB:** ~3.2–3.4 s today against ~0.27–0.29 s
+  from the columns, so **~11–12× faster**. The parse alone goes from ~2.9–3.1 s to ~0.28–0.34 s.
+- **Building the timeline from the tree costs ~245 ms today.** From the columns it costs about
+  nothing: rows are already in time order, so building per-depth row arrays is one counting pass.
+  Node objects sit in between.
+- **Every pan and zoom gets ~70× cheaper.** Each redraw of a 1% window drops from ~6 ms to
+  ~0.1 ms, because a per-depth binary search finds the visible frames instead of testing every
+  rect. A frame at 60 fps has 16.7 ms, and today's redraw already takes a third of it before
+  drawing anything.
 ---
 
 ## 4. Prior art, and what to take from each
@@ -811,6 +840,7 @@ node bench/rewrite/monomorphism.mjs
 node bench/rewrite/shape.mjs bench/rewrite/logs      # row mix and rollup density
 node bench/rewrite/v3bench.mjs bench/rewrite/logs    # v2 vs v3, method stats, projection
 node bench/rewrite/shape2.mjs bench/rewrite/logs     # storeless visitor vs scans
+node --expose-gc --max-old-space-size=8000 --import tsx bench/rewrite/timeline.ts bench/rewrite/logs  # parse to timeline
 pnpm exec tsc --ignoreConfig --noEmit --skipLibCheck --strict --noUncheckedIndexedAccess \
   --target es2022 --module nodenext bench/rewrite/types-sketch.ts
 ```
@@ -1515,6 +1545,83 @@ for (const f of ['large100.log']) {
 }
 ````
 
+### `timeline.ts`
+
+````ts
+// Parse, then build what a timeline needs: one rect per frame (start, duration, depth, label),
+// grouped by depth, sorted by start. Today's tree vs v3 node objects vs v3 columns.
+import { readFileSync } from 'node:fs';
+import { parse } from '../../src/index.js';
+// @ts-expect-error plain JS
+import { scanV3 } from './scan-v3.mjs';
+// @ts-expect-error plain JS
+import { LogView } from './scan-v2.mjs';
+
+const gc = (globalThis as { gc?: () => void }).gc!;
+function bench(label: string, fn: () => unknown, runs = 5) {
+  fn(); fn(); const ts: number[] = []; let heap = 0, keep: unknown;
+  for (let r = 0; r < runs; r++) { keep = null; gc(); const b = process.memoryUsage(); const t = performance.now(); keep = fn(); ts.push(performance.now() - t); gc(); const a = process.memoryUsage(); heap = a.heapUsed + a.arrayBuffers - b.heapUsed - b.arrayBuffers; }
+  void keep; ts.sort((x, y) => x - y);
+  console.log(label.padEnd(60), `${ts[runs >> 1]!.toFixed(2)} ms`.padStart(8), `${(heap / 1e6).toFixed(0)} MB`.padStart(8));
+}
+
+// Today: walk the LogEvent tree and build rect objects per depth, as a UI does.
+function timelineFromTree(root: any) {
+  const byDepth: { x: number; w: number; label: string; event: unknown }[][] = [];
+  const st: any[] = [root], dp: number[] = [-1];
+  while (st.length) {
+    const n = st.pop(); const d = dp.pop()!;
+    if (d >= 0 && n.duration.total > 0) (byDepth[d] ??= []).push({ x: n.timestamp, w: n.duration.total, label: n.text, event: n });
+    for (let i = n.children.length - 1; i >= 0; i--) { st.push(n.children[i]); dp.push(d + 1); }
+  }
+  return byDepth;
+}
+// v3 node objects: the same, through lazy views (one class).
+function timelineFromViews(v: any) {
+  const s = v.s; const byDepth: { x: number; w: number; label: string; event: unknown }[][] = [];
+  for (let i = 0; i < s.n; i++) if (s.exitTs[i] > 0) { const n = v.node(i); (byDepth[n.depth] ??= []).push({ x: n.timestamp, w: n.durationTotal, label: n.text, event: n }); }
+  return byDepth;
+}
+// v3 columns: per-depth typed arrays of row ids; rects are read straight from the columns when drawn.
+function timelineFromColumns(s: any) {
+  const counts = new Uint32Array(64);
+  for (let i = 0; i < s.n; i++) if (s.exitTs[i] > 0) counts[s.depth[i]]++;
+  const byDepth = Array.from(counts, (c) => new Uint32Array(c)); const fill = new Uint32Array(64);
+  for (let i = 0; i < s.n; i++) if (s.exitTs[i] > 0) { const d = s.depth[i]; byDepth[d]![fill[d]!++] = i; } // already sorted: rows are in time order
+  return byDepth;
+}
+// Drawing one screen: the visible window is 1% of the log; find rects by binary search, read label ids.
+function drawWindowColumns(s: any, byDepth: Uint32Array[], from: number, to: number) {
+  let drawn = 0;
+  for (const rows of byDepth) {
+    let lo = 0, hi = rows.length; while (lo < hi) { const m = (lo + hi) >> 1; if (s.exitTs[rows[m]!] < from) lo = m + 1; else hi = m; }
+    for (let k = lo; k < rows.length && s.ts[rows[k]!] <= to; k++) { const r = rows[k]!; drawn += s.exitTs[r] - s.ts[r] > 0 ? 1 : 0; }
+  }
+  return drawn;
+}
+function drawWindowTree(byDepth: { x: number; w: number }[][], from: number, to: number) {
+  let drawn = 0;
+  for (const rects of byDepth) for (const r of rects ?? []) if (r.x + r.w >= from && r.x <= to) drawn++;
+  return drawn;
+}
+
+for (const f of ['dev20.log', 'large100.log']) {
+  const path = `${process.argv[2]}/${f}`, str = readFileSync(path, 'utf8'), bytes = new Uint8Array(readFileSync(path));
+  console.log(`\n== ${f}`);
+  bench('TODAY parse', () => parse(str), 3);
+  bench('TODAY parse + timeline from tree (rect objects)', () => timelineFromTree(parse(str)), 3);
+  bench('V3 scan', () => scanV3(bytes));
+  bench('V3 scan + timeline from node objects (rect objects)', () => timelineFromViews(new LogView(scanV3(bytes))), 3);
+  bench('V3 scan + timeline from columns (per-depth row arrays)', () => timelineFromColumns(scanV3(bytes)));
+  // One redraw (pan/zoom) on an already-built timeline.
+  const tree = timelineFromTree(parse(str)); const s = scanV3(bytes); const cols = timelineFromColumns(s);
+  let t0 = Infinity, t1 = 0; for (let i = 0; i < s.n; i++) { if (s.ts[i] < t0) t0 = s.ts[i]; if (s.exitTs[i] > t1) t1 = s.exitTs[i]; }
+  const from = t0 + (t1 - t0) * 0.5, to = from + (t1 - t0) * 0.01;
+  bench('one redraw, 1% window: scan all rect objects (today-style)', () => drawWindowTree(tree, from, to), 20);
+  bench('one redraw, 1% window: binary search on columns', () => drawWindowColumns(s, cols, from, to), 20);
+}
+````
+
 ### Raw output of the final `bench.ts` run
 
 ````text
@@ -1582,4 +1689,27 @@ top methods by self time: ns.MyInvoiceService.postInvoicesAndUpdat calls=37890 s
 streaming visitor, no store (find SOQL lines): 104 ms
 v1 floor scan with tree: 134 ms
 v3 full scan: 291 ms
+````
+
+### Raw output of `timeline.ts`
+
+````text
+
+== dev20.log
+TODAY parse                                                  745.04 ms   259 MB
+TODAY parse + timeline from tree (rect objects)              833.51 ms   266 MB
+V3 scan                                                      75.65 ms    19 MB
+V3 scan + timeline from node objects (rect objects)          98.06 ms    30 MB
+V3 scan + timeline from columns (per-depth row arrays)       54.92 ms     0 MB
+one redraw, 1% window: scan all rect objects (today-style)    1.06 ms     0 MB
+one redraw, 1% window: binary search on columns               0.05 ms     0 MB
+
+== large100.log
+TODAY parse                                                  2942.76 ms  1100 MB
+TODAY parse + timeline from tree (rect objects)              3190.13 ms  1135 MB
+V3 scan                                                      340.97 ms    56 MB
+V3 scan + timeline from node objects (rect objects)          386.41 ms   150 MB
+V3 scan + timeline from columns (per-depth row arrays)       285.67 ms    46 MB
+one redraw, 1% window: scan all rect objects (today-style)    6.22 ms     0 MB
+one redraw, 1% window: binary search on columns               0.09 ms     0 MB
 ````
