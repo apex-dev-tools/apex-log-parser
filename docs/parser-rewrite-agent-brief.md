@@ -226,7 +226,7 @@ takes longer.
 **Setup.** Synthetic logs from #106's generator (`largeLogs['developer 20 MB']` and
 `largeLogs['large 100 MB']`). Node 22.22, Linux container, `--expose-gc`, median of 3–5 runs after
 two warm-ups. Runs varied by about ±15%. "Kept" is the heap plus array buffers after a GC; it
-is noisy for scenarios that return a number. Reproduce with §A.
+is noisy for scenarios that return a number. Reproduce with §B.
 
 The synthetic logs hold only ~31 distinct method names. Real logs hold thousands, so interning
 and label decoding will cost more on them. **The private corpus is the real test.**
@@ -646,7 +646,7 @@ Codegen emits:
   (`Unexpected-End`) and gives the row to the container's parent.
 
 Derive the container lists from the corpus: write a script that counts parent→child type pairs.
-Start with few containers. `types-sketch.ts` in §A proves the typing works, including the
+Start with few containers. `types-sketch.ts` in §B proves the typing works, including the
 expected-error lines.
 
 ### 5.5 Monomorphism rules
@@ -780,6 +780,67 @@ Not worth it:
   nanosecond counter exactly.
 - **A table per event type.** It would break prefix order and make walking the tree harder.
 
+### 5.12 Separate the returned data from the parsing rules
+
+Today one class per event mixes three things:
+
+- **what the log said:** `timestamp`, `text`, `lineNumber`, …;
+- **what the type is:** `category`, `debugLevel`, …, copied onto every instance;
+- **how to parse it:** `logParser`, `acceptsText`, `isExit`, `nextLineIsExit`, `exitTypes`,
+  `discontinuity`, `onEnd`, `onAfter`, `seedHeapLeaf`, `parseTimestamp`, `parseLineNumber`.
+
+All three are public, on every event (Appendix A). The new code keeps them in separate modules
+that never import each other's internals:
+
+```text
+src/next/
+  model/              PUBLIC: what a consumer sees
+    catalog.ts        event types: names, category, debugCategory, level, kind, shape, exits,
+                      public field names and their docs, description          (source of truth)
+    events.gen.ts     generated named interfaces per event + ApexEvent union + EventMap
+    eventTypes.gen.ts generated EVENT_TYPES table and eventType(type), public metadata
+    log.ts            ApexLog, Node, Cursor, EventList, Columns: interfaces only
+  grammar/            INTERNAL: how to parse, never exported
+    rules.ts          per type: recognise, match (exitTypes, nextLineIsExit, acceptsText,
+                      discontinuity, line-number matching), byte decoders for each public field,
+                      exitFields capture, namespace inference, per-row overrides, rollup
+                      contributions (soql +1, rows from the exit), container enforcement
+    tables.gen.ts     perfect hash and Uint8Array flag tables built from rules.ts
+  engine/             INTERNAL: scanner, store, close-time rollups, issues, limits, truncation
+  views/              node.ts (one class), cursor.ts, eventList.ts: implement model/log.ts
+  compat/             toLegacyTree.ts: today's classes, built from the store
+```
+
+The compiler enforces the link: `rules: { readonly [K in EventType]: Rules<K> }`, and `Rules<K>`
+must supply a decoder for every public field `catalog.ts` declares for `K`. So:
+
+- a field declared without a decoder fails `tsc`;
+- the grammar cannot leak a field into the output, because output types come from the catalog
+  only;
+- parsing flags never appear on a node.
+
+The catalog can change a field's docs or name without touching the parser, and the grammar can
+change how a field is read without touching the public types. `EventMetadata.test.ts` crosses
+`catalog.ts` with `data/salesforce-debug-log-events.json`, as it crosses the classes today.
+
+### 5.13 Shipping in parallel, switchable
+
+| Entry point | What it returns | Who uses it |
+| --- | --- | --- |
+| `parse(text)` from `@apexdevtools/apex-log-parser` | today's `ApexLog` from today's engine, unchanged | everyone, by default |
+| `parse(text, { engine: 'next' })` from the same entry | **today's `ApexLog` shape**, built by the new engine through `compat` | consumers flip a setting: a drop-in switch with the same API, at most of the new parse speed |
+| `parse(text, { engine: 'shadow' })` | today's engine's result, after running both and reporting any digest difference through `onMismatch` | dev builds of the analyzer and MCP, to find parity bugs on real logs |
+| `@apexdevtools/apex-log-parser/next` | the new API (§5.7) natively: nodes, cursor, columns, `parseAsync`, workers | consumers moving view by view, starting with the analyzer's timeline |
+
+**Rules:**
+
+- The new engine never changes the default until the user decides.
+- `next` and `shadow` share one engine.
+- Removing the legacy engine is a later major version.
+- The `PublicApi.test.ts` pins both entry points.
+- `engine: 'next'` costs today's object memory, because `compat` builds the old tree, but saves
+  the scan. Only `/next` gives the memory win.
+
 ---
 
 ## 6. Feature-parity checklist
@@ -831,8 +892,8 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 5. **Node and browsers.** The minimum Node version, Safari support (which needs the `yield`
    fallback), and whether VS Code webviews allow workers from the extension's origin.
 6. **Parallel first stage** (§9.4). Is it worth `SharedArrayBuffer` and cross-origin isolation?
-7. **Repo layout.** Is the rewrite a new entry point in the same package during development, or a
-   separate package until it reaches parity?
+7. **Repo layout.** RESOLVED: the new parser ships **in parallel, as a switchable option** in the
+   same package (§5.13).
 8. **`eventIndex` numbering.** RESOLVED: ids exist for uniqueness when timestamps collide, so
    unique, stable, deterministic row numbers meet the need, and folding exits is accepted. Still
    confirm that nothing **persists** ids across package versions; a cache keyed by content hash
@@ -846,7 +907,7 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 ### Phase 0: groundwork
 
 - Make sure #106 has merged, or bring its harness in. Merge or rebase onto #107 and #109.
-- Reproduce §3 with §A.
+- Reproduce §3 with §B.
 - Get access to the corpus, and the digest script that #107 and #109 used. Ask the user where it
   lives.
 
@@ -958,7 +1019,184 @@ the sync path; `AbortSignal` stops within one slice.
 
 ---
 
-## A. Reproducing the measurements
+## A. Old vs new output for one small log
+
+The log (placeholder content only):
+
+```text
+64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;CALLOUT,INFO;DB,INFO;NBA,INFO;SYSTEM,DEBUG;VALIDATION,INFO;VISUALFORCE,INFO;WAVE,INFO;WORKFLOW,INFO
+09:00:00.001 (1000000)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT+00:00) Greenwich Mean Time (Europe/London)|GMTZ
+09:00:00.001 (1100000)|EXECUTION_STARTED
+09:00:00.001 (1200000)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex
+09:00:00.002 (2000000)|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.loadAccounts()
+09:00:00.003 (3000000)|SOQL_EXECUTE_BEGIN|[12]|Aggregations:0|SELECT Id, Name FROM Account LIMIT 10
+09:00:00.005 (5500000)|SOQL_EXECUTE_END|[12]|Rows:10
+09:00:00.006 (6000000)|USER_DEBUG|[14]|DEBUG|loaded 10 accounts
+09:00:00.007 (7000000)|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.loadAccounts()
+09:00:00.008 (8000000)|CODE_UNIT_FINISHED|execute_anonymous_apex
+09:00:00.008 (8100000)|EXECUTION_FINISHED
+```
+
+### A.1 Today: actual output of `parse()` on `main`
+
+The ids are 0 root, 1 `USER_INFO`, 2 `EXECUTION_STARTED`, 3 `CODE_UNIT_STARTED`,
+4 `METHOD_ENTRY`, 5 `SOQL_EXECUTE_BEGIN`, **6 `SOQL_EXECUTE_END`** (an object, not in the tree),
+7 `USER_DEBUG`, 8 `METHOD_EXIT`, 9 `CODE_UNIT_FINISHED`, 10 `EXECUTION_FINISHED`. That is 11
+objects for 7 tree nodes. References are shown as `[Class #id]`.
+
+```jsonc
+// SOQLExecuteBeginLine #5: every field is an own property of the instance
+{
+  "logParser": "[ApexLogParser]",                     // parser internal
+  "parent": "[MethodEntryLine #4]", "children": [],
+  "type": "SOQL_EXECUTE_BEGIN",
+  "logLine": "09:00:00.003 (3000000)|SOQL_EXECUTE_BEGIN|[12]|Aggregations:0|SELECT Id, Name FROM Account LIMIT 10",
+  "text": "SELECT Id, Name FROM Account LIMIT 10",
+  "acceptsText": false, "isExit": false, "isParent": true,            // parser internal
+  "isTruncated": false, "nextLineIsExit": false, "discontinuity": false, // mostly parser internal
+  "lineNumber": 12, "namespace": "default", "hasValidSymbols": false, "suffix": null,
+  "timestamp": 3000000, "eventIndex": 5, "exitStamp": 5500000,
+  "category": "SOQL", "debugCategory": "database", "debugLevel": "INFO", "cpuType": "free", // the same for every SOQL event
+  "duration":     { "self": 2500000, "total": 2500000 },
+  "soqlCount":    { "self": 1,  "total": 1 },
+  "soqlRowCount": { "self": 10, "total": 10 },        // copied from the exit by onEnd
+  "dmlCount": { "self": 0, "total": 0 }, "dmlRowCount": { "self": 0, "total": 0 },
+  "soslCount": { "self": 0, "total": 0 }, "soslRowCount": { "self": 0, "total": 0 },
+  "thrownCount": { "self": 0, "total": 0 },
+  "heapAllocated": { "self": 0, "total": 0 }, "heapGross": { "self": 0, "total": 0 }, "heapPeak": 0,
+  "exitTypes": ["SOQL_EXECUTE_END"],                  // parser internal, an array per instance
+  "aggregations": 0
+}
+// methods on the prototype chain: onEnd, recalculateDurations, seedHeapLeaf, parseTimestamp, parseLineNumber
+
+// SOQLExecuteEndLine #6: built, matched, passed to onEnd, then dropped from the tree (parent null)
+{ "type": "SOQL_EXECUTE_END", "eventIndex": 6, "parent": null, "isExit": true, "timestamp": 5500000,
+  "lineNumber": 12, "soqlRowCount": { "self": 10, "total": 10 }, /* …and all 11 SelfTotal objects again */ }
+
+// MethodEntryLine #4 (abridged)
+{ "type": "METHOD_ENTRY", "eventIndex": 4, "text": "ns.MyClass.loadAccounts()", "lineNumber": 1,
+  "namespace": "default", "timestamp": 2000000, "exitStamp": 7000000,
+  "duration": { "self": 2500000, "total": 5000000 },
+  "soqlCount": { "self": 0, "total": 1 }, "soqlRowCount": { "self": 0, "total": 10 },
+  "children": ["[SOQLExecuteBeginLine #5]", "[UserDebugLine #7]"], "exitTypes": ["METHOD_EXIT"], /* … */ }
+
+// ApexLog #0, the root (abridged)
+{ "text": "LOG_ROOT", "size": 873, "timestamp": 1000000, "exitStamp": 8100000,
+  "duration": { "self": 100000, "total": 7100000 },
+  "debugLevels": { "apexCode": "FINE", "database": "INFO", /* … */ },
+  "debugLevelSettings": [{ "token": "APEX_CODE", "level": "FINE", "category": "apexCode" }, /* … */],
+  "userInfo": { "id": "005000000000AAA", "userName": "user@example.com",
+                "timezone": { "label": "Greenwich Mean Time", "name": "Europe/London", "offsetMinutes": 0, /* … */ } },
+  "namespaces": ["default"], "logIssues": [], "parsingErrors": [],
+  "entryPoints": ["[CodeUnitStartedLine #3]"], "truncation": { "regions": [], "totalSkippedBytes": 0 },
+  "governorLimits": { "snapshots": [], "final": { /* 13 LimitValues */ }, "peak": { /* … */ }, "byNamespace": {} },
+  "startTime": 32400001, "executionEndTime": 8100000,
+  "eventsById": "[11 events]", "exceptions": [], "truncatedEvents": [] }
+```
+
+### A.2 New: `@apexdevtools/apex-log-parser/next`
+
+This is designed, not yet implemented; the values are the same log's. The ids are 0 root, 1
+`USER_INFO`, 2 `EXECUTION_STARTED`, 3 `CODE_UNIT_STARTED`, 4 `METHOD_ENTRY`,
+5 `SOQL_EXECUTE_BEGIN`, **6 `USER_DEBUG`**. The four matched exits fold into their entries. The
+values below are getters on one `Node` class reading the columns; nothing else is stored per
+event.
+
+```ts
+const log = parse(bytes);                 // or await parseAsync(stream) / await parseInWorker(bytes)
+
+// Log-level data: the same shapes as today
+log.size;            // 873 (UTF-8 bytes)
+log.duration;        // { self: 100_000, total: 7_100_000 } (ns)
+log.userInfo;        // { id: '005000000000AAA', userName: 'user@example.com', timezone: { … } }
+log.debugLevels;     // { apexCode: 'FINE', database: 'INFO', … }
+log.namespaces;      // ['default']
+log.issues;          // []   (was logIssues)
+log.limits;          // { snapshots: [], final: {…}, peak: {…}, byNamespace: {} }
+log.entryPoints;     // [Node<'CODE_UNIT_STARTED'> #3]
+log.eventCount;      // 7
+log.root.children;   // [Node<'USER_INFO'> #1, Node<'EXECUTION_STARTED'> #2]
+
+// A frame. Typed as Node<'METHOD_ENTRY'>, with no cast
+const m = log.ofType('METHOD_ENTRY').at(0)!;
+m.index;          // 4: unique and stable within this parse
+m.type;           // 'METHOD_ENTRY'
+m.timestamp;      // 2_000_000
+m.exitStamp;      // 7_000_000
+m.duration;       // { self: 2_500_000, total: 5_000_000 }
+m.depth;          // 3
+m.lineNumber;     // 1
+m.classId;        // '01p000000000AAA'                  (named field, #71)
+m.signature;      // 'ns.MyClass.loadAccounts()'        (named field, #71)
+m.text;           // 'ns.MyClass.loadAccounts()'        (display text, decoded lazily)
+m.namespace;      // 'default'
+m.soqlCount;      // { self: 0, total: 1 }              (sparse: most frames read zeros from no slot)
+m.soqlRowCount;   // { self: 0, total: 10 }
+m.isTruncated;    // false
+m.exit;           // { type: 'METHOD_EXIT', timestamp: 7_000_000 }
+m.parent;         // Node<'CODE_UNIT_STARTED'> #3
+m.children;       // [Node<'SOQL_EXECUTE_BEGIN'> #5, Node<'USER_DEBUG'> #6]: a union, narrows by .type
+
+// A container. Typed as Node<'SOQL_EXECUTE_BEGIN'>
+const q = m.childrenOfType('SOQL_EXECUTE_BEGIN')[0]!;
+q.lineNumber;     // 12
+q.aggregations;   // 0
+q.query;          // 'SELECT Id, Name FROM Account LIMIT 10'
+q.soqlCount;      // { self: 1, total: 1 }
+q.soqlRowCount;   // { self: 10, total: 10 }
+q.exit;           // { type: 'SOQL_EXECUTE_END', timestamp: 5_500_000, rows: 10, durationMs: null }
+                  //   durationMs is null: this exit line states no duration ("report what the log stated")
+q.children;       // [], typed as readonly Node<'SOQL_EXECUTE_EXPLAIN'>[]
+
+// A leaf. Typed as Node<'USER_DEBUG'>, with no `children` property at all
+const d = log.node(6);
+if (is(d, 'USER_DEBUG')) { d.level; /* 'DEBUG' */ d.message; /* 'loaded 10 accounts' */ }
+
+// Type-level metadata: looked up by type, never stored per event
+q.category;                       // 'SOQL' (a getter reading EVENT_TYPES by the row's type id)
+eventType('SOQL_EXECUTE_BEGIN');  // { category: 'SOQL', debugCategory: 'database', level: 'INFO',
+                                  //   kind: 'soql', shape: 'container', exits: ['SOQL_EXECUTE_END'],
+                                  //   cpuType: 'free', fields: { lineNumber: {…doc}, aggregations: {…}, query: {…} },
+                                  //   description: '…' }
+eventType('SOQL_EXECUTE_END');    // { category: 'SOQL', debugCategory: 'database', level: 'INFO', kind: 'exit', … }
+
+// Columns, for rendering and bulk work: typed arrays indexed by id
+log.columns.timestamp;  // Float64Array [1000000, 1000000, 1100000, 1200000, 2000000, 3000000, 6000000]
+log.columns.exitStamp;  // Float64Array [8100000, 0, 8100000, 8000000, 7000000, 5500000, 0]
+log.columns.depth;      // Uint16Array  [0, 1, 1, 2, 3, 4, 4]
+log.columns.parent;     // Int32Array   [-1, 0, 0, 2, 3, 4, 4]
+log.columns.type;       // Uint16Array  of type ids; eventType(id) and typeName(id) decode them
+```
+
+**Methods.**
+
+| On | Methods |
+| --- | --- |
+| `ApexLog` | `node(i)`, `ofType(type)`, `visit({ TYPE: fn })`, `cursor()`, `at(timestamp)`, `find(pred)`, `search(text)`, `toBuffers()`, `toJSON()`, plus `ApexLog.fromBuffers(buffers)` |
+| `Node` | `childrenOfType(type)`, `toJSON()` (a plain-object snapshot). Everything else is a read-only getter. |
+| `Cursor` | `firstChild()`, `nextSibling()`, `parent()`, `next()` (pre-order), plus getters for the current row |
+| `EventList` | `length`, `at(i)`, iteration, `map`, `filter`, `toArray()` |
+| Free functions | `parse`, `parseAsync`, `parseInWorker`, `createParserPool`, `createLogBuilder`, `is(node, type)`, `eventType(type)` |
+
+### A.3 Field mapping, old to new
+
+| Today | New |
+| --- | --- |
+| `eventIndex` | `index`. Unique and stable per parse; exits no longer take ids. |
+| `logLine` | `raw`, decoded on read |
+| `text` | `text`, decoded on read, plus named fields (`signature`, `query`, `message`, …) |
+| `type`, `timestamp`, `exitStamp`, `lineNumber`, `namespace`, `isTruncated`, `duration`, counts, heap | the same names |
+| `category`, `debugCategory`, `debugLevel`, `cpuType`, `suffix`, `hasValidSymbols` | the same getters, read from `EVENT_TYPES` by type (with per-row overrides) |
+| `isParent`, `exitTypes` | `eventType(type).shape` and `.exits` |
+| `acceptsText`, `isExit`, `nextLineIsExit`, `discontinuity`, `logParser`, `onEnd`, `onAfter`, `recalculateDurations`, `seedHeapLeaf`, `parseTimestamp`, `parseLineNumber` | gone from the output; they live in `grammar/` and `engine/` |
+| exit objects (e.g. `SOQLExecuteEndLine` #6) | `node.exit` details on the entry |
+| `soqlRowCount` copied from the exit | still `soqlRowCount`, and also `exit.rows` |
+| `eventsById` | `node(i)` |
+| `logIssues` | `issues` |
+| `governorLimits` | `limits` |
+| `instanceof SOQLExecuteBeginLine` | `node.type === 'SOQL_EXECUTE_BEGIN'` or `is(node, 'SOQL_EXECUTE_BEGIN')` |
+
+## B. Reproducing the measurements
 
 From a checkout of the repo at `main`, with Node 22+ and `pnpm install` done:
 
