@@ -378,12 +378,39 @@ Other facts used:
 
 ### 5.2 Event store (struct of arrays)
 
-One row per **non-exit** log line, plus row 0 for the root (the v3 shape, §3.4). An exit line
-gets no row: its entry row stores `exitStamp` and `exitStart`, the byte offset of the exit line,
-so the exit's text and fields stay readable through `node.exit`. An unmatched exit becomes an
-`Unexpected-Exit` issue that carries its byte offset. As a result `eventIndex` numbers change,
-since exits no longer take ids; this is OPEN decision 8 in §7, and `compat` recomputes the old
-numbers.
+One row per log line **except matched pure exits**, plus row 0 for the root (the v3 shape,
+§3.4). Today an exit already becomes an object only to be matched, passed to `onEnd` and dropped
+from the tree, so folding it loses nothing. The maintainer confirmed this.
+
+**Folding rules,** verified against `src/` on 2026-10-04:
+
+- **A matched pure exit gets no row.** A pure exit has `isExit` and no `exitTypes`. Its entry row
+  stores `exitStamp` and `exitStart`, the byte offset of the exit line, so `node.exit` can still
+  decode the exit's text and fields on demand. The `onEnd` equivalents read exit fields at close
+  time, from those bytes: `SOQL_EXECUTE_END` and `SOSL_EXECUTE_END` rows, and the `METHOD_EXIT`
+  namespace.
+- **An unmatched exit keeps its row.** Today `endMethod` returns false, and the exit falls through
+  to be pushed as a child, or onto the root at the top level. Class-reference `METHOD_EXIT` lines,
+  with no `)` and no `METHOD_ENTRY`, are the common case. Their `Unexpected-Exit` issue points at
+  that row.
+- **Dual exit-and-entry types always keep their row.** There are 11 `WF_*` types (`WF_APPROVAL`,
+  `WF_FORMULA`, `WF_RULE_INVOCATION`, …) with both `isExit` and `exitTypes`. They are tree nodes.
+- **No folded exit has wrapped text.** The only exit type with `acceptsText` is `WF_FORMULA`, which
+  is dual and keeps its row.
+- **A folded exit still feeds the scan.** `METHOD_EXIT` sets a namespace from a class reference,
+  and `afterParse` adds it to the parser's namespace set, which later order-dependent inference
+  reads. Process that even though no row is created. The same goes for any `onAfter` that
+  inspects the next event.
+- **A reference to a folded exit resolves to its entry row.** The Skipped-Lines and
+  Max-Size-reached issues take `lastEntry.eventIndex`, which can be an exit's id today. Point them
+  at the exit's entry row: the exit is part of that span, and `resolveIssueEndTimes` searches
+  forward from the next row as before.
+
+**Event ids.** The maintainer uses `eventIndex` because two events can share a timestamp, so it
+must be **unique and stable within a parse**. Folding keeps that: ids are row numbers. They are
+also **deterministic**: the same bytes always give the same ids, so a cache keyed by a content
+hash stays valid. The numbers differ from today's, because exits no longer take one. `compat`
+recomputes today's numbers for the digest gate.
 
 | Column | Type | Note |
 | --- | --- | --- |
@@ -596,7 +623,7 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 
 | Feature today | Where it lives | Eager or lazy |
 | --- | --- | --- |
-| Tree: `parent`, `children`, `eventIndex` (root = 0; exits included today), `eventsById` | rows, `parent`, `subtreeEnd`, `node(i)`. Exits fold into entries (`node.exit`), so new ids skip them, and `compat` recomputes the old ids. | eager |
+| Tree: `parent`, `children`, `eventIndex` (root = 0; exits included today), `eventsById` | rows, `parent`, `subtreeEnd`, `node(i)`. Matched pure exits fold into their entries (`node.exit`); unmatched exits and the dual `WF_*` types keep rows (§5.2). Ids stay unique, stable and deterministic per parse; `compat` recomputes today's numbers. | eager |
 | `timestamp`, `exitStamp`, `duration.self` and `total` | columns | eager |
 | `dmlCount`, `soqlCount`, `soslCount`, `dmlRowCount`, `soqlRowCount`, `soslRowCount`, `thrownCount` (self and total) | rollup columns | eager |
 | `heapAllocated`, `heapGross` (self and total), `heapPeak` (max), the running live heap clamped at 0 | rollup columns | eager |
@@ -640,9 +667,10 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 6. **Parallel first stage** (§9.4). Is it worth `SharedArrayBuffer` and cross-origin isolation?
 7. **Repo layout.** Is the rewrite a new entry point in the same package during development, or a
    separate package until it reaches parity?
-8. **`eventIndex` numbering.** Folding exits changes the ids, because exits no longer take one.
-   Do the analyzer or MCP persist ids across parses (bookmarks, caches, URLs)? If so, keep a
-   mapping in `compat`, or keep exit rows.
+8. **`eventIndex` numbering.** RESOLVED: ids exist for uniqueness when timestamps collide, so
+   unique, stable, deterministic row numbers meet the need, and folding exits is accepted. Still
+   confirm that nothing **persists** ids across package versions; a cache keyed by content hash
+   plus parser version is safe.
 9. **Projection default.** Full rows, or frames only? And which aggregates ship in 1.0?
 
 ---
@@ -739,7 +767,13 @@ the sync path; `AbortSignal` stops within one slice.
 
 ## 10. Gotchas
 
-- **`eventIndex` must stay identical.** The root is 0, and exit lines count. UIs navigate by it.
+- **`eventIndex` must stay unique, stable and deterministic within a parse.** UIs navigate by it,
+  because timestamps collide. The root is 0. The numbers may differ from today's only by the
+  folded exits (§5.2), and `compat` restores today's numbers for the digest.
+- **Folding exits:** only *matched pure* exits fold. Unmatched exits and the dual `WF_*` types
+  keep rows; a folded exit still contributes its namespace; and an issue that points at a folded
+  exit points at its entry. The v3 prototype is simplified here: it drops unmatched exits instead
+  of keeping them, so fix that in the real scanner.
 - **Namespace inference depends on order.** Compute it while scanning.
 - **Exit matching checks line numbers** (`isMatchingEnd`). v2 does not; the real scanner must.
 - **Discontinuity and max-size truncation** interact (`parseTree`); port them exactly.
