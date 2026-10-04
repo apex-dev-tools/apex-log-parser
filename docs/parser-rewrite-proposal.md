@@ -29,14 +29,11 @@ The store is a few `ArrayBuffer`s, so it **transfers to and from a worker at no 
 property is what makes `parseInWorker`, `parseAsync` with progress, streaming, and disk caching
 in MCP practical. Today none of them is.
 
-On a 100 MB log, today's parser takes **~3.2 s to return and keeps ~1.1 GB**. A fuller prototype
-returns in **~0.45–0.53 s with ~80 MB of columns**. It keeps every line as a row and includes
-wrapped text, interned names, every counter, heap peak and per-type indexes. Rollups happen
-during the scan, so the root's total time and a whole flame chart cost nothing extra after it
-returns. In a worker, the main thread is blocked for **3.5 ms at worst**. See
-[What a consumer waits for](#11-what-a-consumer-waits-for). The full implementation should land at
-**6–8× faster to a drawn timeline, with about 6× less memory including the source bytes**
-(~13× for the tree alone).
+**Final numbers and recommendation:** see `docs/parser-rewrite-agent-brief.md` §0.2 and §3.6–3.8.
+On the synthetic sample logs, today's parser takes 0.75–1.06 s at 20 MB and 2.7–4.8 s at 100 MB,
+and keeps 1.1 GB at 100 MB. The JS core takes 43 ms warm (158–169 ms cold) at 20 MB and 215 ms
+warm at 100 MB, with ~41 MB of columns. The recommendation is to build and ship the JS core, and
+add a WASM SIMD core only if real-log profiles still show the parse as the main wait.
 
 **WASM, revised after measurement:** a WASM SIMD core running the same single pass produced an
 identical tree ~2× faster than the best JS in Node and ~3× in Chromium: 105–111 ms at 100 MB. So

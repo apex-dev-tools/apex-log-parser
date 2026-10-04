@@ -111,8 +111,57 @@ take the smaller wins that need no columnar store:
 - **Start with leaf vs frame typing only.** That is the biggest typing win, and it changes no tree
   semantics. Add enforced containers later, and only where the corpus shows them closed.
 - **Defer** the parallel first stage, Arrow layout and exporters, projection, the storeless
-  visitor and append parsing until after 1.0. **The WASM SIMD core follows the JS core**
-  (Phase 2b), once the JS core has corpus parity; §3.6 measured it at ~2–3× the JS core.
+  visitor and append parsing until after 1.0. **The WASM SIMD core is optional** (Phase 2b, §0.2):
+  add it only if real-log profiles show the JS core's parse is still the main wait. §3.6 measured
+  it at ~2–3× warm, and §3.8 at ~1.5–2× cold.
+
+### 0.2 Which implementation to build: recommendation
+
+The options, with numbers from the consolidated run in §3.8:
+
+| Option | 20 MB warm / cold | 100 MB warm / cold | Cost |
+| --- | --- | --- | --- |
+| A. Today plus #107 and #109 | ~1.0 s / ~1.0 s (–28% at best) | ~3–5 s | none, and already done |
+| **B. JS core** (v5 design) | **43 ms / 158–169 ms** | **215 ms / 409–449 ms** | one language, one implementation |
+| C. WASM SIMD core | 24 ms / 75–118 ms | 102 ms / 315–320 ms | a C/Rust toolchain, a CSP change, every hot rule written twice |
+| D. B, then C | as C where WASM runs, B elsewhere | as C | as C, plus a differential test |
+
+**Recommendation: build B, the JS core, and make it the shipping engine. Keep C as a measured,
+optional Phase 2b, not a commitment.**
+
+**Why B:**
+
+- **B delivers the change users feel.** It is ~20× warm and ~6× cold against today at 20 MB.
+  At the 20 MB log cap, the gap between B and C is ~20 ms warm and ~50–90 ms on a cold first
+  open. Users will not notice that next to today's 1 s.
+- **Most of the UI win comes from the architecture, not the core's language:**
+  - the worker never blocks the main thread for more than ~4 ms;
+  - a timeline built from the columns adds ~0 ms;
+  - each redraw is 70× cheaper;
+  - caching with `toBuffers` makes a reopen ~0 ms.
+
+  B gets all of it.
+- **One implementation of the subtle tree rules.** Parity with today rests on the corpus digest,
+  and two cores double the places a rule can drift. B is also easier to debug and profile, and to
+  contribute to.
+- **C has costs that only pay off for large logs:**
+  - its win grows with size (~100–250 ms at 100 MB), which only matters for MCP's large logs;
+  - MCP can avoid most reparsing with the `toBuffers` cache anyway;
+  - on tiny logs C is slower cold, because it compiles first (10 ms against 7 ms).
+
+**When to add C:**
+
+- Only if, after B ships, a profile on real logs shows the parse is still the main wait: for
+  example, MCP regularly parsing logs over 50 MB, or webview cold parses over ~150 ms.
+- Keep the column layout as the ABI, so C drops in behind the same store with no API change.
+- The JS core then stays the fallback and the oracle.
+
+**How to cut B's cold time** (the gap to C is mostly the first, unoptimised run):
+
+- Spawn the parser worker when the extension activates, not on first open.
+- Run a small warm-up parse in it while idle, so V8 has optimised the scanner before the first
+  real log arrives.
+- Measure this in the Phase 2 gate.
 
 ---
 
@@ -300,7 +349,7 @@ the ranges, not the single figures.
   objects it adds ~200 ms.
 - **A worker only works with columns.** Cloning an object tree costs more than parsing it. A
   columnar store transfers at no cost, and the UI is never blocked for more than ~4 ms.
-- **Expected for the full parser**, with the v3 output shape from §3.4 plus the omitted rules,
+- *(Stage estimate from v3, superseded by the final numbers in §3.7 and §3.8.)* **Expected for the full parser**, with the v3 output shape from §3.4 plus the omitted rules,
   at 100 MB: about **250–400 ms** to a drawn timeline, against ~3 s today, so **8–11× faster**.
   Memory should be **~40–50 MB of columns** plus the source bytes, against 1,100 MB plus the
   pinned string: **~20× less for the tree, ~7–8× including the source**. In worker mode the main
@@ -393,7 +442,7 @@ from the columns, and 73–98 ms from node objects. A redraw is 1.06 ms against 
 
 **What this means:**
 
-- **Before and after, to a drawn timeline at 100 MB:** ~3.2–3.4 s today against ~0.27–0.29 s
+- *(v3 stage result; final numbers are in §3.7 and §3.8.)* **Before and after, to a drawn timeline at 100 MB:** ~3.2–3.4 s today against ~0.27–0.29 s
   from the columns, so **~11–12× faster**. The parse alone goes from ~2.9–3.1 s to ~0.28–0.34 s.
 - **Building the timeline from the tree costs ~245 ms today.** From the columns it costs about
   nothing: rows are already in time order, so building per-depth row arrays is one counting pass.
@@ -542,6 +591,47 @@ residuals, discontinuity, exit details, parsing errors), estimated at +10–25% 
 - Every pan and zoom: **~70×** cheaper.
 
 All of this is synthetic until the corpus runs; the go/no-go gate in §0.1 uses real logs.
+
+### 3.8 Consolidated run on the sample logs, warm and cold
+
+Every engine ran in one script (`final.ts`) on the same machine: Node 22.22, 4 cores. The logs
+are the Appendix A sample (11 lines), the #106 synthetic 20 MB and 100 MB logs, and their
+high-cardinality variants (`make-hc.py`). Row counts agree between the JS and WASM cores on every
+log.
+
+**Warm** (median after two warm-up parses; 201 runs for the sample, 9 at 20 MB, 5 at 100 MB):
+
+| Log | Size | Today | JS core (v5) | WASM scalar | WASM SIMD |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Appendix A sample | 0.001 MB | 0.88 ms | 0.14 ms | 0.05 ms | 0.05 ms |
+| `dev20` | 20 MB | 1,064 ms | **43 ms** | 31 ms | **24 ms** |
+| `dev20-hc` (50k names) | 19 MB | 1,140 ms | **43 ms** | 34 ms | **27 ms** |
+| `large100` | 100 MB | 4,760 ms | **215 ms** | 143 ms | **102 ms** |
+| `large100-hc` (282k names) | 90 MB | 5,026 ms | **400 ms** | 206 ms | **175 ms** |
+
+Today's parser ran slower here than in its solo runs (745–862 ms and 2.7–3.2 s): this process
+already held more memory, and today's parser spends over a fifth of its time in GC (#108). The
+new cores barely allocate, so they are not sensitive to that. A UI that holds other data behaves
+more like this run.
+
+**Cold** (`cold.ts`: a fresh process, then the **first** parse, including loading the engine:
+module import, or WASM compile and instantiate, and memory growth). Three runs each:
+
+| Log | Today | JS core | WASM scalar | WASM SIMD |
+| --- | ---: | ---: | ---: | ---: |
+| Appendix A sample | 19–22 ms | **7 ms** | 9–12 ms | 10–11 ms |
+| `dev20` (20 MB) | 957–1,054 ms | **158–169 ms** | 90–108 ms | **75–118 ms** |
+| `large100` (100 MB) | 5,125–8,112 ms | **409–449 ms** | 410–449 ms | **315–320 ms** |
+
+**What cold means:**
+
+- The first parse runs partly unoptimised: V8 tiers up JS mid-loop, and WASM pays to compile and
+  grow its memory.
+- The gap between the cores is smaller cold (~1.5–2×) than warm (~2×), and **JS wins on tiny
+  logs**.
+- A pre-warmed worker (§0.2) moves the JS core towards its warm numbers.
+- Today's script went through tsx, which adds a few milliseconds of transform to the "today" and
+  JS rows on the sample log.
 
 ---
 
@@ -879,9 +969,9 @@ the best JS in Node and ~3× in Chromium, with an identical tree. So:
 - **Each core has its job:**
   - **The JS core is built first.** It is the reference implementation, the fallback where WASM
     is not allowed, and the differential-test oracle.
-  - **The WASM SIMD core is the default wherever WASM is available.** That covers Node ≥ 16.4,
-    every current browser (Safari ≥ 16.4) and Electron. Detect it with `WebAssembly.validate` on a
-    SIMD probe.
+  - **The WASM SIMD core is optional (§0.2).** If Phase 2b's trigger is met, it becomes the default
+    wherever WASM is available. That covers Node ≥ 16.4, every current browser (Safari ≥ 16.4) and
+    Electron. Detect it with `WebAssembly.validate` on a SIMD probe.
 - **The WASM core does only the hot pass:** scan, match, intern and roll up, about 300 lines.
   Field decoders, text, issues text and limits parsing stay in JS, reading the same bytes.
   `grammar/` generates its tables into both cores from the one schema.
@@ -1064,9 +1154,9 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
    confirm that nothing **persists** ids across package versions; a cache keyed by content hash
    plus parser version is safe.
 9. **Projection default.** Full rows, or frames only? And which aggregates ship in 1.0?
-10. **WASM core language and timing.** C (clang, no extra dependencies), Rust or Zig? And does it
-    ship in 1.0, or follow once the JS core has corpus parity? The recommendation is to follow, in
-    Phase 2b.
+10. **WASM core: whether, when and in which language.** The recommendation (§0.2) is to ship the JS
+    core and add WASM only if Phase 2b's trigger is met. If it is, choose C (clang, no extra
+    dependencies), Rust or Zig.
 
 ---
 
@@ -1106,7 +1196,11 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 - aggregates (methods, namespaces, queries) match a tree walk over compat;
 - the deopt test is green.
 
-### Phase 2b: the WASM SIMD core
+### Phase 2b: the WASM SIMD core (optional; only if triggered)
+
+**Trigger (§0.2):** after the JS core ships, a real-log profile still shows the parse as the main
+wait. For example, MCP regularly parses logs over 50 MB, or webview cold parses exceed ~150 ms
+even with a pre-warmed worker.
 
 - Port the hot pass to WASM SIMD, with tables generated from the same `grammar/`.
 - Add the input-straight-into-memory path and the views over WASM memory.
@@ -3108,6 +3202,74 @@ createServer((req, res) => {
 }).listen(8766);
 ````
 
+### Consolidated and cold runs (§3.8)
+
+```sh
+cp bench/rewrite/sample.log bench/rewrite/logs/   # the Appendix A log
+node --expose-gc --max-old-space-size=8000 --import tsx bench/rewrite/final.ts bench/rewrite/logs \
+  sample.log dev20.log dev20-hc.log large100.log large100-hc.log
+cd bench/rewrite && for e in today js wasm simd; do node --import tsx cold.ts $e logs/dev20.log; done
+```
+
+`sample.log` is the log in Appendix A, saved as a file. `wasm/core.mjs` reuses the WASM setup in
+`wasm/full-bench.mjs`, so build the `.wasm` files first.
+
+### `wasm/core.mjs`
+
+````js
+// Loads a WASM core and returns parse(bytes) -> rows, with the setup from full-bench.mjs.
+import { readFileSync } from 'node:fs';
+const table = JSON.parse(readFileSync(new URL('../type-table.json', import.meta.url), 'utf8'));
+const names = ['<root>', ...table.map((r) => r.name)], N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+const src = readFileSync(new URL('./full-bench.mjs', import.meta.url), 'utf8');
+const body = src.slice(src.indexOf('async function load'), src.indexOf('const dir = process.argv[2];'));
+const make = new Function('readFileSync', 'table', 'names', 'N', 'idOf', 'NT', 'NC', `${body}; return { load, setup };`);
+const { load, setup } = make((f) => readFileSync(new URL(f, import.meta.url)), table, names, N, idOf, 512, 8);
+export async function wasmCore(file) {
+  const ex = await load(file);
+  return (bytes) => { const n = bytes.length; const { base, L, IB } = setup(ex, n); new Uint8Array(ex.memory.buffer, base, n).set(bytes); new Int32Array(ex.memory.buffer, L.iTab[0], IB).fill(-1); return ex.parse(base, n); };
+}
+````
+
+### `final.ts`
+
+````ts
+// One consolidated run: today vs JS core (v5) vs WASM scalar vs WASM SIMD, warm medians, on every sample log.
+import { readFileSync } from 'node:fs';
+import { parse } from '../../src/index.js';
+// @ts-expect-error js
+import { scanV5 } from './scan-v5.mjs';
+// @ts-expect-error js
+import { wasmCore } from './wasm/core.mjs';
+const gc = (globalThis as any).gc as () => void;
+const wScalar = await wasmCore('full.wasm'), wSimd = await wasmCore('full-simd.wasm');
+function t(fn: () => unknown, runs: number) { fn(); fn(); const ts: number[] = []; for (let r = 0; r < runs; r++) { gc(); const s = performance.now(); fn(); ts.push(performance.now() - s); } ts.sort((a, b) => a - b); return ts[runs >> 1]!; }
+const fmt = (x: number) => (x < 1 ? x.toFixed(2) : x < 10 ? x.toFixed(1) : x.toFixed(0)).padStart(7);
+console.log('log'.padEnd(18), 'MB'.padStart(5), 'today'.padStart(8), 'JS v5'.padStart(8), 'WASM'.padStart(8), 'SIMD'.padStart(8), ' rows (JS / SIMD)');
+for (const f of process.argv.slice(3)) {
+  const path = `${process.argv[2]}/${f}`, str = readFileSync(path, 'utf8'), bytes = new Uint8Array(readFileSync(path));
+  const runs = bytes.length < 1e6 ? 201 : bytes.length < 3e7 ? 9 : 5;
+  const a = t(() => parse(str), runs), b = t(() => scanV5(bytes), runs), c = t(() => wScalar(bytes), runs), d = t(() => wSimd(bytes), runs);
+  console.log(f.padEnd(18), (bytes.length / 1e6).toFixed(bytes.length < 1e6 ? 3 : 0).padStart(5), fmt(a), fmt(b), fmt(c), fmt(d), ` ${scanV5(bytes).n} / ${wSimd(bytes)}`);
+}
+````
+
+### `cold.ts`
+
+````ts
+// Cold start: a fresh process, then the FIRST parse of one log, including loading the engine
+// (module import / WASM compile + instantiate). Usage: cold.ts <engine> <file>
+import { readFileSync } from 'node:fs';
+const [engine, file] = process.argv.slice(2);
+const bytes = new Uint8Array(readFileSync(file!)); const str = engine === 'today' ? readFileSync(file!, 'utf8') : '';
+const t0 = performance.now();
+let rows = 0;
+if (engine === 'today') { const { parse } = await import('../../src/index.js'); rows = parse(str).eventsById.length; }
+else if (engine === 'js') { const { scanV5 } = await import('./scan-v5.mjs' as string); rows = scanV5(bytes).n; }
+else { const { wasmCore } = await import('./wasm/core.mjs' as string); const t1 = performance.now(); const p = await wasmCore(engine === 'simd' ? 'full-simd.wasm' : 'full.wasm'); const t2 = performance.now(); rows = p(bytes); process.stdout.write(`(load ${(t2 - t1).toFixed(1)} ms) `); }
+console.log(`${engine} first parse incl. load: ${(performance.now() - t0).toFixed(1)} ms (rows ${rows})`);
+````
+
 ### Raw output of the final `bench.ts` run
 
 ````text
@@ -3208,4 +3370,35 @@ dev20.log: JS v5 136 ms (rows 144590)
 large100.log: JS v5 327 ms (rows 510461)
    WASM SIMD128 110 ms (rows 510461)
 DONE Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36
+````
+
+### Raw output: `final.ts` (warm)
+
+````text
+log                   MB    today    JS v5     WASM     SIMD  rows (JS / SIMD)
+sample.log         0.001    0.88    0.14    0.05    0.05  7 / 7
+dev20.log             20    1064      43      31      24  144590 / 144590
+dev20-hc.log          19    1140      43      34      27  144590 / 144590
+large100.log         100    4760     215     143     102  510461 / 510461
+large100-hc.log       90    5026     400     206     175  510461 / 510461
+````
+
+### Raw output: `cold.ts` (ms, three runs each)
+
+````text
+== sample.log
+today: 22.3 18.6 19.4  ms
+js: 7.0 6.8 7.0  ms
+wasm: 9.3 9.3 11.9  ms
+simd: 9.6 9.8 10.9  ms
+== dev20.log
+today: 999.4 1054.2 956.8  ms
+js: 158.1 169.2 167.5  ms
+wasm: 89.6 108.2 95.8  ms
+simd: 88.1 117.6 75.1  ms
+== large100.log
+today: 8112.3 5698.9 5125.4  ms
+js: 447.4 408.6 449.3  ms
+wasm: 417.8 449.0 409.9  ms
+simd: 319.9 315.0 319.5  ms
 ````
