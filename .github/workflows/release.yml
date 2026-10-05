@@ -11,25 +11,31 @@ permissions:
   pull-requests: write
   id-token: write # OIDC, for npm trusted publishing and provenance
 
+# Queue, never cancel: a half-run publish is worse than a wait. No ref, so all branches share it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     if: github.repository == 'apex-dev-tools/apex-log-parser'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           # tsdown 0.22 (build, prepublishOnly) needs ^22.18 || >=24.11; 24.11+ bundles the npm 11.5.1+ OIDC needs.
           node-version: '^24.11'
-          cache: pnpm
+          # No cache: any run on main can write one, and this job's output goes to npm.
+          package-manager-cache: false
           # No registry-url: .npmrc already names the registry, and OIDC needs no token line.
       - run: pnpm install --frozen-lockfile
       # ci.yml gates the pull request; this re-checks the merge commit itself,
       # because a publish cannot be taken back.
       - run: pnpm run ci
       - run: pnpm run build
-      - uses: changesets/action@v2
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           # Not plain `changeset version`: it rewrites package.json with 2-space JSON,
           # which expands the short arrays Biome keeps inline. The script reformats after.
