@@ -29,7 +29,8 @@
     "scrape": "tsx scripts/scrape.ts",
     "validate:data": "tsx scripts/validate-data.ts",
     "ci:seed": "tsx scripts/ci/seed.ts",
-    "ci:report": "tsx scripts/ci/report.ts"
+    "ci:report": "tsx scripts/ci/report.ts",
+    "compare": "node --max-old-space-size=12288 --import tsx scripts/compare/compare.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",

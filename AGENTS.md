@@ -31,6 +31,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   `actions.ts` holds the Actions plumbing (step outputs, job summary, annotations); `report.ts`
   renders the pull request body; `seed.ts` seeds `data/` from the open automation branch. See
   `.github/workflows/README.md`.
+- `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
+  parse engine, diffs their output field by field, and times them. Never commit its output; it
+  names the logs.
 - `scripts/` is outside `tsconfig.json`, so `pnpm typecheck` does not see it.
   `tsconfig.scripts.json` covers it instead, and `pnpm run ci` runs both.
 
