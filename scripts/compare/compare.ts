@@ -8,7 +8,6 @@
  * Never commit the output: it names the logs, and the logs come from orgs.
  */
 
-import { spawnSync } from 'node:child_process';
 import {
   appendFileSync,
   mkdirSync,
@@ -18,8 +17,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
-import { argv, execPath, stderr } from 'node:process';
+import { argv, stderr } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { runJsonChild } from '../child.js';
 import { flag, runIfMain } from '../cli.js';
 import type { DiffResult } from './diff.js';
 import { diffProjections } from './diff.js';
@@ -47,26 +47,15 @@ export function findLogs(dir: string): string[] {
 }
 
 function time(engineName: string, file: string, runs: number): Measurement | Failure {
-  const child = spawnSync(
-    execPath,
-    [
-      '--expose-gc',
-      '--max-old-space-size=8192',
-      '--import',
-      'tsx',
+  try {
+    return runJsonChild(
       measureScript,
-      `--engine=${engineName}`,
-      `--file=${file}`,
-      `--runs=${runs}`,
-    ],
-    { encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024 },
-  );
-  if (child.status !== 0) {
-    const reason = child.stderr.trim().split('\n').slice(-3).join(' ') || `exit ${child.status}`;
-    return { error: reason };
+      [`--engine=${engineName}`, `--file=${file}`, `--runs=${runs}`],
+      ['--expose-gc', '--max-old-space-size=8192'],
+    ) as Measurement;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
   }
-  const last = child.stdout.trim().split('\n').at(-1) ?? '';
-  return JSON.parse(last) as Measurement;
 }
 
 async function project(engineName: string, bytes: Uint8Array): Promise<Projection> {
