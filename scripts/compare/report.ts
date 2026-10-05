@@ -149,11 +149,11 @@ function sum(values: readonly number[]): number {
   return values.reduce((a, b) => a + b, 0);
 }
 
-function formatMs(ms: number): string {
+export function formatMs(ms: number): string {
   return Number.isNaN(ms) ? '—' : ms < 10 ? `${ms.toFixed(2)} ms` : `${Math.round(ms)} ms`;
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (Number.isNaN(bytes)) return '—';
   if (bytes >= 1024 * MB) return `${(bytes / (1024 * MB)).toFixed(2)} GB`;
   return bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;

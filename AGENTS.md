@@ -34,6 +34,8 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
   parse engine, diffs their output field by field, and times them. Never commit its output; it
   names the logs.
+- `scripts/bench/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's
+  low-level choices (`docs/adr/0004`), in Node and headless Chromium.
 - `scripts/` is outside `tsconfig.json`, so `pnpm typecheck` does not see it.
   `tsconfig.scripts.json` covers it instead, and `pnpm run ci` runs both.
 
