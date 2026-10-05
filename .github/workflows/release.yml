@@ -18,7 +18,11 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository == 'apex-dev-tools/apex-log-parser'
+    # Dispatch runs on any branch, so publish only from main or a backport branch. A backport
+    # still publishes to `latest`, which moves it back to the older version.
+    if: >-
+      github.repository == 'apex-dev-tools/apex-log-parser' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
