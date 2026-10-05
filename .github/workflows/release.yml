@@ -3,13 +3,13 @@ on:
   push:
     branches: [main]
   # A startup_failure run cannot be re-run, and push-only recovery needs a new commit
-  # on main. Dispatch retries the same commit after a setting or secret is fixed.
+  # on main. Dispatch retries the same commit after a setting is fixed.
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
-  id-token: write
+  id-token: write # OIDC, for npm trusted publishing and provenance
 
 jobs:
   release:
@@ -20,11 +20,10 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          # tsdown 0.22 needs Node ^22.18 || >=24.11, and both `build` here and
-          # `prepublishOnly` in the publish step run it.
-          node-version: 24
+          # tsdown 0.22 (build, prepublishOnly) needs ^22.18 || >=24.11; 24.11+ bundles the npm 11.5.1+ OIDC needs.
+          node-version: '^24.11'
           cache: pnpm
-          registry-url: https://registry.npmjs.org
+          # No registry-url: .npmrc already names the registry, and OIDC needs no token line.
       - run: pnpm install --frozen-lockfile
       # ci.yml gates the pull request; this re-checks the merge commit itself,
       # because a publish cannot be taken back.
@@ -38,8 +37,3 @@ jobs:
           publish-script: pnpm changeset publish
           pr-title: "chore(release): version packages"
           commit-message: "chore(release): version packages"
-        env:
-          # v2 reads the repository token from its `github-token` input, which already
-          # defaults to the workflow token, so only npm auth is passed here.
-          # setup-node's registry-url writes an .npmrc that reads NODE_AUTH_TOKEN.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

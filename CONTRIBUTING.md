@@ -88,7 +88,7 @@ Releases are automated with [Changesets](https://github.com/changesets/changeset
 
 1. Merged PRs that include a changeset accumulate on `main`.
 2. The [`release` workflow](./.github/workflows/release.yml) opens (or updates) a **Version Packages** PR that bumps the version and writes `CHANGELOG.md` from the accumulated changesets.
-3. Merging that PR publishes to npm (with provenance) via the `NPM_TOKEN` secret.
+3. Merging that PR publishes to npm (with provenance) through [trusted publishing](https://docs.npmjs.com/trusted-publishers). The trusted publisher on npmjs.com names this repository and `release.yml`, so renaming the workflow file, the repository or the org breaks publishing.
 
 ## Questions?
 
