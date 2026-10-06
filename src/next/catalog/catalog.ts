@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import { EVENT_LINES } from './fields.js';
 import type { AfterRule, TextRule } from './text.js';
 import {
   codeUnitText,
@@ -613,7 +614,7 @@ const ENTRIES: { readonly [T in EventType]: Def } = {
   },
   HEAP_DEALLOCATE: { debugCategory: 'apexCode', level: 'FINER', kind: 'heap', line: true },
   HEAP_DUMP: { debugCategory: 'apexCode', level: 'INFO', kind: 'heap' },
-  IDEAS_QUERY_EXECUTE: { debugCategory: 'database', level: 'FINEST', kind: 'soql', line: true },
+  IDEAS_QUERY_EXECUTE: { debugCategory: 'database', level: 'FINEST', kind: 'soql' },
   INVOCABLE_ACTION_DETAIL: { debugCategory: 'workflow', level: 'FINER', kind: 'flow' },
   INVOCABLE_ACTION_ERROR: { debugCategory: 'workflow', level: 'ERROR', kind: 'flow' },
   JSON_DIFF_DETAIL: { debugCategory: 'wave', level: 'FINEST' },
@@ -1453,13 +1454,22 @@ const ENTRIES: { readonly [T in EventType]: Def } = {
   XDS_RESPONSE_ERROR: { debugCategory: 'callout', level: 'ERROR', kind: 'callout', text: at(2) },
 };
 
+type EventLine = Pick<EventTypeInfo, 'description' | 'observed' | 'fields'>;
+
+// Checks that `fields.ts` covers every type, in the shape `infoOf` reads.
+const LINES: { readonly [T in EventType]: EventLine } = EVENT_LINES;
+
 const typeIds = new Map(EVENT_TYPE_NAMES.map((type, typeId) => [type, typeId]));
 
 function infoOf(type: EventType, typeId: number): EventTypeInfo {
   const def = ENTRIES[type];
+  const line = LINES[type];
   return Object.freeze({
     typeId,
     type,
+    description: line.description,
+    fields: Object.freeze(line.fields.map((field) => Object.freeze({ ...field }))),
+    observed: line.observed,
     shape: def.shape ?? 'leaf',
     kind: def.kind ?? 'other',
     category: def.category ?? null,

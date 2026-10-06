@@ -20,8 +20,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `src/__tests__/` — vitest suites. `helpers.ts` holds shared fixtures.
 - `src/next/` — the new parser, which replaces today's for v1. Standalone: it imports nothing from
   the rest of `src/`. Not exported yet. `catalog/catalog.ts` holds one hand-written entry per event
-  type: its type info and its text rule. `__tests__/Catalog.test.ts` fails when an entry drifts
-  from the event database.
+  type: its type info and its text rule. `catalog/fields.ts` holds what each type's raw line
+  contains, field by field, and the Salesforce description. `__tests__/Catalog.test.ts` fails when
+  an entry drifts from the event database.
 - `src/__bench__/` — the `pnpm run bench` benchmarks, which CodSpeed runs on every pull request.
   `fixtures.ts` generates their logs from a seed, with placeholder content only. Its profiles
   (small, developer and large) take their event mix, depth and wrapped lines from
@@ -124,7 +125,9 @@ same change: it pins the runtime list, and pins the types through an interface t
    alone keeps it out of every heap rollup.
 6. `src/next/catalog/types.ts` — append the name to the end of `EVENT_TYPE_NAMES`, never in sorted
    order, so no other type id moves. Then add its entry to `ENTRIES` in
-   `src/next/catalog/catalog.ts`. `Catalog.test.ts` checks it against the data JSON.
+   `src/next/catalog/catalog.ts`, and its line layout to `EVENT_LINES` in
+   `src/next/catalog/fields.ts`. Copy the description from the data JSON. Set `observed: true` only
+   when a real log confirms the layout. `Catalog.test.ts` checks both against the data JSON.
 
 `EventMetadata.test.ts` enforces steps 2 to 4 against the data JSON: every documented event resolves
 to a class, each own-class event's `debugCategory` token equals the database category, only the

@@ -3,13 +3,14 @@
  */
 import eventDatabase from '../../../data/salesforce-debug-log-events.json' with { type: 'json' };
 import { EVENT_TYPES, eventText, eventType, GRAMMAR, idOfType } from '../catalog/catalog.js';
+import { EVENT_LINES } from '../catalog/fields.js';
 import type { EventType } from '../catalog/types.js';
-import { DEBUG_CATEGORY } from '../catalog/types.js';
+import { DEBUG_CATEGORY, EVENT_TYPE_NAMES } from '../catalog/types.js';
 import { fieldsOf } from './helpers.js';
 
 const database = eventDatabase as {
   categories: { name: string }[];
-  events: { event: string; category: string; level: string }[];
+  events: { event: string; category: string; level: string; description: string }[];
 };
 
 const text = (type: EventType, line: string, rest = ''): string | null =>
@@ -36,6 +37,16 @@ describe('the catalog against the event database', () => {
     expect(drift).toEqual([]);
   });
 
+  it('states the documented description for every event', () => {
+    const drift = database.events.flatMap(({ event, description }) => {
+      const info = eventType(idOfType(event));
+      // The database writes 'None' where Salesforce gives no description.
+      const documented = description && description !== 'None' ? description : null;
+      return info?.description === documented ? [] : [event];
+    });
+    expect(drift).toEqual([]);
+  });
+
   it('knows every documented category token', () => {
     expect(Object.keys(DEBUG_CATEGORY).sort()).toEqual(
       database.categories.map((entry) => entry.name).sort(),
@@ -51,6 +62,8 @@ describe('type info', () => {
       expect(eventType(info.type)).toBe(info);
       expect(Object.isFrozen(info)).toBe(true);
       expect(Object.isFrozen(info.exitTypes)).toBe(true);
+      expect(Object.isFrozen(info.fields)).toBe(true);
+      for (const field of info.fields) expect(Object.isFrozen(field)).toBe(true);
     });
     expect(Object.isFrozen(EVENT_TYPES)).toBe(true);
   });
@@ -80,6 +93,43 @@ describe('type info', () => {
         (info) => info.type,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('field layouts', () => {
+  it('names each field once per type, in camelCase', () => {
+    const bad = EVENT_TYPES.flatMap((info) => {
+      const names = info.fields.map((field) => field.name);
+      return names
+        .filter((name, i) => !/^[a-z][a-zA-Z0-9]*$/.test(name) || names.indexOf(name) !== i)
+        .map((name) => `${info.type}: ${name}`);
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('holds a layout for every type, and no other', () => {
+    expect(Object.keys(EVENT_LINES).sort()).toEqual([...EVENT_TYPE_NAMES].sort());
+  });
+
+  // Only observed layouts: a docs layout alone does not change what the engine reads.
+  it('starts an observed layout with a line field exactly when the engine reads a line number', () => {
+    const bad = EVENT_TYPES.filter((info) => {
+      if (!info.observed) return false;
+      const first = info.fields[0];
+      const hasLineNumber = GRAMMAR[info.typeId]?.hasLineNumber;
+      // [EXTERNAL] alone, as on CODE_UNIT_STARTED, is a line field that never states a number.
+      return hasLineNumber ? first?.name !== 'line' : first?.format === '[<n>]';
+    }).map((info) => info.type);
+    expect(bad).toEqual([]);
+  });
+
+  it('describes every field', () => {
+    const bad = EVENT_TYPES.flatMap((info) =>
+      info.fields
+        .filter((field) => !field.description)
+        .map((field) => `${info.type}: ${field.name}`),
+    );
+    expect(bad).toEqual([]);
   });
 });
 
