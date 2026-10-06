@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22, 24]
+        node-version: [22, 24, 26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,7 +35,6 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run typecheck:scripts
       - run: pnpm run test
-      # tsdown 0.22 needs Node ^22.18 || >=24.11, but the library itself still supports 20.
       # Lint, typecheck and test cover every version; the bundle only needs building once.
       - if: matrix.node-version == 24
         run: pnpm run build

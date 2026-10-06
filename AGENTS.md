@@ -59,8 +59,8 @@ any commit.
 - `pnpm run bench` runs the benchmarks without watch mode. Locally it reports wall time; CI reports instruction
   counts, so the two do not compare. A parser change that can affect large logs also needs
   `pnpm run bench:large`, against `main`.
-- `pnpm build` needs Node `^22.18 || >=24.11` for tsdown, although the package itself supports
-  Node 20. CI builds on Node 24 only.
+- `pnpm build` needs Node `^22.18 || ^24.11 || >=26` for tsdown, although the package itself
+  supports any Node 22. CI builds on Node 24 only.
 
 ## The public API surface
 
