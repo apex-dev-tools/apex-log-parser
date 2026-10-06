@@ -1,5 +1,7 @@
 # The new engine scans a string, not bytes
 
+Superseded by 0005 for the input core. The column findings below still hold.
+
 The research proposed a byte scanner. We scan a string instead.
 
 `parse` still accepts bytes, a `Blob` and streams. It decodes them once with `TextDecoder`. Field
