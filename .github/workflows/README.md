@@ -26,6 +26,10 @@ the job near 1 minute. An instruction count changes by the same percentage at 1 
 unless the cost grows faster than the log. Logs of 8, 20 and 100 MB show garbage
 collection in wall time, so `pnpm run bench:large` parses them locally.
 
+Each log opens with one 2.5 s method, so every later time is past 2^31 ns. Node's V8 stores a
+number that large as a separate heap object, as it stores most times in a long real log. V8
+with pointer compression, as in Chrome and Electron, does so from 2^30 ns.
+
 ### Why it is built this way
 
 | Choice | Reason |
