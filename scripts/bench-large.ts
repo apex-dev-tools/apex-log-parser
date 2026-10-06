@@ -24,7 +24,9 @@ export function report(results: LargeResult[], baseline: LargeResult[] = []): st
   return results.map(({ name, ms, heapBytes }) => {
     const before = baseline.find((result) => result.name === name);
     const heap = heapBytes / 1_000_000;
-    return `${name}: ${ms.toFixed(0)} ms${change(ms, before?.ms)}, heap ${heap.toFixed(0)} MB${change(heapBytes, before?.heapBytes)}`;
+    // A renamed log would otherwise print as if no baseline had been given.
+    const missing = baseline.length && !before ? ' (not in baseline)' : '';
+    return `${name}: ${ms.toFixed(0)} ms${change(ms, before?.ms)}, heap ${heap.toFixed(0)} MB${change(heapBytes, before?.heapBytes)}${missing}`;
   });
 }
 
