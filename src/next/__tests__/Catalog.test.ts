@@ -3,14 +3,13 @@
  */
 import eventDatabase from '../../../data/salesforce-debug-log-events.json' with { type: 'json' };
 import { EVENT_TYPES, eventText, eventType, GRAMMAR, idOfType } from '../catalog/catalog.js';
-import { EVENT_LINES } from '../catalog/fields.js';
 import type { EventType } from '../catalog/types.js';
-import { DEBUG_CATEGORY, EVENT_TYPE_NAMES } from '../catalog/types.js';
+import { DEBUG_CATEGORY } from '../catalog/types.js';
 import { fieldsOf } from './helpers.js';
 
 const database = eventDatabase as {
   categories: { name: string }[];
-  events: { event: string; category: string; level: string; description: string }[];
+  events: { event: string; category: string; level: string }[];
 };
 
 const text = (type: EventType, line: string, rest = ''): string | null =>
@@ -37,16 +36,6 @@ describe('the catalog against the event database', () => {
     expect(drift).toEqual([]);
   });
 
-  it('states the documented description for every event', () => {
-    const drift = database.events.flatMap(({ event, description }) => {
-      const info = eventType(idOfType(event));
-      // The database writes 'None' where Salesforce gives no description.
-      const documented = description && description !== 'None' ? description : null;
-      return info?.description === documented ? [] : [event];
-    });
-    expect(drift).toEqual([]);
-  });
-
   it('knows every documented category token', () => {
     expect(Object.keys(DEBUG_CATEGORY).sort()).toEqual(
       database.categories.map((entry) => entry.name).sort(),
@@ -63,7 +52,6 @@ describe('type info', () => {
       expect(Object.isFrozen(info)).toBe(true);
       expect(Object.isFrozen(info.exitTypes)).toBe(true);
       expect(Object.isFrozen(info.fields)).toBe(true);
-      for (const field of info.fields) expect(Object.isFrozen(field)).toBe(true);
     });
     expect(Object.isFrozen(EVENT_TYPES)).toBe(true);
   });
@@ -98,38 +86,71 @@ describe('type info', () => {
 
 describe('field layouts', () => {
   it('names each field once per type, in camelCase', () => {
-    const bad = EVENT_TYPES.flatMap((info) => {
-      const names = info.fields.map((field) => field.name);
-      return names
-        .filter((name, i) => !/^[a-z][a-zA-Z0-9]*$/.test(name) || names.indexOf(name) !== i)
-        .map((name) => `${info.type}: ${name}`);
-    });
-    expect(bad).toEqual([]);
-  });
-
-  it('holds a layout for every type, and no other', () => {
-    expect(Object.keys(EVENT_LINES).sort()).toEqual([...EVENT_TYPE_NAMES].sort());
-  });
-
-  // Only observed layouts: a docs layout alone does not change what the engine reads.
-  it('starts an observed layout with a line field exactly when the engine reads a line number', () => {
-    const bad = EVENT_TYPES.filter((info) => {
-      if (!info.observed) return false;
-      const first = info.fields[0];
-      const hasLineNumber = GRAMMAR[info.typeId]?.hasLineNumber;
-      // [EXTERNAL] alone, as on CODE_UNIT_STARTED, is a line field that never states a number.
-      return hasLineNumber ? first?.name !== 'line' : first?.format === '[<n>]';
-    }).map((info) => info.type);
-    expect(bad).toEqual([]);
-  });
-
-  it('describes every field', () => {
     const bad = EVENT_TYPES.flatMap((info) =>
       info.fields
-        .filter((field) => !field.description)
-        .map((field) => `${info.type}: ${field.name}`),
+        .filter((name, i) => !/^[a-z][a-zA-Z0-9]*$/.test(name) || info.fields.indexOf(name) !== i)
+        .map((name) => `${info.type}: ${name}`),
     );
     expect(bad).toEqual([]);
+  });
+
+  // A rename to or from `line` changes what the engine reads, so the full list is pinned.
+  it('reads a line number on exactly these types', () => {
+    const types = EVENT_TYPES.filter((info) => GRAMMAR[info.typeId]?.hasLineNumber).map(
+      (info) => info.type,
+    );
+    expect(types).toMatchInlineSnapshot(`
+      [
+        "CALLOUT_REQUEST",
+        "CALLOUT_RESPONSE",
+        "CODE_UNIT_STARTED",
+        "CONSTRUCTOR_ENTRY",
+        "CONSTRUCTOR_EXIT",
+        "CURSOR_CREATE_BEGIN",
+        "CURSOR_CREATE_END",
+        "CURSOR_FETCH",
+        "CURSOR_FETCH_PAGE",
+        "DML_BEGIN",
+        "DML_END",
+        "EMAIL_QUEUE",
+        "EXCEPTION_THROWN",
+        "HEAP_ALLOCATE",
+        "HEAP_DEALLOCATE",
+        "IDEAS_QUERY_EXECUTE",
+        "LIMIT_USAGE",
+        "METHOD_ENTRY",
+        "METHOD_EXIT",
+        "POP_TRACE_FLAGS",
+        "PUSH_TRACE_FLAGS",
+        "QUERY_MORE_BEGIN",
+        "QUERY_MORE_END",
+        "QUERY_MORE_ITERATIONS",
+        "SAVEPOINT_ROLLBACK",
+        "SAVEPOINT_SET",
+        "SOQL_EXECUTE_BEGIN",
+        "SOQL_EXECUTE_END",
+        "SOQL_EXECUTE_EXPLAIN",
+        "SOSL_EXECUTE_BEGIN",
+        "SOSL_EXECUTE_END",
+        "STATEMENT_EXECUTE",
+        "SYSTEM_CONSTRUCTOR_ENTRY",
+        "SYSTEM_CONSTRUCTOR_EXIT",
+        "SYSTEM_METHOD_ENTRY",
+        "SYSTEM_METHOD_EXIT",
+        "USER_DEBUG",
+        "USER_DEBUG_DEBUG",
+        "USER_DEBUG_ERROR",
+        "USER_DEBUG_FINE",
+        "USER_DEBUG_FINER",
+        "USER_DEBUG_FINEST",
+        "USER_DEBUG_INFO",
+        "USER_DEBUG_WARN",
+        "USER_INFO",
+        "VARIABLE_ASSIGNMENT",
+        "VARIABLE_SCOPE_BEGIN",
+        "VF_APEX_CALL_START",
+      ]
+    `);
   });
 });
 
@@ -142,6 +163,12 @@ describe('event text', () => {
 
   it('is the continuation alone when the text field is empty', () => {
     expect(text('EXCEPTION_THROWN', '[12]|', '\nmessage')).toBe('message');
+  });
+
+  it('reads only the fields a real line states', () => {
+    expect(text('WF_EMAIL_ALERT', 'alert')).toBe('alert');
+    expect(text('WF_APPROVAL_SUBMITTER', 'Name|005000000000AAA')).toBe('Name : 005000000000AAA');
+    expect(text('VALIDATION_PASS', '')).toBeNull();
   });
 
   it('prints a missing field as empty, not "undefined"', () => {

@@ -73,6 +73,16 @@ What is true of every event of one type: its category, debug category, level, ki
 It belongs to the type, never to one event.
 _Avoid_: event metadata
 
+**Field**:
+One `|`-separated part of a line after its timestamp and event type, such as the row count of
+`SOQL_EXECUTE_END`. Each event type names its fields, in line order. A field the line does not state
+is null.
+_Avoid_: column (a different thing, see below), part
+
+**Layout**:
+An event type's fields, in order. A layout is either seen in real logs or only taken from the
+Salesforce documentation.
+
 **Shape**:
 How an event type sits in the tree: a frame, a leaf, or an exit line.
 _Avoid_: kind (a different thing, see below)

@@ -386,26 +386,16 @@ export type Kind =
   | 'cache'
   | 'other';
 
-/** One `|` field of a raw log line. */
-export interface FieldInfo {
-  /** A camelCase name, unique within the type. */
-  readonly name: string;
-  /** The raw shape, such as `Rows:<n>`: `<n>` a number, `<id>` a Salesforce id, `<text>` free text. */
-  readonly format: string;
-  readonly description: string;
-}
-
 /** What is true of every event of one type. */
 export interface EventTypeInfo {
   /** The index of this type in `EVENT_TYPES`, and the value of `columns.type`. */
   readonly typeId: number;
   readonly type: EventType;
-  /** What Salesforce says this type logs. Null when the documentation does not say. */
-  readonly description: string | null;
-  /** The fields of the raw line from field 2 on, after the timestamp and the type. */
-  readonly fields: readonly FieldInfo[];
-  /** True when real logs confirm `fields`. False when it only follows the Salesforce documentation. */
-  readonly observed: boolean;
+  /**
+   * The names of the raw line's fields from field 2 on, after the timestamp and the type.
+   * `EventFields` documents each one.
+   */
+  readonly fields: readonly string[];
   readonly shape: Shape;
   readonly kind: Kind;
   /** The timeline group. Null for a type outside the timeline, such as a leaf or an exit line. */
