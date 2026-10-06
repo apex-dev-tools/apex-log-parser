@@ -6,9 +6,40 @@ The YAML says what runs. The scripts decide what happens, so the logic is testab
 | Workflow | Trigger |
 | --- | --- |
 | `ci.yml` | push and pull request on `main` |
+| `benchmark.yml` | push and pull request on `main` |
 | `codeql.yml` | schedule and pull request |
 | `release.yml` | push on `main`, through Changesets |
 | `scrape-events.yml` | quarterly schedule, dispatch, or another workflow |
+
+## benchmark.yml
+
+Runs `node --run bench` under [CodSpeed](https://codspeed.io) in simulation mode. CodSpeed
+counts CPU instructions, not wall time, so a run on a shared runner is repeatable. Each push
+to `main` records a baseline. On a pull request, CodSpeed posts a comment with the change
+per benchmark, and its check fails when a benchmark regresses past the threshold set on
+codspeed.io.
+
+The benchmarks are in `src/__bench__/`. They parse 3 synthetic logs of 19 KB to 1 MB, which
+`src/__bench__/fixtures.ts` generates, and `BenchFixtures.test.ts` checks those logs in
+normal CI. The plugin parses each log 8 times under simulation, so the logs stay small to keep
+the job near 1 minute. An instruction count changes by the same percentage at 1 MB as at 20 MB,
+unless the cost grows faster than the log. Logs of 8, 20 and 100 MB show garbage
+collection in wall time, so `pnpm run bench:large` parses them locally.
+
+### Why it is built this way
+
+| Choice | Reason |
+| --- | --- |
+| Simulation mode | Wall time on a shared runner varies by more than the regressions to catch. Instruction counts vary by about 1%. |
+| Logs of 1.5 MB in all | Each bench parses 8 times under Valgrind, and the job holds up the merge. |
+| Exact Node version | Instruction counts move with the V8 version. A bump shifts the baseline once; acknowledge it on codspeed.io. |
+| No `paths:` filter | A required check that does not run stays "Expected" and blocks the merge. |
+| `id-token: write` at job level | CodSpeed authenticates with OIDC, so no secret is stored. |
+| Fork pull requests | GitHub gives a fork no OIDC token, so CodSpeed uploads without a token. This works for a public repository. Never use `pull_request_target`. |
+| One concurrency group per `main` commit | Each `main` commit is a baseline. A shared group drops a pending run even with `cancel-in-progress` off. |
+| The CodSpeed check is required, not this job | The job passes on a regression. Only the CodSpeed check fails. |
+
+To accept a deliberate regression, acknowledge it on the pull request's CodSpeed report.
 
 ## scrape-events.yml
 
