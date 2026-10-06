@@ -37,6 +37,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `scripts/bench-large.ts` — `pnpm run bench:large`, the 8, 20 and 100 MB synthetic logs, which are
   too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
   `--baseline=<path>` on the other to compare them.
+- `scripts/__tests__/parse-heap.test.ts` — the V8 heap the 8 MB log's tree keeps, per character,
+  within 5% of a pinned value. CodSpeed cannot see the V8 heap. A change that moves it on purpose
+  updates the pin.
 - `scripts/cli.ts` — argument reading and the entry-point guard every script uses. No other
   imports, so a small script does not pull the scraper's module graph in to read one flag.
 - `scripts/ci/` — the scrape workflow's logic, so the YAML only declares what runs.
