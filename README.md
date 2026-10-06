@@ -161,7 +161,7 @@ truncated log or an unexpected exit.
 
 ## Requirements
 
-- **Node.js 20 or later.** The package targets ES2022 and runs in any runtime with ES modules:
+- **Node.js 22 or later.** The package targets ES2022 and runs in any runtime with ES modules:
   Node, Deno, Bun and modern browsers. It reads no files and makes no network calls.
 - **ESM only.** There is no CommonJS build, so `require()` does not work.
 - **TypeScript declarations ship with the package.** No `@types` install is needed.

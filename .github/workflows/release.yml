@@ -20,7 +20,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          # tsdown 0.22 needs Node ^22.18 || >=24.11, and both `build` here and
+          # tsdown 0.23 needs Node ^22.18, ^24.11 or >=26, and both `build` here and
           # `prepublishOnly` in the publish step run it.
           node-version: 24
           cache: pnpm
