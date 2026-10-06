@@ -30,8 +30,9 @@ export function report(results: LargeResult[], baseline: LargeResult[] = []): st
   });
 }
 
+// Sorts in place: every caller passes an array it does not reuse.
 function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
+  const sorted = values.sort((a, b) => a - b);
   const middle = sorted.length / 2;
   return Number.isInteger(middle)
     ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
@@ -75,9 +76,10 @@ function main(): void {
   const json = flag(args, '--json');
   const baselinePath = flag(args, '--baseline');
 
-  const results = Object.entries(largeLogs).map(
-    ([name, options]): LargeResult => ({ name, ...measureLog(makeLog(options), gc, runs) }),
-  );
+  const results = Object.entries(largeLogs).map(([name, options]): LargeResult => {
+    const { ms, heapBytes } = measureLog(makeLog(options), gc, runs);
+    return { name, ms, heapBytes };
+  });
 
   const baseline: LargeResult[] = baselinePath
     ? JSON.parse(readFileSync(baselinePath, 'utf8'))
