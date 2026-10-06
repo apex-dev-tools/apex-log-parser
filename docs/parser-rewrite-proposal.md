@@ -65,9 +65,7 @@ How to read this:
 
 - **Today's cost is allocation, not scanning.** Splitting every line alone costs 231 ms, and the
   full parse takes 12× that. The prototype parses the same structure and allocates almost nothing.
-- **Bytes beat strings.** The byte scanner is about 1.5× faster than the same code over a string,
-  and it skips the decode entirely (75–207 ms at 100 MB). A string with one non-Latin-1 character
-  also doubles in memory, because V8 stores the whole string two-byte. A `Uint8Array` never does.
+- **Bytes vs strings depends on the platform and the input.** See `docs/parser-rewrite-agent-brief.md` §3.9: scan whatever the caller already has, and never convert just to scan.
 - **A worker cannot help today's tree.** Cloning an object-per-event tree takes longer than
   parsing it (3.0 s). Columns clone in 21 ms, and a transfer takes ~0 ms.
 
@@ -195,7 +193,7 @@ All of them separate **finding the structure**, which must be fast and allocatio
 
 ### 4.1 Scanner
 
-- Input is bytes. A `string` input is accepted, but read through a `charCodeAt` loop
+- Input is a string or bytes, each with its own specialised loop (§3.9 of the brief). A `string` input is read through a `charCodeAt` loop
   specialised for strings, not through a generic accessor.
 - Each line: `indexOf(10)` for the end of the line. Check `HH:MM:SS.f (`, read the nanosecond
   counter digit by digit, and hash the event name from its bytes into a perfect-hash table of

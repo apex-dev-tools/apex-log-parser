@@ -387,9 +387,11 @@ the ranges, not the single figures.
 
 - **Today's cost is allocation, not scanning.** Splitting every line costs 185 ms, and the parse
   costs 15× that.
-- **Bytes beat strings.** The same v1 loop ran about 1.5× faster on a `Uint8Array` than on a
-  string with `charCodeAt`, and it skips the decode (71–207 ms at 100 MB). A string with one
-  non-Latin-1 character also doubles in size, because V8 stores the whole string two-byte.
+- *(Revised in §3.9.)* **Bytes vs strings depends on the platform and on where the input comes
+  from.** The early v1 comparison favoured bytes 1.5×, but its string loop was less tuned. With
+  the same tuned algorithm, bytes won by 10–40% on Linux x86-64 Node 22, while a maintainer's
+  local test found strings faster. A string with one non-Latin-1 character also doubles in memory,
+  because V8 stores the whole string two-byte.
 - **The structure is built eagerly; objects and strings are lazy.** The root's total, a whole
   flame chart and `ofType` cost nothing after the scan, because rollups and indexes happen
   during it.
@@ -681,6 +683,65 @@ module import, or WASM compile and instantiate, and memory growth). Three runs e
 - Today's script went through tsx, which adds a few milliseconds of transform to the "today" and
   JS rows on the sample log.
 
+### 3.9 Strings vs bytes: it depends on the platform and the input
+
+A maintainer's local test found **strings faster than bytes**. The earlier "bytes beat strings
+1.5×" (§3.2) compared a tuned byte loop with a less-tuned string loop, so it was re-run fairly.
+`scan-v5s.mjs` is v5 with only character reads (`charCodeAt`) and newline search
+(`String.indexOf`) changed. `scan-v5w.mjs` is v5 with a SWAR newline search. Each variant ran in
+its own process (`sb-one.mjs`), so V8 never specialises shared code for one input type and
+penalises the other. Medians of 9 warm scans, three rounds. Every variant builds the same tree.
+
+**Linux x86-64, Node 22.22 (this environment):**
+
+| Log | String | Bytes, `Uint8Array.indexOf` | Bytes, `Buffer.indexOf` (Node) | Bytes, SWAR |
+| --- | ---: | ---: | ---: | ---: |
+| 20 MB | 60–67 ms | 47–53 ms | **37–42 ms** | 45–48 ms |
+| 100 MB | 325–352 ms | 234–250 ms | **199–208 ms** | 222–233 ms |
+| 90 MB, two-byte string | 422–446 ms | 361–375 ms | **312–330 ms** | 338–351 ms |
+
+**Getting the input** (`strbytes.mjs`), at 100 MB:
+
+| Conversion | Time |
+| --- | ---: |
+| Read the file as bytes | 59–87 ms |
+| Read the file as a UTF-8 string | 214 ms, or 401 ms when the result is two-byte |
+| `TextDecoder` (bytes to string) | 91 ms (294 ms two-byte) |
+| `TextEncoder` (string to bytes) | 107 ms (159 ms two-byte) |
+
+**What explains a "strings faster" result:**
+
+1. **The machine.** Apple Silicon (arm64) V8 may favour `charCodeAt` and `String.indexOf`
+   differently from x86-64. That is untested here, because this environment is x86-64 only.
+2. **What was timed.** If the input was already a string, as in a webview that receives the log
+   text, the byte path must pay `TextEncoder` first (~17 ms at 20 MB, ~107 ms at 100 MB). That
+   alone makes strings win end to end.
+3. **How text fields were read.** `TextDecoder` per short field is slow, with a large fixed cost
+   per call. Decode short ASCII in JS, and decode each interned string once.
+4. **The newline search.** `Uint8Array.indexOf` is a scalar loop in V8, but `String.indexOf` is
+   fast. A byte loop with plain `indexOf` is the weakest byte variant.
+
+**Decision:**
+
+- **Scan what the caller already has. Never convert just to scan.**
+- **Analyzer webview:** the log arrives as text, so use the **string loop**.
+- **MCP, or reading a file in Node:** read **bytes**, which skips the 214–401 ms UTF-8 decode, and
+  scan with `Buffer.indexOf`.
+- **Streams and `Blob`:** bytes.
+- **A WASM core:** needs bytes. From a string, use `TextEncoder.encodeInto` straight into WASM
+  memory, and count that cost in its gate.
+- **Both loops are generated from the same grammar tables** and must produce identical columns,
+  enforced by a differential test.
+- **Phase 0 must run `sb-one.mjs` on the maintainers' machines** (macOS arm64 at least) and on the
+  analyzer's real input path, before any default is fixed.
+
+To reproduce locally, from the repo root:
+
+```sh
+for v in string u8 buffer swar; do node bench/rewrite/sb-one.mjs $v bench/rewrite/logs/large100.log; done
+node bench/rewrite/strbytes.mjs bench/rewrite/logs dev20.log large100.log large100-hc.log
+```
+
 ---
 
 ## 4. Prior art, and what to take from each
@@ -708,8 +769,9 @@ Other facts used:
 ### 5.1 How the parse works
 
 1. **Input.** `Uint8Array`, `Blob`, `ReadableStream<Uint8Array>`, `AsyncIterable`, a Node file
-   path, or a `string`. A string goes through a loop specialised for `charCodeAt`. Bytes are the
-   primary path.
+   path, or a `string`. **Both are first-class**, each with its own specialised loop (`charCodeAt`
+   plus `String.indexOf`, or byte reads plus the platform's fastest newline search). Scan what the
+   caller already has, and never convert just to scan (§3.9).
 2. **Scan, one pass, one specialised function, no allocation per line.** For each line:
    - find the line end with `indexOf(10)`, and strip a trailing `\r`;
    - check `HH:MM:SS.f (` by char codes, and read the nanosecond counter digit by digit;
@@ -3583,6 +3645,378 @@ for (const f of process.argv.slice(2)) {
 }
 ````
 
+### `scan-v5s.mjs`
+
+````js
+// Prototype v5s: v5 over a JS string (charCodeAt + String.indexOf), otherwise identical.
+// Prototype v5: v4 with label hashing fused into the field scan, namespace derived once per
+// distinct label, end offsets stored only for wrapped rows. (Header from v4 follows.)
+// Prototype v4: v3's output shape, tuned. One function, no closures in the loop. Adds today's
+// line-number exit matching, unwinding to a match further down the stack, unmatched exits kept
+// as rows, SOQL/SOSL rows read from the exit line, and a root row 0. Still omits issues text,
+// limits, truncation, package merge, flow residuals, discontinuity and the per-event text rules.
+import { readFileSync } from 'node:fs';
+
+const table = JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'));
+export const names = ['<root>', ...table.map((r) => r.name)];
+const N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+export const PURE_EXIT = new Uint8Array(N);
+const NEXT_IS_EXIT = new Uint8Array(N), ACCEPTS = new Uint8Array(N), HAS_EXITS = new Uint8Array(N), EXIT_MATCH = new Uint8Array(N * N);
+table.forEach((r, i) => {
+  const t = i + 1;
+  PURE_EXIT[t] = r.isExit && !(r.exitTypes?.length) ? 1 : 0;
+  NEXT_IS_EXIT[t] = r.nextLineIsExit ? 1 : 0; ACCEPTS[t] = r.acceptsText ? 1 : 0;
+  for (const x of r.exitTypes ?? []) { EXIT_MATCH[t * N + idOf.get(x)] = 1; HAS_EXITS[t] = 1; }
+});
+const LABEL_FIELD = new Int8Array(N).fill(-1);
+for (const [n, f] of [['METHOD_ENTRY', 4], ['CONSTRUCTOR_ENTRY', 5], ['SYSTEM_METHOD_ENTRY', 3], ['CODE_UNIT_STARTED', 4], ['VF_APEX_CALL_START', 3]]) LABEL_FIELD[idOf.get(n)] = f;
+// Counter kind contributed by a leaf of this type: 1 soql, 2 dml, 3 sosl, 7 thrown (slot index + 1)
+const OWN_COUNT = new Int8Array(N);
+OWN_COUNT[idOf.get('SOQL_EXECUTE_BEGIN')] = 1; OWN_COUNT[idOf.get('DML_BEGIN')] = 2; OWN_COUNT[idOf.get('SOSL_EXECUTE_BEGIN')] = 3; OWN_COUNT[idOf.get('EXCEPTION_THROWN')] = 7;
+const ROWS_FROM_EXIT = new Int8Array(N); // exit type -> row-count slot (+1)
+ROWS_FROM_EXIT[idOf.get('SOQL_EXECUTE_END')] = 4; ROWS_FROM_EXIT[idOf.get('SOSL_EXECUTE_END')] = 6;
+const HEAP = idOf.get('HEAP_ALLOCATE'), EXEC = idOf.get('EXECUTION_STARTED');
+const HB = 4096, H_TAB = new Int16Array(HB).fill(-1), NAME_HASH = new Int32Array(N), NAME_LEN = new Uint8Array(N);
+for (let i = 1; i < N; i++) {
+  let h = 0; for (const ch of names[i]) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  NAME_HASH[i] = h; NAME_LEN[i] = names[i].length; let k = h & (HB - 1); while (H_TAB[k] !== -1) k = (k + 1) & (HB - 1); H_TAB[k] = i;
+}
+export const NC = 8;
+const LN_NULL = -2, LN_EXTERNAL = -1;
+
+function grow(a, n) { const b = new a.constructor(n); b.set(a.subarray(0, Math.min(a.length, n))); return b; }
+
+export function scanV5s(src, opts = {}) {
+  const verify = opts.verify !== false;
+  const methodStats = opts.methodStats !== false;
+  const len = src.length;
+  let cap = Math.max(1 << 12, Math.ceil(len / 120)), n = 0;
+  let type = new Uint16Array(cap), start = new Uint32Array(cap), ts = new Float64Array(cap),
+    exitTs = new Float64Array(cap), parent = new Int32Array(cap), subEnd = new Uint32Array(cap), depth = new Uint16Array(cap),
+    lineNo = new Int32Array(cap), label = new Int32Array(cap), ns = new Int32Array(cap), selfDur = new Float64Array(cap),
+    cslot = new Int32Array(cap), heap = new Float64Array(cap), peak = new Float64Array(cap);
+  let pCap = 1 << 10, nSlots = 0, pool = new Int32Array(pCap * NC);
+  let sCap = 1 << 12, nStr = 0, strStart = new Uint32Array(sCap), strEnd = new Uint32Array(sCap), strHash = new Int32Array(sCap);
+  let IB = 1 << 14, iTab = new Int32Array(IB).fill(-1);
+  let mCap = 1 << 12, mCalls = new Uint32Array(mCap), mSelf = new Float64Array(mCap), mTotal = new Float64Array(mCap), mActive = new Uint16Array(mCap);
+  const byTypeN = new Uint32Array(N), byType = new Array(N); for (let t = 0; t < N; t++) byType[t] = new Uint32Array(8);
+  const wrappedEnd = new Map(); let nsOfLabel = new Int32Array(1 << 12).fill(-2);
+  const stack = new Int32Array(16384); let sp = 0, last = -1, running = 0, unmatchedExits = 0;
+  // root row 0
+  type[0] = 0; parent[0] = -1; label[0] = -1; ns[0] = -1; cslot[0] = -1; n = 1; stack[sp++] = 0;
+  let pos = 0;
+  while (pos < len) {
+    let eol = src.indexOf('\n', pos); if (eol < 0) eol = len;
+    let lineEnd = eol; if (lineEnd > pos && src.charCodeAt(lineEnd - 1) === 13) lineEnd--;
+    if (src.charCodeAt(pos + 2) === 58 && src.charCodeAt(pos + 5) === 58) {
+      let i = pos + 8; while (i < lineEnd && src.charCodeAt(i) !== 40) i++; i++;
+      let t = 0, c = 0; while ((c = src.charCodeAt(i)) !== 41 && i < lineEnd) { t = t * 10 + (c - 48); i++; }
+      i += 2; const t0 = i;
+      let h = 0; while (i < lineEnd && (c = src.charCodeAt(i)) !== 124) { h = (Math.imul(h, 31) + c) | 0; i++; }
+      let k = h & (HB - 1), id = 0;
+      for (let e; (e = H_TAB[k]) !== -1; k = (k + 1) & (HB - 1)) if (NAME_HASH[e] === h && NAME_LEN[e] === i - t0) { id = e; break; }
+      if (id === 0) { pos = eol + 1; continue; } // unsupported name: a parsing error in the real engine
+      let ln = LN_NULL;
+      if (src.charCodeAt(i) === 124 && src.charCodeAt(i + 1) === 91) { let j = i + 2; if (src.charCodeAt(j) === 69) ln = LN_EXTERNAL; else { ln = 0; while ((c = src.charCodeAt(j)) >= 48 && c <= 57) { ln = ln * 10 + (c - 48); j++; } } }
+      if (last >= 0 && NEXT_IS_EXIT[type[last]] && exitTs[last] === 0) exitTs[last] = t;
+      if (PURE_EXIT[id]) {
+        // find the frame this exit closes: the top, or one further down (unwind)
+        let m = sp - 1;
+        for (; m > 0; m--) { const f = stack[m], fl = lineNo[f]; if (EXIT_MATCH[type[f] * N + id] && (ln === fl || ln < 0 || fl < 0)) break; }
+        if (m > 0) {
+          const rs = ROWS_FROM_EXIT[id];
+          if (rs) { // Rows:N from the exit line, onto the frame being closed
+            let j = lineEnd - 1; while (j > i && src.charCodeAt(j) !== 58) j--; let rows = 0; j++; while (j < lineEnd && (c = src.charCodeAt(j)) >= 48 && c <= 57) { rows = rows * 10 + (c - 48); j++; }
+            const f = stack[m]; let sl = cslot[f]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[f] = nSlots++; } pool[sl * NC + rs - 1] += rows;
+          }
+          while (sp > m) {
+            const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n;
+            const p = parent[e];
+            selfDur[p] -= tot; const ck = cslot[e];
+            if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } const pb = pk * NC, cb = ck * NC; for (let q = 0; q < NC; q++) pool[pb + q] += pool[cb + q]; }
+            heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+            if (methodStats) { const l = label[e]; if (l >= 0) { if (--mActive[l] === 0) mTotal[l] += tot; mSelf[l] += selfDur[e]; } }
+          }
+          last = -1; pos = eol + 1; continue;
+        }
+        unmatchedExits++; // kept as a leaf row, as today
+      }
+      if (n === cap) { cap *= 2; type = grow(type, cap); start = grow(start, cap); ts = grow(ts, cap); exitTs = grow(exitTs, cap); parent = grow(parent, cap); subEnd = grow(subEnd, cap); depth = grow(depth, cap); lineNo = grow(lineNo, cap); label = grow(label, cap); ns = grow(ns, cap); selfDur = grow(selfDur, cap); cslot = grow(cslot, cap); heap = grow(heap, cap); peak = grow(peak, cap); }
+      if (id === EXEC) {
+        while (sp > 1) { const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; } }
+      }
+      const e = n++; const p = stack[sp - 1];
+      type[e] = id; start[e] = pos; ts[e] = t; lineNo[e] = ln; label[e] = -1; ns[e] = -1; cslot[e] = -1;
+      parent[e] = p; depth[e] = sp - 1; subEnd[e] = e + 1;
+      const lf = LABEL_FIELD[id];
+      if (lf > 0) {
+        let f = 2, a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && src.charCodeAt(a) !== 124) a++; f++; }
+        a++; let b = a, hh = 0, dot = -1;
+        while (b < lineEnd && (c = src.charCodeAt(b)) !== 124) { hh = (Math.imul(hh, 31) + c) | 0; if (c === 46 && dot < 0) dot = b; b++; }
+        if (a < b) {
+          let kk = hh & (IB - 1), sid = -1;
+          for (let s2; (s2 = iTab[kk]) !== -1; kk = (kk + 1) & (IB - 1)) {
+            if (strHash[s2] === hh && strEnd[s2] - strStart[s2] === b - a) {
+              if (!verify) { sid = s2; break; }
+              let x = strStart[s2], y = a; while (y < b && src.charCodeAt(y) === src.charCodeAt(x)) { x++; y++; } if (y === b) { sid = s2; break; }
+            }
+          }
+          if (sid < 0) {
+            if (nStr + 2 >= sCap) { sCap *= 2; strStart = grow(strStart, sCap); strEnd = grow(strEnd, sCap); strHash = grow(strHash, sCap); }
+            sid = nStr++; strStart[sid] = a; strEnd[sid] = b; strHash[sid] = hh; iTab[kk] = sid;
+            if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = strHash[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } }
+          }
+          label[e] = sid;
+          if (sid >= nsOfLabel.length) { const o = nsOfLabel; nsOfLabel = new Int32Array(o.length * 2).fill(-2); nsOfLabel.set(o); }
+          let nsid = nsOfLabel[sid];
+          if (nsid === -2) {
+            // first sight of this label: intern its namespace prefix once
+            nsid = -1;
+            if (dot > a) {
+              let h2 = 0; for (let q = a; q < dot; q++) h2 = (Math.imul(h2, 31) + src.charCodeAt(q)) | 0;
+              let k2 = h2 & (IB - 1);
+              for (let s2; (s2 = iTab[k2]) !== -1; k2 = (k2 + 1) & (IB - 1)) { if (strHash[s2] === h2 && strEnd[s2] - strStart[s2] === dot - a) { let x = strStart[s2], y = a; while (y < dot && src.charCodeAt(y) === src.charCodeAt(x)) { x++; y++; } if (y === dot) { nsid = s2; break; } } }
+              if (nsid < 0) { nsid = nStr++; strStart[nsid] = a; strEnd[nsid] = dot; strHash[nsid] = h2; iTab[k2] = nsid; if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = strHash[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } } }
+            }
+            nsOfLabel[sid] = nsid;
+          }
+          ns[e] = nsid;
+        }
+      }
+      if (byTypeN[id] === byType[id].length) byType[id] = grow(byType[id], byType[id].length * 2);
+      byType[id][byTypeN[id]++] = e;
+      const own = OWN_COUNT[id];
+      if (own) { let sl = cslot[e]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[e] = nSlots++; } pool[sl * NC + own - 1] = 1; }
+      else if (id === HEAP) { let j = lineEnd - 1; while (j > i && src.charCodeAt(j) !== 58) j--; let b = 0, neg = false; j++; if (src.charCodeAt(j) === 45) { neg = true; j++; } while (j < lineEnd && (c = src.charCodeAt(j)) >= 48 && c <= 57) { b = b * 10 + (c - 48); j++; } if (neg) b = -b; heap[e] = b; running = running + b; if (running < 0) running = 0; peak[e] = running; }
+      if (HAS_EXITS[id]) {
+        stack[sp++] = e;
+        if (methodStats) { const l = label[e]; if (l >= 0) { if (l >= mCap) { mCap = Math.max(mCap * 2, l + 1); mCalls = grow(mCalls, mCap); mSelf = grow(mSelf, mCap); mTotal = grow(mTotal, mCap); mActive = grow(mActive, mCap); } mCalls[l]++; mActive[l]++; } }
+      } else {
+        // a leaf rolls straight into its parent
+        const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; }
+        heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+      }
+      last = e;
+    } else if (last >= 0 && ACCEPTS[type[last]] && src.charCodeAt(pos) !== 42) {
+      wrappedEnd.set(last, lineEnd);
+    }
+    pos = eol + 1;
+  }
+  const lastTs = n > 1 ? ts[n - 1] : 0;
+  while (sp > 1) { const e = stack[--sp]; exitTs[e] = lastTs; const tot = lastTs - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; }
+  ts[0] = n > 1 ? ts[1] : 0; exitTs[0] = lastTs; subEnd[0] = n;
+  return { n, src, type, start, wrappedEnd, ts, exitTs, parent, subEnd, depth, lineNo, label, ns, selfDur, cslot, pool, nSlots, heap, peak, strStart, strEnd, nStr, byType, byTypeN, mCalls, mSelf, mTotal, unmatchedExits };
+}
+````
+
+### `scan-v5w.mjs`
+
+````js
+// Prototype v5w: v5 with a SWAR newline search instead of Uint8Array.indexOf.
+// Prototype v5: v4 with label hashing fused into the field scan, namespace derived once per
+// distinct label, end offsets stored only for wrapped rows. (Header from v4 follows.)
+// Prototype v4: v3's output shape, tuned. One function, no closures in the loop. Adds today's
+// line-number exit matching, unwinding to a match further down the stack, unmatched exits kept
+// as rows, SOQL/SOSL rows read from the exit line, and a root row 0. Still omits issues text,
+// limits, truncation, package merge, flow residuals, discontinuity and the per-event text rules.
+import { readFileSync } from 'node:fs';
+
+const table = JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'));
+export const names = ['<root>', ...table.map((r) => r.name)];
+const N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
+export const PURE_EXIT = new Uint8Array(N);
+const NEXT_IS_EXIT = new Uint8Array(N), ACCEPTS = new Uint8Array(N), HAS_EXITS = new Uint8Array(N), EXIT_MATCH = new Uint8Array(N * N);
+table.forEach((r, i) => {
+  const t = i + 1;
+  PURE_EXIT[t] = r.isExit && !(r.exitTypes?.length) ? 1 : 0;
+  NEXT_IS_EXIT[t] = r.nextLineIsExit ? 1 : 0; ACCEPTS[t] = r.acceptsText ? 1 : 0;
+  for (const x of r.exitTypes ?? []) { EXIT_MATCH[t * N + idOf.get(x)] = 1; HAS_EXITS[t] = 1; }
+});
+const LABEL_FIELD = new Int8Array(N).fill(-1);
+for (const [n, f] of [['METHOD_ENTRY', 4], ['CONSTRUCTOR_ENTRY', 5], ['SYSTEM_METHOD_ENTRY', 3], ['CODE_UNIT_STARTED', 4], ['VF_APEX_CALL_START', 3]]) LABEL_FIELD[idOf.get(n)] = f;
+// Counter kind contributed by a leaf of this type: 1 soql, 2 dml, 3 sosl, 7 thrown (slot index + 1)
+const OWN_COUNT = new Int8Array(N);
+OWN_COUNT[idOf.get('SOQL_EXECUTE_BEGIN')] = 1; OWN_COUNT[idOf.get('DML_BEGIN')] = 2; OWN_COUNT[idOf.get('SOSL_EXECUTE_BEGIN')] = 3; OWN_COUNT[idOf.get('EXCEPTION_THROWN')] = 7;
+const ROWS_FROM_EXIT = new Int8Array(N); // exit type -> row-count slot (+1)
+ROWS_FROM_EXIT[idOf.get('SOQL_EXECUTE_END')] = 4; ROWS_FROM_EXIT[idOf.get('SOSL_EXECUTE_END')] = 6;
+const HEAP = idOf.get('HEAP_ALLOCATE'), EXEC = idOf.get('EXECUTION_STARTED');
+const HB = 4096, H_TAB = new Int16Array(HB).fill(-1), NAME_HASH = new Int32Array(N), NAME_LEN = new Uint8Array(N);
+for (let i = 1; i < N; i++) {
+  let h = 0; for (const ch of names[i]) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  NAME_HASH[i] = h; NAME_LEN[i] = names[i].length; let k = h & (HB - 1); while (H_TAB[k] !== -1) k = (k + 1) & (HB - 1); H_TAB[k] = i;
+}
+export const NC = 8;
+const LN_NULL = -2, LN_EXTERNAL = -1;
+
+function grow(a, n) { const b = new a.constructor(n); b.set(a.subarray(0, Math.min(a.length, n))); return b; }
+
+export function scanV5w(src, opts = {}) {
+  // SWAR newline search over a Uint32Array view (src.byteOffset must be 4-aligned)
+  const W32 = new Uint32Array(src.buffer, src.byteOffset, src.length >>> 2), SLEN = src.length;
+  const nextNl = (p) => {
+    while (p < SLEN && (p & 3) !== 0) { if (src[p] === 10) return p; p++; }
+    const kEnd = SLEN >>> 2; let k = p >>> 2;
+    for (; k < kEnd; k++) { const x = (W32[k] ^ 0x0a0a0a0a) | 0; if ((((x - 0x01010101) & ~x) & 0x80808080) !== 0) break; }
+    const q = k << 2; if (q > p) p = q; while (p < SLEN) { if (src[p] === 10) return p; p++; } return -1;
+  };
+  const verify = opts.verify !== false;
+  const methodStats = opts.methodStats !== false;
+  const len = src.length;
+  let cap = Math.max(1 << 12, Math.ceil(len / 120)), n = 0;
+  let type = new Uint16Array(cap), start = new Uint32Array(cap), ts = new Float64Array(cap),
+    exitTs = new Float64Array(cap), parent = new Int32Array(cap), subEnd = new Uint32Array(cap), depth = new Uint16Array(cap),
+    lineNo = new Int32Array(cap), label = new Int32Array(cap), ns = new Int32Array(cap), selfDur = new Float64Array(cap),
+    cslot = new Int32Array(cap), heap = new Float64Array(cap), peak = new Float64Array(cap);
+  let pCap = 1 << 10, nSlots = 0, pool = new Int32Array(pCap * NC);
+  let sCap = 1 << 12, nStr = 0, strStart = new Uint32Array(sCap), strEnd = new Uint32Array(sCap), strHash = new Int32Array(sCap);
+  let IB = 1 << 14, iTab = new Int32Array(IB).fill(-1);
+  let mCap = 1 << 12, mCalls = new Uint32Array(mCap), mSelf = new Float64Array(mCap), mTotal = new Float64Array(mCap), mActive = new Uint16Array(mCap);
+  const byTypeN = new Uint32Array(N), byType = new Array(N); for (let t = 0; t < N; t++) byType[t] = new Uint32Array(8);
+  const wrappedEnd = new Map(); let nsOfLabel = new Int32Array(1 << 12).fill(-2);
+  const stack = new Int32Array(16384); let sp = 0, last = -1, running = 0, unmatchedExits = 0;
+  // root row 0
+  type[0] = 0; parent[0] = -1; label[0] = -1; ns[0] = -1; cslot[0] = -1; n = 1; stack[sp++] = 0;
+  let pos = 0;
+  while (pos < len) {
+    let eol = nextNl(pos); if (eol < 0) eol = len;
+    let lineEnd = eol; if (lineEnd > pos && src[lineEnd - 1] === 13) lineEnd--;
+    if (src[pos + 2] === 58 && src[pos + 5] === 58) {
+      let i = pos + 8; while (i < lineEnd && src[i] !== 40) i++; i++;
+      let t = 0, c = 0; while ((c = src[i]) !== 41 && i < lineEnd) { t = t * 10 + (c - 48); i++; }
+      i += 2; const t0 = i;
+      let h = 0; while (i < lineEnd && (c = src[i]) !== 124) { h = (Math.imul(h, 31) + c) | 0; i++; }
+      let k = h & (HB - 1), id = 0;
+      for (let e; (e = H_TAB[k]) !== -1; k = (k + 1) & (HB - 1)) if (NAME_HASH[e] === h && NAME_LEN[e] === i - t0) { id = e; break; }
+      if (id === 0) { pos = eol + 1; continue; } // unsupported name: a parsing error in the real engine
+      let ln = LN_NULL;
+      if (src[i] === 124 && src[i + 1] === 91) { let j = i + 2; if (src[j] === 69) ln = LN_EXTERNAL; else { ln = 0; while ((c = src[j]) >= 48 && c <= 57) { ln = ln * 10 + (c - 48); j++; } } }
+      if (last >= 0 && NEXT_IS_EXIT[type[last]] && exitTs[last] === 0) exitTs[last] = t;
+      if (PURE_EXIT[id]) {
+        // find the frame this exit closes: the top, or one further down (unwind)
+        let m = sp - 1;
+        for (; m > 0; m--) { const f = stack[m], fl = lineNo[f]; if (EXIT_MATCH[type[f] * N + id] && (ln === fl || ln < 0 || fl < 0)) break; }
+        if (m > 0) {
+          const rs = ROWS_FROM_EXIT[id];
+          if (rs) { // Rows:N from the exit line, onto the frame being closed
+            let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let rows = 0; j++; while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { rows = rows * 10 + (c - 48); j++; }
+            const f = stack[m]; let sl = cslot[f]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[f] = nSlots++; } pool[sl * NC + rs - 1] += rows;
+          }
+          while (sp > m) {
+            const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n;
+            const p = parent[e];
+            selfDur[p] -= tot; const ck = cslot[e];
+            if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } const pb = pk * NC, cb = ck * NC; for (let q = 0; q < NC; q++) pool[pb + q] += pool[cb + q]; }
+            heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+            if (methodStats) { const l = label[e]; if (l >= 0) { if (--mActive[l] === 0) mTotal[l] += tot; mSelf[l] += selfDur[e]; } }
+          }
+          last = -1; pos = eol + 1; continue;
+        }
+        unmatchedExits++; // kept as a leaf row, as today
+      }
+      if (n === cap) { cap *= 2; type = grow(type, cap); start = grow(start, cap); ts = grow(ts, cap); exitTs = grow(exitTs, cap); parent = grow(parent, cap); subEnd = grow(subEnd, cap); depth = grow(depth, cap); lineNo = grow(lineNo, cap); label = grow(label, cap); ns = grow(ns, cap); selfDur = grow(selfDur, cap); cslot = grow(cslot, cap); heap = grow(heap, cap); peak = grow(peak, cap); }
+      if (id === EXEC) {
+        while (sp > 1) { const e = stack[--sp]; exitTs[e] = t; const tot = t - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; } }
+      }
+      const e = n++; const p = stack[sp - 1];
+      type[e] = id; start[e] = pos; ts[e] = t; lineNo[e] = ln; label[e] = -1; ns[e] = -1; cslot[e] = -1;
+      parent[e] = p; depth[e] = sp - 1; subEnd[e] = e + 1;
+      const lf = LABEL_FIELD[id];
+      if (lf > 0) {
+        let f = 2, a = i; while (f < lf && a < lineEnd) { a++; while (a < lineEnd && src[a] !== 124) a++; f++; }
+        a++; let b = a, hh = 0, dot = -1;
+        while (b < lineEnd && (c = src[b]) !== 124) { hh = (Math.imul(hh, 31) + c) | 0; if (c === 46 && dot < 0) dot = b; b++; }
+        if (a < b) {
+          let kk = hh & (IB - 1), sid = -1;
+          for (let s2; (s2 = iTab[kk]) !== -1; kk = (kk + 1) & (IB - 1)) {
+            if (strHash[s2] === hh && strEnd[s2] - strStart[s2] === b - a) {
+              if (!verify) { sid = s2; break; }
+              let x = strStart[s2], y = a; while (y < b && src[y] === src[x]) { x++; y++; } if (y === b) { sid = s2; break; }
+            }
+          }
+          if (sid < 0) {
+            if (nStr + 2 >= sCap) { sCap *= 2; strStart = grow(strStart, sCap); strEnd = grow(strEnd, sCap); strHash = grow(strHash, sCap); }
+            sid = nStr++; strStart[sid] = a; strEnd[sid] = b; strHash[sid] = hh; iTab[kk] = sid;
+            if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = strHash[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } }
+          }
+          label[e] = sid;
+          if (sid >= nsOfLabel.length) { const o = nsOfLabel; nsOfLabel = new Int32Array(o.length * 2).fill(-2); nsOfLabel.set(o); }
+          let nsid = nsOfLabel[sid];
+          if (nsid === -2) {
+            // first sight of this label: intern its namespace prefix once
+            nsid = -1;
+            if (dot > a) {
+              let h2 = 0; for (let q = a; q < dot; q++) h2 = (Math.imul(h2, 31) + src[q]) | 0;
+              let k2 = h2 & (IB - 1);
+              for (let s2; (s2 = iTab[k2]) !== -1; k2 = (k2 + 1) & (IB - 1)) { if (strHash[s2] === h2 && strEnd[s2] - strStart[s2] === dot - a) { let x = strStart[s2], y = a; while (y < dot && src[y] === src[x]) { x++; y++; } if (y === dot) { nsid = s2; break; } } }
+              if (nsid < 0) { nsid = nStr++; strStart[nsid] = a; strEnd[nsid] = dot; strHash[nsid] = h2; iTab[k2] = nsid; if (nStr * 2 > IB) { IB *= 2; iTab = new Int32Array(IB).fill(-1); for (let s3 = 0; s3 < nStr; s3++) { let k3 = strHash[s3] & (IB - 1); while (iTab[k3] !== -1) k3 = (k3 + 1) & (IB - 1); iTab[k3] = s3; } } }
+            }
+            nsOfLabel[sid] = nsid;
+          }
+          ns[e] = nsid;
+        }
+      }
+      if (byTypeN[id] === byType[id].length) byType[id] = grow(byType[id], byType[id].length * 2);
+      byType[id][byTypeN[id]++] = e;
+      const own = OWN_COUNT[id];
+      if (own) { let sl = cslot[e]; if (sl < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } sl = cslot[e] = nSlots++; } pool[sl * NC + own - 1] = 1; }
+      else if (id === HEAP) { let j = lineEnd - 1; while (j > i && src[j] !== 58) j--; let b = 0, neg = false; j++; if (src[j] === 45) { neg = true; j++; } while (j < lineEnd && (c = src[j]) >= 48 && c <= 57) { b = b * 10 + (c - 48); j++; } if (neg) b = -b; heap[e] = b; running = running + b; if (running < 0) running = 0; peak[e] = running; }
+      if (HAS_EXITS[id]) {
+        stack[sp++] = e;
+        if (methodStats) { const l = label[e]; if (l >= 0) { if (l >= mCap) { mCap = Math.max(mCap * 2, l + 1); mCalls = grow(mCalls, mCap); mSelf = grow(mSelf, mCap); mTotal = grow(mTotal, mCap); mActive = grow(mActive, mCap); } mCalls[l]++; mActive[l]++; } }
+      } else {
+        // a leaf rolls straight into its parent
+        const ck = cslot[e]; if (ck >= 0) { let pk = cslot[p]; if (pk < 0) { if (nSlots === pCap) { pCap *= 2; pool = grow(pool, pCap * NC); } pk = cslot[p] = nSlots++; } for (let q = 0; q < NC; q++) pool[pk * NC + q] += pool[ck * NC + q]; }
+        heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e];
+      }
+      last = e;
+    } else if (last >= 0 && ACCEPTS[type[last]] && src[pos] !== 42) {
+      wrappedEnd.set(last, lineEnd);
+    }
+    pos = eol + 1;
+  }
+  const lastTs = n > 1 ? ts[n - 1] : 0;
+  while (sp > 1) { const e = stack[--sp]; exitTs[e] = lastTs; const tot = lastTs - ts[e]; selfDur[e] += tot; subEnd[e] = n; const p = parent[e]; selfDur[p] -= tot; heap[p] += heap[e]; if (peak[e] > peak[p]) peak[p] = peak[e]; }
+  ts[0] = n > 1 ? ts[1] : 0; exitTs[0] = lastTs; subEnd[0] = n;
+  return { n, src, type, start, wrappedEnd, ts, exitTs, parent, subEnd, depth, lineNo, label, ns, selfDur, cslot, pool, nSlots, heap, peak, strStart, strEnd, nStr, byType, byTypeN, mCalls, mSelf, mTotal, unmatchedExits };
+}
+````
+
+### `sb-one.mjs`
+
+````js
+// One variant per process: node sb-one.mjs <variant> <file>. Prints the median of 9 warm scans.
+import { readFileSync } from 'node:fs';
+const [variant, path] = process.argv.slice(2);
+const buf = readFileSync(path);
+let run;
+if (variant === 'u8') { const { scanV5 } = await import('./scan-v5.mjs'); const b = new Uint8Array(buf.buffer, buf.byteOffset, buf.length); run = () => scanV5(b).n; }
+if (variant === 'buffer') { const { scanV5 } = await import('./scan-v5.mjs'); run = () => scanV5(buf).n; }
+if (variant === 'swar') { const { scanV5w } = await import('./scan-v5w.mjs'); const b = new Uint8Array(buf.buffer, buf.byteOffset, buf.length); run = () => scanV5w(b).n; }
+if (variant === 'string') { const { scanV5s } = await import('./scan-v5s.mjs'); const s = buf.toString('utf8'); run = () => scanV5s(s).n; }
+const rows = run(); run();
+const ts = []; for (let r = 0; r < 9; r++) { const t = performance.now(); run(); ts.push(performance.now() - t); }
+ts.sort((a, b) => a - b); console.log(ts[4].toFixed(0), rows);
+````
+
+### `strbytes.mjs`
+
+````js
+// Strings vs bytes, same v5 algorithm. Also the input-acquisition cost of each.
+import { readFileSync } from 'node:fs';
+import { scanV5 } from './scan-v5.mjs';
+import { scanV5s } from './scan-v5s.mjs';
+function time(fn, runs = 9) { fn(); fn(); const ts = []; for (let r = 0; r < runs; r++) { const t = performance.now(); fn(); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return ts[runs >> 1]; }
+const dir = process.argv[2];
+for (const f of process.argv.slice(3)) {
+  const path = `${dir}/${f}`; const buf = readFileSync(path); const bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.length); const str = buf.toString('utf8');
+  const a = scanV5(bytes), b = scanV5s(str);
+  let same = a.n === b.n; for (let i = 0; same && i < a.n; i++) if (a.ts[i] !== b.ts[i] || a.exitTs[i] !== b.exitTs[i] || a.parent[i] !== b.parent[i]) same = false;
+  console.log(`== ${f} (${(buf.length / 1e6).toFixed(0)} MB, string is ${str.length === buf.length ? 'one-byte' : 'TWO-BYTE'}): same tree ${same}, strings ${a.nStr}/${b.nStr}`);
+  console.log(`  scan only:   bytes (Uint8Array) ${time(() => scanV5(bytes)).toFixed(0)} ms | string ${time(() => scanV5s(str)).toFixed(0)} ms`);
+  console.log(`  input cost:  read file -> bytes ${time(() => readFileSync(path), 5).toFixed(0)} ms | read file -> string (utf8) ${time(() => readFileSync(path, 'utf8'), 5).toFixed(0)} ms | bytes -> string (TextDecoder) ${time(() => new TextDecoder().decode(bytes), 5).toFixed(0)} ms | string -> bytes (TextEncoder) ${time(() => new TextEncoder().encode(str), 5).toFixed(0)} ms`);
+}
+````
+
 ### Raw output of the final `bench.ts` run
 
 ````text
@@ -3734,4 +4168,34 @@ dev20.log          811 ms    124 MB
 large100.log      2976 ms    555 MB
 dev20.log          776 ms    124 MB
 large100.log      3027 ms    555 MB
+````
+
+### Raw output: strings vs bytes (`sb-one.mjs`, three rounds; `strbytes.mjs`)
+
+````text
+== dev20.log
+  string: 60 67 65 ms
+  u8: 53 48 47 ms
+  buffer: 37 39 42 ms
+  swar: 46 45 48 ms
+== large100.log
+  string: 352 325 327 ms
+  u8: 236 234 250 ms
+  buffer: 208 207 199 ms
+  swar: 222 233 224 ms
+== large100-hc.log
+  string: 422 429 446 ms
+  u8: 375 370 361 ms
+  buffer: 312 318 330 ms
+  swar: 339 351 338 ms
+
+== dev20.log (20 MB, string is one-byte): same tree true, strings 32/32
+  scan only:   bytes (Uint8Array) 62 ms | string 61 ms
+  input cost:  read file -> bytes 38 ms | read file -> string (utf8) 32 ms | bytes -> string (TextDecoder) 14 ms | string -> bytes (TextEncoder) 17 ms
+== large100.log (100 MB, string is one-byte): same tree true, strings 31/31
+  scan only:   bytes (Uint8Array) 213 ms | string 290 ms
+  input cost:  read file -> bytes 87 ms | read file -> string (utf8) 214 ms | bytes -> string (TextDecoder) 91 ms | string -> bytes (TextEncoder) 107 ms
+== large100-hc.log (90 MB, string is TWO-BYTE): same tree true, strings 282345/282345
+  scan only:   bytes (Uint8Array) 318 ms | string 374 ms
+  input cost:  read file -> bytes 59 ms | read file -> string (utf8) 401 ms | bytes -> string (TextDecoder) 294 ms | string -> bytes (TextEncoder) 159 ms
 ````
