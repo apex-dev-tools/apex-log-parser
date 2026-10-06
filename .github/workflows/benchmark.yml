@@ -39,6 +39,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: CodSpeedHQ/action@v5
         with:
-          mode: simulation
+          # CPU instructions, then memory: the action runs `run` once per mode.
+          mode: simulation,memory
           # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
           run: node --run bench

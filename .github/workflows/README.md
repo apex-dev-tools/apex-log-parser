@@ -13,8 +13,9 @@ The YAML says what runs. The scripts decide what happens, so the logic is testab
 
 ## benchmark.yml
 
-Runs `node --run bench` under [CodSpeed](https://codspeed.io) in simulation mode. CodSpeed
-counts CPU instructions, not wall time, so a run on a shared runner is repeatable. Each push
+Runs `node --run bench` under [CodSpeed](https://codspeed.io) in simulation mode, then in
+memory mode. Simulation counts CPU instructions, not wall time, so a run on a shared runner is
+repeatable. Memory mode reports the memory each benchmark allocates and its peak. Each push
 to `main` records a baseline. On a pull request, CodSpeed posts a comment with the change
 per benchmark, and its check fails when a benchmark regresses past the threshold set on
 codspeed.io.
@@ -31,6 +32,8 @@ regressions only, so `pnpm run bench:large` parses them locally.
 | Choice | Reason |
 | --- | --- |
 | Simulation mode | Wall time on a shared runner varies by more than the regressions to catch. Instruction counts vary by about 1%. |
+| Memory mode too | A heap saving cuts garbage collection on large logs, but barely moves an instruction count at 1 MB. |
+| No wall-time mode | On a shared runner it is too noisy to gate on; CodSpeed's macro runners fix that but are metered. On logs this small it shows little that instruction counts miss. `pnpm run bench:large` measures wall time on large logs locally. |
 | Logs of 1.5 MB in all | Each bench parses 8 times under Valgrind, and the job holds up the merge. |
 | Exact Node version | Instruction counts move with the V8 version. A bump shifts the baseline once; acknowledge it on codspeed.io. |
 | `ubuntu-24.04`, not `ubuntu-latest` | Instruction counts move with the OS image too. The label stops a jump to a new Ubuntu release; weekly image patches can still move counts a little. |
