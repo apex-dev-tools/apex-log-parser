@@ -10,8 +10,8 @@ import { parse } from '../index.js';
 
 // A changed log changes what the benchmarks measure, so it must be deliberate.
 const pinnedHashes: Record<string, string> = {
-  'small 200 KB': 'a7b2eb2d',
-  'developer 2 MB': 'bd5815a6',
+  'small 19 KB': 'c23e2cf8',
+  'developer 1 MB': 'd54b3e2e',
   'uncommon paths 500 KB': '46c1356b',
 };
 

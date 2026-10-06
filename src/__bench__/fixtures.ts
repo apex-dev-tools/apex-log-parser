@@ -696,11 +696,13 @@ const developerCovers = ['METHOD_ENTRY', 'CONSTRUCTOR_ENTRY', 'STATEMENT_EXECUTE
 
 /** The logs CodSpeed parses on every pull request, by bench name. */
 export const benchLogs: Readonly<Record<string, BenchLog>> = {
-  'small 200 KB': {
-    ...profileLog('small', 1, 200_000),
+  // The median real small log, 19 KB in 2026-10, with the header. Seed 5 reaches maxDepth at this size.
+  'small 19 KB': {
+    ...profileLog('small', 5, 17_500),
     covers: ['METHOD_ENTRY', 'SYSTEM_MODE_ENTER', 'SYSTEM_METHOD_ENTRY', 'LIMIT_USAGE_FOR_NS'],
   },
-  'developer 2 MB': { ...profileLog('developer', 2, 2_000_000), covers: developerCovers },
+  // The developer band's floor: its 8 MB median takes over 2 min under simulation.
+  'developer 1 MB': { ...profileLog('developer', 2, 1_000_000), covers: developerCovers },
   // The paths an average log seldom reaches, in one bench so the job stays short.
   'uncommon paths 500 KB': {
     ...profileLog('developer', 3, 500_000),
