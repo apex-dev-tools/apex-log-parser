@@ -8,7 +8,7 @@ import {
   type CodeUnitStartedLine,
   type LogEvent,
 } from './LogEvents.js';
-import { getLogEventClass } from './LogLineMapping.js';
+import { eventNames, getLogEventClass } from './LogLineMapping.js';
 import { deriveGovernorLimits } from './limits.js';
 import type {
   DebugLevelSetting,
@@ -354,6 +354,7 @@ export class ApexLogParser {
 
     const metaCtor = getLogEventClass(type as LogEventType);
     if (metaCtor) {
+      parts[1] = eventNames.get(type) ?? type;
       const entry = new metaCtor(this, parts);
       entry.logLine = line;
       return entry;
@@ -660,6 +661,8 @@ export class ApexLogParser {
           continue;
         }
 
+        // One write per parent: zeroDuration's tagged fields allocate a number on each large write.
+        let childTime = 0;
         let j = parent.children.length;
         while (j--) {
           const child = parent.children[j];
@@ -672,7 +675,7 @@ export class ApexLogParser {
           parent.dmlRowCount.total += child.dmlRowCount.total;
           parent.soqlRowCount.total += child.soqlRowCount.total;
           parent.soslRowCount.total += child.soslRowCount.total;
-          parent.duration.self -= child.duration.total;
+          childTime += child.duration.total;
           parent.thrownCount.total += child.thrownCount.total;
           parent.heapAllocated.total += child.heapAllocated.total;
           parent.heapGross.total += child.heapGross.total;
@@ -689,6 +692,7 @@ export class ApexLogParser {
             parent.heapPeak = child.heapPeak;
           }
         }
+        parent.duration.self -= childTime;
       }
     }
     nodesByDepth.clear();

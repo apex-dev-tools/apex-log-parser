@@ -529,3 +529,11 @@ const basicExitLogEvents = new Set<string>([
   'WF_RULE_EVAL_END',
   'WF_RULE_NOT_EVALUATED',
 ]);
+
+/** Each registered event name once: an event's `type` takes its string from here, not a copy cut from its line. */
+export const eventNames: ReadonlyMap<string, LogEventType> = new Map(
+  [...lineTypeMap.keys(), ...basicLogEvents, ...basicExitLogEvents].map((name) => [
+    name,
+    name as LogEventType,
+  ]),
+);
