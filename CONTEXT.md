@@ -64,10 +64,18 @@ _Avoid_: eventIndex, index
 **Event type**:
 The name a line states, such as `SOQL_EXECUTE_BEGIN`.
 
+**Type id**:
+An event type's number, the same in every parse and every release. Not an event's id.
+_Avoid_: id (alone), type index
+
 **Type info**:
 What is true of every event of one type: its category, debug category, level, kind and exit types.
 It belongs to the type, never to one event.
 _Avoid_: event metadata
+
+**Shape**:
+How an event type sits in the tree: a frame, a leaf, or an exit line.
+_Avoid_: kind (a different thing, see below)
 
 **Kind**:
 What an event type means for analysis: a method frame, an execution, a package boundary, a SOQL

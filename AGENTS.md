@@ -18,6 +18,10 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `src/utf8.ts` — UTF-8 byte length, for `ApexLog.size`. Internal; not exported.
 - `src/index.ts` — the only entry point. Runtime values, public types and their const companions.
 - `src/__tests__/` — vitest suites. `helpers.ts` holds shared fixtures.
+- `src/next/` — the new parser, which replaces today's for v1. Standalone: it imports nothing from
+  the rest of `src/`. Not exported yet. `catalog/catalog.ts` holds one hand-written entry per event
+  type: its type info and its text rule. `__tests__/Catalog.test.ts` fails when an entry drifts
+  from the event database.
 - `src/__bench__/` — the `pnpm run bench` benchmarks, which CodSpeed runs on every pull request.
   `fixtures.ts` generates their logs from a seed, with placeholder content only. Its profiles
   (small, developer and large) take their event mix, depth and wrapped lines from
@@ -118,6 +122,9 @@ same change: it pins the runtime list, and pins the types through an interface t
 4. `data/salesforce-debug-log-events.json` — via `pnpm scrape`, once Salesforce documents it.
 5. An event stating a heap byte delta calls `seedHeapLeaf` in its constructor. Parsing `Bytes:N`
    alone keeps it out of every heap rollup.
+6. `src/next/catalog/types.ts` — append the name to the end of `EVENT_TYPE_NAMES`, never in sorted
+   order, so no other type id moves. Then add its entry to `ENTRIES` in
+   `src/next/catalog/catalog.ts`. `Catalog.test.ts` checks it against the data JSON.
 
 `EventMetadata.test.ts` enforces steps 2 to 4 against the data JSON: every documented event resolves
 to a class, each own-class event's `debugCategory` token equals the database category, only the
