@@ -27,6 +27,14 @@ const BANDS = [
   { label: '> 20 MB', max: Number.POSITIVE_INFINITY },
 ] as const;
 
+function inBand(results: readonly FileResult[], band: (typeof BANDS)[number]): FileResult[] {
+  return results.filter((r) => BANDS.find((b) => r.bytes <= b.max) === band);
+}
+
+const warm = (m: Measurement): number => percentile(m.warmRunsMs, 50);
+const cold = (m: Measurement): number => m.coldMs;
+const kept = (m: Measurement): number => m.retainedBytes;
+
 export function isFailure(value: object): value is Failure {
   return 'error' in value;
 }
@@ -40,7 +48,12 @@ export function percentile(values: readonly number[], p: number): number {
   return sorted[rank - 1]!;
 }
 
-export function renderReport(results: readonly FileResult[], engines: readonly string[]): string {
+/** `previous` is an earlier run's results; when given, each engine is compared with its own figures there. */
+export function renderReport(
+  results: readonly FileResult[],
+  engines: readonly string[],
+  previous: readonly FileResult[] = [],
+): string {
   const lines = [
     '# Parser comparison',
     '',
@@ -48,6 +61,7 @@ export function renderReport(results: readonly FileResult[], engines: readonly s
     '',
     ...renderParity(results),
     ...renderPerformance(results, [...new Set(engines)]),
+    ...renderChange(results, previous, [...new Set(engines)]),
     ...renderErrors(results),
   ];
   return `${lines.join('\n')}\n`;
@@ -92,18 +106,17 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
     'Warm is the median of the warm parses, cold the first parse in a fresh process. Retained is heap plus array buffers after a GC. Speed-up and memory are the median per-log ratio against the first engine.',
     '',
   ];
-  const warm = (m: Measurement): number => percentile(m.warmRunsMs, 50);
   for (const band of BANDS) {
-    const inBand = results.filter((r) => BANDS.find((b) => r.bytes <= b.max) === band);
-    if (!inBand.length) continue;
+    const logs = inBand(results, band);
+    if (!logs.length) continue;
     out.push(
-      `### ${band.label} (${inBand.length} logs)`,
+      `### ${band.label} (${logs.length} logs)`,
       '',
       '| Engine | Warm p50 | Warm p95 | Cold p50 | Cold p95 | Retained p50 | Retained p95 | Speed-up | Memory |',
       '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
     );
     for (const name of engines) {
-      const rows = inBand.flatMap((r) => {
+      const rows = logs.flatMap((r) => {
         const m = r.runs[name];
         const base = r.runs[baseline];
         return m && !isFailure(m) ? [{ m, base: base && !isFailure(base) ? base : null }] : [];
@@ -120,8 +133,6 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
         );
         return `${percentile(ratios, 50).toFixed(1)}×${suffix}`;
       };
-      const cold = (m: Measurement): number => m.coldMs;
-      const kept = (m: Measurement): number => m.retainedBytes;
       out.push(
         `| ${name} | ${formatMs(at(warm, 50))} | ${formatMs(at(warm, 95))} | ${formatMs(at(cold, 50))} | ${formatMs(at(cold, 95))} | ${formatBytes(at(kept, 50))} | ${formatBytes(at(kept, 95))} | ${vsBase(warm, '')} | ${vsBase(kept, ' less')} |`,
       );
@@ -129,6 +140,50 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
     out.push('');
   }
   return out;
+}
+
+function renderChange(
+  results: readonly FileResult[],
+  previous: readonly FileResult[],
+  engines: readonly string[],
+): string[] {
+  if (!previous.length) return [];
+  const before = new Map(previous.map((r) => [r.file, r]));
+  const out = [
+    '## Change against the baseline run',
+    '',
+    'Each engine against its own figures in the baseline run: the median per-log change, over the logs both runs timed. Negative is faster or smaller.',
+    '',
+    '| Band | Engine | Logs | Warm | Cold | Retained |',
+    '| --- | --- | ---: | ---: | ---: | ---: |',
+  ];
+  for (const band of BANDS) {
+    for (const name of engines) {
+      const pairs = inBand(results, band).flatMap((r) => {
+        const now = r.runs[name];
+        const was = before.get(r.file)?.runs[name];
+        return now && was && !isFailure(now) && !isFailure(was) ? [{ now, was }] : [];
+      });
+      if (!pairs.length) continue;
+      const change = (pick: (m: Measurement) => number): string =>
+        formatChange(
+          percentile(
+            pairs.flatMap(({ now, was }) => (pick(was) > 0 ? [pick(now) / pick(was) - 1] : [])),
+            50,
+          ),
+        );
+      out.push(
+        `| ${band.label} | ${name} | ${pairs.length} | ${change(warm)} | ${change(cold)} | ${change(kept)} |`,
+      );
+    }
+  }
+  out.push('');
+  return out;
+}
+
+function formatChange(fraction: number): string {
+  if (Number.isNaN(fraction)) return '—';
+  return `${fraction >= 0 ? '+' : ''}${(fraction * 100).toFixed(1)}%`;
 }
 
 function renderErrors(results: readonly FileResult[]): string[] {

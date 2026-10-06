@@ -181,4 +181,23 @@ describe('report', () => {
     ];
     expect(renderReport(results, ['old', 'new'])).toMatch(/\| new \|.*\| 10\.0× \| 10\.0× less \|/);
   });
+
+  it('states each engine against its own figures in a baseline run, for the logs both timed', () => {
+    const run = (ms: number, retainedBytes: number) => ({
+      coldMs: ms,
+      warmRunsMs: [ms],
+      retainedBytes,
+    });
+    const now: FileResult[] = [
+      { file: 'a.log', bytes: 100, runs: { old: run(90, 2000) }, diffs: {} },
+      { file: 'new.log', bytes: 100, runs: { old: run(1, 1) }, diffs: {} },
+    ];
+    const before: FileResult[] = [
+      { file: 'a.log', bytes: 100, runs: { old: run(100, 1000) }, diffs: {} },
+    ];
+    expect(renderReport(now, ['old'], before)).toContain(
+      '| < 1 MB | old | 1 | -10.0% | -10.0% | +100.0% |',
+    );
+    expect(renderReport(now, ['old'])).not.toContain('baseline run');
+  });
 });

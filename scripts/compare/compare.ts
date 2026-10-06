@@ -3,7 +3,8 @@
  * times them. Writes `results.jsonl` as it goes and `report.md` at the end.
  *
  * It diffs every later engine against the first. Naming one engine twice (`--engines=legacy,legacy`)
- * checks that its output is deterministic. `--runs=0` skips timing.
+ * checks that its output is deterministic. `--runs=0` skips timing. `--baseline=<results.jsonl>`
+ * adds each engine's change against an earlier run, matched by log path.
  *
  * Never commit the output: it names the logs, and the logs come from orgs.
  */
@@ -30,7 +31,7 @@ import type { Failure, FileResult } from './report.js';
 import { renderReport } from './report.js';
 
 const USAGE =
-  'Usage: pnpm run compare <dir> --out=<dir> [--engines=legacy,next] [--runs=5] [--match=<text>] [--limit=<n>]';
+  'Usage: pnpm run compare <dir> --out=<dir> [--engines=legacy,next] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
 const LOG_FILE = /\.(log|txt)$/i;
 const measureScript = fileURLToPath(new URL('./measure.ts', import.meta.url));
 
@@ -83,6 +84,14 @@ runIfMain(import.meta.url, async () => {
   const runs = Number(flag(args, '--runs') ?? 5);
   const match = flag(args, '--match');
   const limit = Number(flag(args, '--limit') ?? Number.POSITIVE_INFINITY);
+  // Read before the output is truncated, in case the baseline sits in the same folder.
+  const baselinePath = flag(args, '--baseline');
+  const previous: FileResult[] = baselinePath
+    ? readFileSync(baselinePath, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+    : [];
 
   const files = findLogs(dir)
     .filter((f) => !match || f.includes(match))
@@ -107,6 +116,6 @@ runIfMain(import.meta.url, async () => {
     stderr.write(`[${i + 1}/${files.length}] ${name}\n`);
   }
 
-  writeFileSync(join(out, 'report.md'), renderReport(results, engines));
+  writeFileSync(join(out, 'report.md'), renderReport(results, engines, previous));
   stderr.write(`Wrote ${join(out, 'report.md')}\n`);
 });
