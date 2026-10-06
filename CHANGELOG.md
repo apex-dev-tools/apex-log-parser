@@ -1,5 +1,33 @@
 # @apexdevtools/apex-log-parser
 
+## 0.2.0
+
+### Minor Changes
+
+- 4117f05: Add `ApexLog.debugLevelSettings`, every category and level from the log's settings line, and stop reporting an unknown category in `parsingErrors`
+- 60c5766: Breaking: replace `ApexLog.entryPoint` with `ApexLog.entryPoints`, every top-level code unit in log
+  order. To migrate, use `apexLog.entryPoints[0] ?? null`.
+- 1e7a1f5: Breaking: remove the `/types` entry point. To migrate, change `from '@apexdevtools/apex-log-parser/types'` to `from '@apexdevtools/apex-log-parser'`.
+- dca74fd: Breaking: remove the event name prefix from the `text` of `FLOW_START_INTERVIEWS_BEGIN`, `WF_CRITERIA_BEGIN`, `WF_FLOW_ACTION_ERROR` and `WF_FLOW_ACTION_ERROR_DETAIL` events
+- ec2172d: Add `LogTimezone.text` and `LogTimezone.offsetText`, the timezone and its offset as the log states them
+- c48d1d6: Breaking: add the header `USER_INFO` line to the tree as the first root event, so the root starts at it (#96). To find the execution, look for the `EXECUTION_STARTED` child instead of reading `children[0]`.
+- ec2172d: Breaking: report a `USER_INFO` field the log does not state as `null`, not `''`. To migrate, handle `null` in `UserInfo.id`, `UserInfo.userName`, `UserInfo.timezone` and `LogTimezone.label`.
+
+### Patch Changes
+
+- 6d3fd3e: Fix an `EXECUTION_STARTED` nested under a method or code unit whose exit the log dropped
+- f1105c0: Fix slow `ApexLog.size` calculation on large logs in the browser (#97)
+- 6ccd1d8: Name a `FLOW_START_INTERVIEWS_BEGIN` event after its flow when an error comes before the first interview
+- c48d1d6: Stop reporting header text as `parsingErrors` in a log with no `EXECUTION_STARTED` (#96)
+- ec2172d: Read the `USER_INFO` timezone field in linear time. A field with many ` (` could stall the parse for seconds.
+- bbde325: Fix missing fields and `undefined` in the text of `FLOW_ELEMENT_ERROR`, `FLOW_START_INTERVIEWS_ERROR`, `VALIDATION_FORMULA` and `WF_FORMULA` events whose message spans lines
+- 2c5a1b0: Parse only the first of several pasted-together logs, and report a `Multiple-Logs` issue of type `error`
+- 0387470: Reword and trim the README, and reword the package description and API doc comments in plainer language
+- 6d3fd3e: Fix a too-short duration for a method or code unit the log never closes
+- ce46f51: Report a skipped or max-size truncation that follows an event with wrapped text, such as `USER_DEBUG`, instead of adding the marker to that event's text
+- ec2172d: Fix a wrong or missing `userInfo` when a log quotes a `USER_INFO` or `EXECUTION_STARTED` line
+- c48d1d6: Stop showing `undefined` in the text of a `USER_INFO` event whose line states no user name
+
 ## 0.1.1
 
 ### Patch Changes
