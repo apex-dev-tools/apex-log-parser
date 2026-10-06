@@ -23,8 +23,8 @@ The benchmarks are in `src/__bench__/`. They parse 3 synthetic logs of 19 KB to 
 `src/__bench__/fixtures.ts` generates, and `BenchFixtures.test.ts` checks those logs in
 normal CI. The plugin parses each log 8 times under simulation, so the logs stay small to keep
 the job near 1 minute. An instruction count changes by the same percentage at 1 MB as at 20 MB,
-unless the cost grows faster than the log. Logs from 20 to 100 MB catch memory and GC
-regressions only, so `pnpm run bench:large` parses them locally.
+unless the cost grows faster than the log. Logs of 8, 20 and 100 MB show garbage
+collection in wall time, so `pnpm run bench:large` parses them locally.
 
 ### Why it is built this way
 

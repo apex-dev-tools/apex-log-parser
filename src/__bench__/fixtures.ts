@@ -744,9 +744,9 @@ export const benchLogs: Readonly<Record<string, BenchLog>> = {
 
 /** Logs too large for a short CodSpeed job, for `pnpm run bench:large` to parse locally. */
 export const largeLogs: Readonly<Record<string, LogOptions>> = {
+  // The median developer log.
+  'medium 8 MB': profileLog('developer', 6, 8_000_000),
   // A log cut at the 20 MB default limit is a developer log.
-  'developer 20 MB': profileLog('developer', 7, 20_000_000),
-  ...Object.fromEntries(
-    [40, 80, 100].map((mb, i) => [`large ${mb} MB`, profileLog('large', 10 + i, mb * 1_000_000)]),
-  ),
+  'large 20 MB': profileLog('developer', 7, 20_000_000),
+  'XL 100 MB': profileLog('large', 12, 100_000_000),
 };
