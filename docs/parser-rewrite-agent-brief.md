@@ -7,8 +7,63 @@ measurements. You can work from this file and a checkout of the repo alone.
 - **Repo:** `apex-dev-tools/apex-log-parser`. At the time of writing, `main` was `77416e7`
   (version 0.2.0).
 - **Research branch:** `claude/parser-perf-rewrite-research-lwnhlz`. It holds
-  `docs/parser-rewrite-proposal.md`, a narrative version of the design below.
-- **Written:** 2026-10-04, from a cloud session that read the code, prototyped and measured.
+  `docs/parser-rewrite-proposal.md`, a short summary of this brief.
+- **Written:** 2026-10-04 to 2026-10-06, from a cloud session that read the code, prototyped and
+  measured. Every number here comes from scripts in §B, run in that session.
+
+## At a glance
+
+- **The problem.** `parse()` takes ~0.75–1.06 s and keeps 190–259 MB for a 20 MB log, the
+  Salesforce cap. At 100 MB it takes ~2.7–4.8 s and keeps 0.8–1.1 GB. It runs on the caller's
+  thread, so the analyzer's webview freezes. The cost is allocation, not reading text: 13+ objects
+  per event, and GC is over a fifth of the parse.
+- **The design.** The fastest parsers and trace tools converge on this shape:
+  - a scanner with no per-line allocation, over a string or bytes, whichever the caller has;
+  - columnar typed arrays, with parents before children and a subtree-end pointer;
+  - interned strings, and sparse side tables for counts and exit details;
+  - exits folded into their entries;
+  - one node class, created on demand;
+  - type metadata looked up by type;
+  - generated, cast-free types;
+  - a worker, with the arrays transferred rather than copied;
+  - a `compat` adapter that rebuilds today's tree.
+- **The numbers** (§3.7–3.9):
+
+  | | 20 MB | 100 MB |
+  | --- | --- | --- |
+  | JS core | 43 ms warm, 158–169 ms cold (today ~0.9 s) | 200–300 ms (today ~3 s) |
+  | Optional WASM SIMD core | 23–27 ms | 102–140 ms |
+
+  Tree memory falls ~15–25×. Each timeline redraw falls 6 ms → 0.09 ms. A worker never blocks
+  the UI for more than ~4 ms.
+- **The recommendation** (§0.2):
+  - ship the JS core as a parallel, switchable engine;
+  - add the WASM core only if real-log profiles still show the parse as the main wait;
+  - backport the shared-arrays patch to today's parser now, and the shared-zero-counters patch if
+    nobody writes to leaf counters (§0.3).
+- **What decides it.** The go/no-go spike on the private corpus (§0.1). Everything here is
+  synthetic until then.
+
+## Decision log
+
+Decisions made with the maintainer during the research, newest last. Where a later decision
+changed an earlier one, the brief follows the later one.
+
+| # | Decision | Where |
+| --- | --- | --- |
+| 1 | Full rewrite allowed. Same information, any architecture: async, streams, lazy, workers, WASM. | §1 |
+| 2 | Cast-free types, with child types limited per parent. Enforce containers only where the corpus shows them closed; start with leaf vs frame. | §5.4, §0.1 |
+| 3 | Monomorphism matters: one runtime node class; per-type variety only in TypeScript. | §3.3, §5.5 |
+| 4 | Event ids exist because timestamps collide. They must be unique, stable and deterministic per parse; they need not equal today's numbers. | §5.2, §7 #8 |
+| 5 | Exits are not stored. Read only type, timestamp, line number, SOQL/SOSL rows and the class-reference namespace. Unmatched exits and the dual `WF_*` types keep rows. | §5.2 |
+| 6 | Exit details become typed fields on the entry (`node.exit`). | §5.2.1 |
+| 7 | Category, level and the other type properties are looked up by type, never stored per event. | §5.2.2 |
+| 8 | Separate the returned data model (public) from the parsing grammar (internal), linked by the compiler. | §5.12 |
+| 9 | Ship the new engine in parallel and switchable: `engine: 'next'` returns today's shape, `engine: 'shadow'` compares both, and `/next` is the new API. | §5.13 |
+| 10 | Architecture reviewed against Perfetto, the Firefox Profiler, simdjson, oxc, Lezer, the DevTools trace engine and Arrow, and measured: struct-of-arrays, prefix order, interning and one class all confirmed. | §3.6 |
+| 11 | Build the JS core first and ship it. WASM SIMD (~2–3× faster) is optional, behind a real-log trigger. | §0.2, §5.10 |
+| 12 | Strings vs bytes depends on the platform and the input source (a maintainer measured strings faster locally). Scan what the caller has, never convert just to scan, and never use `TextEncoder` in Chromium on the hot path. | §3.9 |
+| 13 | Backports: shared arrays now (safe); shared frozen zero counters if no consumer writes to leaf counters. | §0.3 |
 
 ---
 
@@ -155,6 +210,13 @@ optional Phase 2b, not a commitment.**
   example, MCP regularly parsing logs over 50 MB, or webview cold parses over ~150 ms.
 - Keep the column layout as the ABI, so C drops in behind the same store with no API change.
 - The JS core then stays the fallback and the oracle.
+
+**Which input path B uses** (§3.9):
+
+- **MCP, and Node in general:** read bytes, and scan with `Buffer.indexOf`.
+- **The analyzer:** the extension host transfers bytes to the webview's parser worker, which
+  scans them with SWAR. If only text is available, the string loop.
+- **Never convert just to scan.** Chromium's `TextEncoder` costs ~1 s per 100 MB.
 
 **How to cut B's cold time** (the gap to C is mostly the first, unoptimised run):
 
@@ -621,10 +683,12 @@ residuals, discontinuity, exit details, parsing errors), estimated at +10–25% 
 | | Today (measured) | JS core (measured → projected) | **WASM SIMD core (measured → projected)** |
 | --- | ---: | ---: | ---: |
 | **20 MB** parse, Node | 745–862 ms | 43–56 → **50–70 ms** | 23 → **25–30 ms** |
-| **20 MB** parse, Chromium | — | 68–136 → **80–150 ms** | 23–24 → **25–30 ms** |
+| **20 MB** parse, Chromium, bytes | — | 68–145 (SWAR 73–76) → **80–150 ms** | 23–24 → **25–30 ms** |
+| **20 MB** parse, Chromium, string (the webview receives text) | — | 102–109 → **110–135 ms** | needs bytes: `TextEncoder` costs 104–179 ms first, so not viable from a string |
 | **20 MB** to a drawn timeline (Node) | 833–873 ms | **50–70 ms** (the columns add ~0) | **25–30 ms** |
 | **100 MB** parse, Node | 2,738–3,243 ms | 226–303 → **260–380 ms** | 105 → **120–140 ms** |
-| **100 MB** parse, Chromium | — | 323–327 → **370–410 ms** | 110–111 → **125–140 ms** |
+| **100 MB** parse, Chromium, bytes | — | 323–391 (SWAR 349–351) → **370–440 ms** | 110–119 → **125–140 ms** |
+| **100 MB** parse, Chromium, string | — | 530–557 → **580–650 ms** | not viable from a string: `TextEncoder` costs 906–1,015 ms |
 | **100 MB** to a drawn timeline | 3,190–3,388 ms | **260–380 ms** | **120–140 ms** |
 | **100 MB** MCP path (read the file, then parse) | 3,477–3,731 ms | ~**330–450 ms** (bytes read straight in) | ~**180–220 ms** |
 | **90 MB, 282k names** | 3,467 ms | 307–387 → **350–480 ms** | 202 → **220–260 ms** |
@@ -700,7 +764,17 @@ penalises the other. Medians of 9 warm scans, three rounds. Every variant builds
 | 100 MB | 325–352 ms | 234–250 ms | **199–208 ms** | 222–233 ms |
 | 90 MB, two-byte string | 422–446 ms | 361–375 ms | **312–330 ms** | 338–351 ms |
 
-**Getting the input** (`strbytes.mjs`), at 100 MB:
+**Chromium 141 headless (x86-64), the analyzer's engine** (`web/make-web.py`, two rounds):
+
+| Log | String | Bytes, `Uint8Array.indexOf` | Bytes, SWAR | WASM SIMD (bytes) | `TextDecoder` | `TextEncoder` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 20 MB | 102–109 ms | 81–145 ms | 73–76 ms | 24 ms | 17 ms | **104–179 ms** |
+| 100 MB | 530–557 ms | 390–391 ms | 349–351 ms | 118–119 ms | 113–120 ms | **906–1,015 ms** |
+
+In Chromium, bytes beat strings by ~1.4–1.5× with SWAR, but **`TextEncoder` is very slow**. A
+webview holding a string must never convert it to bytes just to scan.
+
+**Getting the input** (`strbytes.mjs`, Node), at 100 MB:
 
 | Conversion | Time |
 | --- | ---: |
@@ -724,12 +798,17 @@ penalises the other. Medians of 9 warm scans, three rounds. Every variant builds
 **Decision:**
 
 - **Scan what the caller already has. Never convert just to scan.**
-- **Analyzer webview:** the log arrives as text, so use the **string loop**.
+- **Analyzer webview:** best is to have the extension host read the file as bytes and post the
+  `ArrayBuffer` to the webview as a transfer. VS Code webviews accept `ArrayBuffer`s in
+  `postMessage`; check the release notes for the minimum VS Code version and whether it is a true
+  zero-copy transfer. Then scan bytes with SWAR, or with the WASM core. If the webview only has
+  text, use the **string loop**, never `TextEncoder`.
 - **MCP, or reading a file in Node:** read **bytes**, which skips the 214–401 ms UTF-8 decode, and
   scan with `Buffer.indexOf`.
 - **Streams and `Blob`:** bytes.
-- **A WASM core:** needs bytes. From a string, use `TextEncoder.encodeInto` straight into WASM
-  memory, and count that cost in its gate.
+- **A WASM core:** needs bytes. From a string, `TextEncoder.encodeInto` straight into WASM memory
+  is possible, but Chromium's encoder costs ~1 s per 100 MB, which cancels the WASM gain. So
+  in the webview, WASM is only worth it when bytes arrive directly from the extension host.
 - **Both loops are generated from the same grammar tables** and must produce identical columns,
   enforced by a differential test.
 - **Phase 0 must run `sb-one.mjs` on the maintainers' machines** (macOS arm64 at least) and on the
@@ -938,8 +1017,11 @@ recomputes today's numbers for the digest gate.
 **Size:** v3 measured 41 MB at 100 MB (510k rows, ~80 bytes per row, all columns trimmed), and
 29 MB frames-only. Target ≤ 50 MB at 100 MB.
 
-**Source bytes** are kept for lazy text. `retainSource: false` drops them after the eager fields,
-for callers that need only the tree and the interned names.
+**The source** (the input string or bytes, whichever was scanned) is kept for lazy text, and the
+columns hold offsets into it: character offsets for a string, byte offsets for bytes. A one-byte
+string costs the same as bytes. A string with any non-Latin-1 character is stored two-byte by V8,
+so it costs double. `retainSource: false` drops the source after the eager fields, for callers
+that need only the tree and the interned names.
 
 ### 5.3 Views
 
@@ -952,9 +1034,13 @@ for callers that need only the tree and the interned names.
 - **`EventList<K>`** is returned by `ofType`: an array-like view over a `Uint32Array` of rows,
   with `length`, `at`, an iterator, `map`, `filter` and `toArray`.
 - **`log.columns`** exposes read-only typed arrays for rendering.
-- **Text.** Free text is decoded on first read: `TextDecoder` over a subarray, with an ASCII fast
-  path for short ranges. Wrapped lines are joined with `\n`, and `\r` is stripped per line,
-  exactly as today's `text`.
+- **Text.** Free text is produced on first read:
+  - **String source:** `slice`, which is zero-copy in V8. Keep it, because the source is retained
+    on purpose.
+  - **Byte source:** `String.fromCharCode` for short ASCII ranges, and `TextDecoder` over a
+    subarray for long or non-ASCII ranges. `TextDecoder` has a large fixed cost per call.
+  - **Interned strings** are decoded once and cached by id.
+  - Wrapped lines are joined with `\n`, and `\r` is stripped per line, exactly as today's `text`.
 
 ### 5.4 One schema that generates runtime and types
 
@@ -1046,7 +1132,12 @@ log.toBuffers(): ArrayBuffer[];  ApexLog.fromBuffers(buffers): ApexLog; // cachi
 - **Cancellation.** An `AbortSignal`, checked per slice.
 - **Progress.** Bytes over total bytes.
 - **The worker** is the default for UIs. Input bytes and output buffers are transferred, never
-  cloned.
+  cloned. A string input is posted as a string; strings are immutable, so this is cheap but may
+  copy.
+- **Getting the log into the webview:** the extension host reads the file as bytes (59–87 ms per
+  100 MB, against 214–401 ms as a UTF-8 string) and transfers the `ArrayBuffer`. The webview
+  forwards it to the parser worker, also by transfer. Never `TextEncoder` a string in Chromium on
+  this path (§3.9).
 - **Builds.** One core with no `node:*`. Exports conditions:
   - `node`: `worker_threads`, `setImmediate`, `parseFile(path)` over fs streams;
   - `browser` and `default`: a Web Worker through
@@ -1278,6 +1369,10 @@ Every row must hold, verified through the `compat` digest and the repo's tests.
 - Reproduce §3 with §B.
 - Get access to the corpus, and the digest script that #107 and #109 used. Ask the user where it
   lives.
+- Run the strings-vs-bytes comparison (§3.9) on the maintainers' machines, in Node and in the
+  analyzer's webview. Confirm how the analyzer receives the log today: a string, or bytes.
+- Confirm that VS Code can transfer an `ArrayBuffer` from the extension host to the webview, and
+  from which VS Code version.
 
 **Gate:** §3 reproduced within ±25%, and the corpus digest runs on `main`.
 
@@ -1398,6 +1493,13 @@ the sync path; `AbortSignal` stops within one slice.
 - **CRLF:** strip `\r` per line, including inside wrapped text.
 - **Report what the log stated:** a missing field decodes to `null`, never `''` or `0`.
 - **Sliced strings:** never keep a `slice` of a big string in the output. Decode from bytes.
+- **Platform traps found by measurement:**
+  - V8's `Uint8Array.prototype.indexOf` is a scalar loop; use `Buffer.indexOf` in Node and SWAR in
+    browsers.
+  - Chromium's `TextEncoder` is ~10× slower than its `TextDecoder`.
+  - `TextDecoder` is slow on short strings.
+  - A string with one non-Latin-1 character is stored two-byte.
+  - Results differ between x86-64 and arm64, so measure on the maintainers' machines (§3.9).
 - **The synthetic logs are not real logs.** They have few distinct names and no hostile text.
   Validate on the corpus.
 
@@ -3271,12 +3373,15 @@ import sys, os, shutil
 logs = sys.argv[1]
 os.makedirs('web/out', exist_ok=True)
 tbl = open('type-table.json').read().strip()
-v5 = open('scan-v5.mjs').read().replace("import { readFileSync } from 'node:fs';\n", "").replace("JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'))", tbl)
-open('web/out/scan-v5.web.mjs', 'w').write(v5)
+for name in ('scan-v5', 'scan-v5s', 'scan-v5w'):
+    v = open(name + '.mjs').read().replace("import { readFileSync } from 'node:fs';\n", "").replace("JSON.parse(readFileSync(new URL('./type-table.json', import.meta.url), 'utf8'))", tbl)
+    open('web/out/' + name + '.web.mjs', 'w').write(v)
 fb = open('wasm/full-bench.mjs').read()
 helpers = fb[fb.index('const NT = 512'):fb.index('const dir = process.argv[2];')].replace("readFileSync(file)", "await (await fetch(file)).arrayBuffer()")
 page = """<!doctype html><meta charset=utf-8><body><script type=module>
 import { scanV5 } from './scan-v5.web.mjs';
+import { scanV5s } from './scan-v5s.web.mjs';
+import { scanV5w } from './scan-v5w.web.mjs';
 const table = %s;
 const names = ['<root>', ...table.map((r) => r.name)], N = names.length, idOf = new Map(names.map((n, i) => [n, i]));
 %s
@@ -3285,7 +3390,9 @@ try {
   const ex = await load('full-simd.wasm');
   for (const f of ['dev20.log', 'large100.log']) {
     const bytes = new Uint8Array(await (await fetch(f)).arrayBuffer()); const n = bytes.length; const ref = scanV5(bytes);
-    out.push(`${f}: JS v5 ${time(() => scanV5(bytes)).toFixed(0)} ms (rows ${ref.n})`);
+    const text = await (await fetch(f)).text();
+    out.push(`${f}: JS v5 bytes ${time(() => scanV5(bytes)).toFixed(0)} ms (rows ${ref.n}) | JS v5 bytes+SWAR ${time(() => scanV5w(bytes)).toFixed(0)} ms (rows ${scanV5w(bytes).n}) | JS v5 string ${time(() => scanV5s(text)).toFixed(0)} ms (rows ${scanV5s(text).n})`);
+    out.push(`   input: TextDecoder ${time(() => new TextDecoder().decode(bytes), 5).toFixed(0)} ms | TextEncoder ${time(() => new TextEncoder().encode(text), 5).toFixed(0)} ms`);
     const { base, L, IB } = setup(ex, n);
     const run = () => { new Uint8Array(ex.memory.buffer, base, n).set(bytes); new Int32Array(ex.memory.buffer, L.iTab[0], IB).fill(-1); return ex.parse(base, n); };
     const rows = run(); out.push(`   WASM SIMD128 ${time(run).toFixed(0)} ms (rows ${rows})`);
@@ -4198,4 +4305,25 @@ large100.log      3027 ms    555 MB
 == large100-hc.log (90 MB, string is TWO-BYTE): same tree true, strings 282345/282345
   scan only:   bytes (Uint8Array) 318 ms | string 374 ms
   input cost:  read file -> bytes 59 ms | read file -> string (utf8) 401 ms | bytes -> string (TextDecoder) 294 ms | string -> bytes (TextEncoder) 159 ms
+````
+
+### Raw output: Chromium strings vs bytes (`web/make-web.py`, two rounds)
+
+````text
+round 1
+dev20.log: JS v5 bytes 145 ms (rows 144590) | JS v5 bytes+SWAR 76 ms (rows 144590) | JS v5 string 109 ms (rows 144590)
+   input: TextDecoder 17 ms | TextEncoder 179 ms
+   WASM SIMD128 24 ms (rows 144590)
+large100.log: JS v5 bytes 391 ms (rows 510461) | JS v5 bytes+SWAR 349 ms (rows 510461) | JS v5 string 557 ms (rows 510461)
+   input: TextDecoder 113 ms | TextEncoder 906 ms
+   WASM SIMD128 118 ms (rows 510461)
+DONE Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36
+round 2
+dev20.log: JS v5 bytes 81 ms (rows 144590) | JS v5 bytes+SWAR 73 ms (rows 144590) | JS v5 string 102 ms (rows 144590)
+   input: TextDecoder 17 ms | TextEncoder 104 ms
+   WASM SIMD128 24 ms (rows 144590)
+large100.log: JS v5 bytes 390 ms (rows 510461) | JS v5 bytes+SWAR 351 ms (rows 510461) | JS v5 string 530 ms (rows 510461)
+   input: TextDecoder 120 ms | TextEncoder 1015 ms
+   WASM SIMD128 119 ms (rows 510461)
+DONE Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36
 ````
