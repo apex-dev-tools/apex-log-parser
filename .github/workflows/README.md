@@ -13,7 +13,7 @@ The YAML says what runs. The scripts decide what happens, so the logic is testab
 
 ## benchmark.yml
 
-Runs `pnpm run bench` under [CodSpeed](https://codspeed.io) in simulation mode. CodSpeed
+Runs `node --run bench` under [CodSpeed](https://codspeed.io) in simulation mode. CodSpeed
 counts CPU instructions, not wall time, so a run on a shared runner is repeatable. Each push
 to `main` records a baseline. On a pull request, CodSpeed posts a comment with the change
 per benchmark, and its check fails when a benchmark regresses past the threshold set on

@@ -39,4 +39,5 @@ jobs:
       - uses: CodSpeedHQ/action@v5
         with:
           mode: simulation
-          run: pnpm run bench
+          # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
+          run: node --run bench
