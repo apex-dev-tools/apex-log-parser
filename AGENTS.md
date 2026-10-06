@@ -37,6 +37,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `scripts/bench-large.ts` — `pnpm run bench:large`, the 8, 20 and 100 MB synthetic logs, which are
   too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
   `--baseline=<path>` on the other to compare them.
+- `scripts/__tests__/parse-heap.test.ts` — the V8 heap the 8 MB log's tree keeps, per character,
+  within 5% of a pinned value. CodSpeed cannot see the V8 heap. A change that moves it on purpose
+  updates the pin.
 - `scripts/cli.ts` — argument reading and the entry-point guard every script uses. No other
   imports, so a small script does not pull the scraper's module graph in to read one flag.
 - `scripts/ci/` — the scrape workflow's logic, so the YAML only declares what runs.
@@ -127,8 +130,10 @@ generic classes state none, and `debugLevelTokenByKey` covers every category the
 `applyFlowDbResiduals`, in that order. The residual pass is last because it adds to every ancestor
 itself.
 
-- `aggregateTotals` sums each counter by hand, deepest depth first. A new `SelfTotal` field rolls up
-  only once it is added to that loop.
+- `aggregateTotals` walks `eventsById` backwards, so each child is totalled before its parent. That
+  holds because every event is created after its parent. It sums each counter by hand into a local,
+  then writes the parent once. A new `SelfTotal` field rolls up only once it has a local, a sum in
+  the loop and a write after it.
 - `duration.self` is a subtraction: the parent starts at its total and each child's total comes off.
 - `heapPeak` composes by max, not sum. `heapAllocated.self` and `heapGross.self` take from the
   leaf events that call `seedHeapLeaf`.

@@ -30,12 +30,40 @@ export function report(results: LargeResult[], baseline: LargeResult[] = []): st
   });
 }
 
+// Sorts in place: every caller passes an array it does not reuse.
 function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
+  const sorted = values.sort((a, b) => a - b);
   const middle = sorted.length / 2;
   return Number.isInteger(middle)
     ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
     : (sorted[Math.floor(middle)] ?? 0);
+}
+
+// Module-level, so optimised code cannot drop the tree before the second collection.
+let _held: unknown = null;
+
+/** Median parse time (ms) and median heap the tree holds after a collection (bytes), over `runs` parses. */
+export function measureLog(
+  log: string,
+  gc: () => void,
+  runs: number,
+): { ms: number; heapBytes: number } {
+  // A first parse compiles the parser, so the runs measure neither the compile nor its code.
+  parse(log);
+  const times: number[] = [];
+  const heaps: number[] = [];
+  for (let run = 0; run < runs; run++) {
+    _held = null;
+    gc();
+    const before = process.memoryUsage().heapUsed;
+    const start = performance.now();
+    _held = parse(log);
+    times.push(performance.now() - start);
+    gc();
+    heaps.push(process.memoryUsage().heapUsed - before);
+  }
+  _held = null;
+  return { ms: median(times), heapBytes: median(heaps) };
 }
 
 function main(): void {
@@ -49,25 +77,8 @@ function main(): void {
   const baselinePath = flag(args, '--baseline');
 
   const results = Object.entries(largeLogs).map(([name, options]): LargeResult => {
-    const log = makeLog(options);
-    const times: number[] = [];
-    const heaps: number[] = [];
-    // A first parse compiles the parser, so the runs measure neither the compile nor its code.
-    parse(log);
-    // Holds the tree across the collection, so the heap reading includes it.
-    let tree: unknown = null;
-    for (let run = 0; run < runs; run++) {
-      tree = null;
-      gc();
-      const before = process.memoryUsage().heapUsed;
-      const start = performance.now();
-      tree = parse(log);
-      times.push(performance.now() - start);
-      gc();
-      heaps.push(process.memoryUsage().heapUsed - before);
-    }
-    void tree;
-    return { name, ms: median(times), heapBytes: median(heaps) };
+    const { ms, heapBytes } = measureLog(makeLog(options), gc, runs);
+    return { name, ms, heapBytes };
   });
 
   const baseline: LargeResult[] = baselinePath
