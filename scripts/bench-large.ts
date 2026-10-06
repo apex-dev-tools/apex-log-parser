@@ -38,6 +38,33 @@ function median(values: number[]): number {
     : (sorted[Math.floor(middle)] ?? 0);
 }
 
+// Module-level, so optimised code cannot drop the tree before the second collection.
+let _held: unknown = null;
+
+/** Median parse time (ms) and median heap the tree holds after a collection (bytes), over `runs` parses. */
+export function measureLog(
+  log: string,
+  gc: () => void,
+  runs: number,
+): { ms: number; heapBytes: number } {
+  // A first parse compiles the parser, so the runs measure neither the compile nor its code.
+  parse(log);
+  const times: number[] = [];
+  const heaps: number[] = [];
+  for (let run = 0; run < runs; run++) {
+    _held = null;
+    gc();
+    const before = process.memoryUsage().heapUsed;
+    const start = performance.now();
+    _held = parse(log);
+    times.push(performance.now() - start);
+    gc();
+    heaps.push(process.memoryUsage().heapUsed - before);
+  }
+  _held = null;
+  return { ms: median(times), heapBytes: median(heaps) };
+}
+
 function main(): void {
   const gc = (globalThis as { gc?: () => void }).gc;
   if (!gc) throw new Error('Run with node --expose-gc, as pnpm run bench:large does');
@@ -48,27 +75,9 @@ function main(): void {
   const json = flag(args, '--json');
   const baselinePath = flag(args, '--baseline');
 
-  const results = Object.entries(largeLogs).map(([name, options]): LargeResult => {
-    const log = makeLog(options);
-    const times: number[] = [];
-    const heaps: number[] = [];
-    // A first parse compiles the parser, so the runs measure neither the compile nor its code.
-    parse(log);
-    // Holds the tree across the collection, so the heap reading includes it.
-    let tree: unknown = null;
-    for (let run = 0; run < runs; run++) {
-      tree = null;
-      gc();
-      const before = process.memoryUsage().heapUsed;
-      const start = performance.now();
-      tree = parse(log);
-      times.push(performance.now() - start);
-      gc();
-      heaps.push(process.memoryUsage().heapUsed - before);
-    }
-    void tree;
-    return { name, ms: median(times), heapBytes: median(heaps) };
-  });
+  const results = Object.entries(largeLogs).map(
+    ([name, options]): LargeResult => ({ name, ...measureLog(makeLog(options), gc, runs) }),
+  );
 
   const baseline: LargeResult[] = baselinePath
     ? JSON.parse(readFileSync(baselinePath, 'utf8'))
