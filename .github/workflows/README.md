@@ -33,6 +33,7 @@ regressions only, so `pnpm run bench:large` parses them locally.
 | Simulation mode | Wall time on a shared runner varies by more than the regressions to catch. Instruction counts vary by about 1%. |
 | Logs of 1.5 MB in all | Each bench parses 8 times under Valgrind, and the job holds up the merge. |
 | Exact Node version | Instruction counts move with the V8 version. A bump shifts the baseline once; acknowledge it on codspeed.io. |
+| `ubuntu-24.04`, not `ubuntu-latest` | Instruction counts move with the OS image too. The label stops a jump to a new Ubuntu release; weekly image patches can still move counts a little. |
 | No `paths:` filter | A required check that does not run stays "Expected" and blocks the merge. |
 | `id-token: write` at job level | CodSpeed authenticates with OIDC, so no secret is stored. |
 | Fork pull requests | GitHub gives a fork no OIDC token, so CodSpeed uploads without a token. This works for a public repository. Never use `pull_request_target`. |

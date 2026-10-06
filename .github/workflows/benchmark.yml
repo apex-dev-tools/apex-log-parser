@@ -21,7 +21,8 @@ env:
 jobs:
   benchmarks:
     if: github.repository == 'apex-dev-tools/apex-log-parser'
-    runs-on: ubuntu-latest
+    # Exact, for the same reason as NODE_VERSION: a new OS image moves instruction counts.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
