@@ -46,6 +46,11 @@ class LogWriter {
     this.text([`${clock} (${this.nanos})`, type, ...fields].join('|'));
   }
 
+  /** Moves the clock on, as a slow call does between its entry and exit. */
+  wait(nanos: number): void {
+    this.nanos += nanos;
+  }
+
   /** A line with no timestamp: header, or the wrapped text of the event before it. */
   text(line: string): void {
     this.lines.push(line);
@@ -222,16 +227,22 @@ interface ShapeSpec {
   write(w: LogWriter): void;
 }
 
+/** The entry and exit writers of one random method call. */
+function methodEvents(w: LogWriter): [open: () => void, close: () => void] {
+  const [id, name] = w.pick(methods);
+  const line = w.lineNumber();
+  return [
+    () => w.event('METHOD_ENTRY', line, id, name),
+    () => w.event('METHOD_EXIT', line, id, name),
+  ];
+}
+
 const shapes: Readonly<Record<Shape, ShapeSpec>> = {
   method: {
     weightOf: ['METHOD_ENTRY'],
     write(w) {
-      const [id, name] = w.pick(methods);
-      const line = w.lineNumber();
-      w.frame(
-        () => w.event('METHOD_ENTRY', line, id, name),
-        () => w.event('METHOD_EXIT', line, id, name),
-      );
+      const [open, close] = methodEvents(w);
+      w.frame(open, close);
     },
   },
   construct: {
@@ -674,6 +685,13 @@ export function makeLog(options: LogOptions): string {
   for (let execution = 1; execution <= executions; execution++) {
     w.event('EXECUTION_STARTED');
     codeUnit(w, 'execute_anonymous_apex', () => {
+      // One slow call first, so later times pass 2^31 ns, where Node's V8 boxes them, as in a long real log.
+      if (execution === 1) {
+        const [open, close] = methodEvents(w);
+        open();
+        w.wait(2_500_000_000);
+        close();
+      }
       const end = (options.chars * execution) / executions;
       while (w.size < end) shapes[choose()].write(w);
       w.closeAll();
