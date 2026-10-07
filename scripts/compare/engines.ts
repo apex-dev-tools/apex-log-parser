@@ -4,6 +4,7 @@
  */
 
 import type { ApexLog } from '../../src/index.js';
+import { legacyFacts } from './facts.js';
 import type { Projection } from './project.js';
 import { projectLegacy } from './project.js';
 
@@ -11,7 +12,10 @@ export interface Engine {
   readonly name: string;
   /** Timed from the bytes, so an engine that must decode them first pays for it. */
   parse(bytes: Uint8Array): Promise<unknown>;
+  /** Every field the result holds. Compares two runs of one engine. */
   project(result: unknown): Projection;
+  /** The facts in `facts.ts`. Compares two engines. */
+  facts(result: unknown): Projection;
 }
 
 const legacy: Engine = {
@@ -22,6 +26,7 @@ const legacy: Engine = {
     return parse(new TextDecoder().decode(bytes));
   },
   project: (result) => projectLegacy(result as ApexLog),
+  facts: (result) => legacyFacts(result as ApexLog),
 };
 
 const ENGINES: readonly Engine[] = [legacy];

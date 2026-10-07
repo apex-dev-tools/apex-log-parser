@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { parse } from '../../src/index.js';
 import { findLogs } from '../compare/compare.js';
 import { compareKeys, diffProjections, same } from '../compare/diff.js';
+import type { LogFact } from '../compare/facts.js';
+import { legacyFacts } from '../compare/facts.js';
 import type { Projection } from '../compare/project.js';
 import { canonical, projectLegacy } from '../compare/project.js';
 import type { FileResult } from '../compare/report.js';
@@ -62,6 +64,64 @@ describe('projectLegacy', () => {
     expect(soql).not.toHaveProperty('logParser');
     expect(soql).not.toHaveProperty('eventIndex');
     expect(soql).not.toHaveProperty('parent');
+  });
+});
+
+describe('legacyFacts', () => {
+  it('gives one record per tree node, in pre-order, keyed like the full projection', () => {
+    const out = records(legacyFacts(parse(log)));
+    expect([...out.keys()]).toEqual(['log', '0', '0/0', '0/0/0', '0/0/0/0']);
+    expect(out.get('0/0/0/0')).toMatchObject({
+      type: 'SOQL_EXECUTE_BEGIN',
+      lineNumber: 12,
+      exitStamp: 5500000,
+      counts: { soql: { self: 1, total: 1 }, soqlRows: { self: 10, total: 10 } },
+    });
+    expect(out.get('0/0')?.counts).toMatchObject({ soqlRows: { self: 0, total: 10 } });
+  });
+
+  it('refers to an event the tree does not hold by its type and time', () => {
+    const skipped = log.replace(
+      'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()',
+      'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()\n*** Skipped 1,024 bytes of detailed log',
+    );
+    const facts = records(legacyFacts(parse(skipped))).get('log') as unknown as LogFact;
+    expect(facts.entryPoints).toEqual([{ node: '0/0' }]);
+    expect(facts.truncation.regions).toEqual([
+      expect.objectContaining({ at: { offTree: 'METHOD_EXIT', at: 7000000 }, skippedBytes: 1024 }),
+    ]);
+  });
+
+  it('states an empty namespace or line-number field as null', () => {
+    const facts = records(
+      legacyFacts(parse('64.0 APEX_CODE,FINE\n09:00:00.001 (1000000)|STATEMENT_EXECUTE|')),
+    ).get('0');
+    expect(facts).toMatchObject({ lineNumber: null, namespace: null });
+  });
+
+  it('keeps a stated line number 0, and states no namespace for today’s default', () => {
+    const out = records(
+      legacyFacts(
+        parse(
+          [
+            '64.0 APEX_CODE,FINE',
+            '09:00:00.001 (1000000)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex',
+            '09:00:00.002 (2000000)|STATEMENT_EXECUTE|[0]',
+            '09:00:00.003 (3000000)|CODE_UNIT_FINISHED|execute_anonymous_apex',
+          ].join('\n'),
+        ),
+      ),
+    );
+    expect(out.get('0')).toMatchObject({ namespace: null });
+    expect(out.get('0/0')).toMatchObject({ lineNumber: 0, namespace: null });
+    expect((out.get('log') as unknown as LogFact).namespaces).toEqual([]);
+  });
+
+  it('states an id no event has as missing, not as no reference', () => {
+    const parsed = parse(log);
+    parsed.logIssues.push({ type: 'unexpected', summary: 's', description: 'd', eventIndex: 999 });
+    const facts = records(legacyFacts(parsed)).get('log') as unknown as LogFact;
+    expect(facts.issues.at(-1)?.at).toEqual({ missing: 999 });
   });
 });
 

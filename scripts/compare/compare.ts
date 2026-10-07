@@ -2,8 +2,9 @@
  * Runs every log in a folder through the parse engines, checks they give the same output, and
  * times them. Writes `results.jsonl` as it goes and `report.md` at the end.
  *
- * It diffs every later engine against the first. Naming one engine twice (`--engines=legacy,legacy`)
- * checks that its output is deterministic. `--runs=0` skips timing. `--baseline=<results.jsonl>`
+ * It diffs every later engine against the first, by the facts in `facts.ts`. Naming one engine
+ * twice with `--projection=full` (`--engines=legacy,legacy`) checks that its whole output is
+ * deterministic. `--runs=0` skips timing. `--baseline=<results.jsonl>`
  * adds each engine's change against an earlier run, matched by log path.
  *
  * Never commit the output: it names the logs, and the logs come from orgs.
@@ -31,7 +32,7 @@ import type { Failure, FileResult } from './report.js';
 import { renderReport } from './report.js';
 
 const USAGE =
-  'Usage: pnpm run compare <dir> --out=<dir> [--engines=legacy,next] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
+  'Usage: pnpm run compare <dir> --out=<dir> [--engines=legacy,next] [--projection=facts|full] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
 const LOG_FILE = /\.(log|txt)$/i;
 const measureScript = fileURLToPath(new URL('./measure.ts', import.meta.url));
 
@@ -59,15 +60,27 @@ function time(engineName: string, file: string, runs: number): Measurement | Fai
   }
 }
 
-async function project(engineName: string, bytes: Uint8Array): Promise<Projection> {
+type ProjectionKind = 'facts' | 'full';
+
+async function project(
+  engineName: string,
+  bytes: Uint8Array,
+  kind: ProjectionKind,
+): Promise<Projection> {
   const subject = engine(engineName);
-  return subject.project(await subject.parse(bytes));
+  const result = await subject.parse(bytes);
+  return kind === 'full' ? subject.project(result) : subject.facts(result);
 }
 
-async function diff(left: string, right: string, file: string): Promise<DiffResult | Failure> {
+async function diff(
+  left: string,
+  right: string,
+  file: string,
+  kind: ProjectionKind,
+): Promise<DiffResult | Failure> {
   try {
     const bytes = readFileSync(file);
-    return diffProjections(await project(left, bytes), await project(right, bytes));
+    return diffProjections(await project(left, bytes, kind), await project(right, bytes, kind));
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
@@ -81,6 +94,8 @@ runIfMain(import.meta.url, async () => {
 
   const engines = (flag(args, '--engines') ?? 'legacy').split(',');
   engines.forEach(engine);
+  const kind = flag(args, '--projection') ?? 'facts';
+  if (kind !== 'facts' && kind !== 'full') throw new Error(USAGE);
   const runs = Number(flag(args, '--runs') ?? 5);
   const match = flag(args, '--match');
   const limit = Number(flag(args, '--limit') ?? Number.POSITIVE_INFINITY);
@@ -108,7 +123,7 @@ runIfMain(import.meta.url, async () => {
     const name = relative(dir, file);
     const result: FileResult = { file: name, bytes: statSync(file).size, runs: {}, diffs: {} };
     for (const other of engines.slice(1)) {
-      result.diffs[`${baseline}→${other}`] = await diff(baseline, other, file);
+      result.diffs[`${baseline}→${other} (${kind})`] = await diff(baseline, other, file, kind);
     }
     if (runs > 0) for (const e of timed) result.runs[e] = time(e, file, runs);
     results.push(result);

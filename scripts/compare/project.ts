@@ -57,7 +57,7 @@ export function* projectLegacy(log: ApexLog): Projection {
 }
 
 /** Every event in pre-order, the log first, recording each node's path as it goes. */
-function preOrder(root: LogEvent, paths: Map<LogEvent, string>): LogEvent[] {
+export function preOrder(root: LogEvent, paths: Map<LogEvent, string>): LogEvent[] {
   const out: LogEvent[] = [];
   const stack: LogEvent[] = [root];
   while (stack.length) {
