@@ -26,7 +26,8 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   carries it. `__tests__/Catalog.test.ts` and `scripts/__tests__/CatalogDocs.test.ts` fail when
   either drifts from the event database. `bytes/` reads the log's bytes: a `Source` per build
   (`node.ts`, `browser.ts`), the `ByteFields` cursor and the type id lookup. Every `Fields`
-  adapter passes `__tests__/fieldsContract.ts`.
+  adapter passes `__tests__/fieldsContract.ts`. `store/` holds the events as typed-array columns
+  (ADR 0002), with sparse count and heap pools and the string table of interned byte ranges.
 - `src/__bench__/` — the `pnpm run bench` benchmarks, which CodSpeed runs on every pull request.
   `fixtures.ts` generates their logs from a seed, with placeholder content only. Its profiles
   (small, developer and large) take their event mix, depth and wrapped lines from

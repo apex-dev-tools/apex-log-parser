@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
+import { hashBytes } from './hash.js';
 
 // A power of two, at least twice the number of names, so a probe ends after a few slots.
 const SLOTS = 1024;
@@ -14,14 +15,8 @@ const pool = new Uint8Array(EVENT_TYPE_NAMES.reduce((n, name) => n + name.length
 const slots = new Int16Array(SLOTS).fill(-1);
 
 /** The first slot to probe for the name in bytes `start` to `end`. */
-function slotOf(bytes: Uint8Array, start: number, end: number): number {
-  let h = 0;
-  for (let i = start; i < end; i++) {
-    // i < end, which is inside the caller's view
-    h = (Math.imul(h, 31) + bytes[i]!) | 0;
-  }
-  return (h ^ (h >>> 15)) & MASK;
-}
+const slotOf = (bytes: Uint8Array, start: number, end: number): number =>
+  hashBytes(bytes, start, end) & MASK;
 
 if (EVENT_TYPE_NAMES.length * 2 > SLOTS) throw new Error('typeIds: too many event types for SLOTS');
 for (const [id, name] of EVENT_TYPE_NAMES.entries()) {

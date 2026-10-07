@@ -3,6 +3,12 @@
  */
 import type { Fields } from '../catalog/types.js';
 
+// `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
+declare const TextEncoder: new () => { encode(input: string): Uint8Array };
+
+/** `text` as UTF-8 bytes. */
+export const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+
 const INTEGER = /^-?\d+$/;
 const LINE_NUMBER = /^\[\d+\]$/;
 

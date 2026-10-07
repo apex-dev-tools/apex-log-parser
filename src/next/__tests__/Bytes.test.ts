@@ -9,10 +9,7 @@ import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import { describeFieldsContract } from './fieldsContract.js';
-
-// `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
-declare const TextEncoder: new () => { encode(input: string): Uint8Array };
-const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+import { encode } from './helpers.js';
 
 /**
  * `text` at byte `offset` of a larger buffer, so a view's offset is not word aligned. The padding is
