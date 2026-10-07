@@ -425,4 +425,15 @@ export interface LineFields {
 export interface Fields extends LineFields {
   /** The continuation lines, joined by `\n`, or ''. Called at most once, and only if needed. */
   continuation(): string;
+  /**
+   * Field `i` as a line number: `[12]` is 12 and `[EXTERNAL]` is 'EXTERNAL'. Null when the field is
+   * absent or empty. NaN for any other text, such as `[]` or `[-3]`.
+   */
+  lineNumber(i: number): number | 'EXTERNAL' | null;
+  /**
+   * Field `i` as a safe base-10 integer after `prefix`, such as `Rows:` in `Rows:10`. Null when the
+   * field is absent or empty. NaN for any other text, such as `Rows:` alone. The engine reads counts
+   * here, so it decodes no text. NaN never leaves the engine: it becomes null and a parsing error.
+   */
+  int(i: number, prefix?: string): number | null;
 }

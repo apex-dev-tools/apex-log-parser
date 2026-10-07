@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { EventFields } from './fields.js';
-import type { AfterRule, TextRule, TextSpec } from './text.js';
+import type { AfterRule, FieldPosition, TextRule, TextSpec } from './text.js';
 import {
   codeUnitText,
   constructorText,
@@ -2039,17 +2039,21 @@ function grammarOf(type: EventType): Grammar {
   });
 }
 
-function textOf(type: EventType): TextOf {
-  const def = ENTRIES[type];
+/** The type's `FieldPosition`, shared by every per-type rule; `reader` names the rule in the error. */
+function positionIn(type: EventType, reader: string): FieldPosition {
   const fields = fieldNamesOf(type);
-  const position = (name: string): number => {
+  return (name) => {
     const i = fields.indexOf(name);
     if (i < 0)
-      throw new Error(`${type}: a text rule reads '${name}', which is not one of its fields`);
+      throw new Error(`${type}: ${reader} reads '${name}', which is not one of its fields`);
     return i + 2;
   };
+}
+
+function textOf(type: EventType): TextOf {
+  const def = ENTRIES[type];
   return {
-    rule: def.text?.(position) ?? null,
+    rule: def.text?.(positionIn(type, 'a text rule')) ?? null,
     after: def.after ?? null,
   };
 }
