@@ -4,4 +4,9 @@
 import { describeFieldsContract } from './fieldsContract.js';
 import { fieldsOf } from './helpers.js';
 
-describeFieldsContract('fieldsOf', fieldsOf);
+describeFieldsContract('fieldsOf', (line, continuation = '', onContinuation) =>
+  fieldsOf(line, () => {
+    onContinuation?.();
+    return continuation;
+  }),
+);

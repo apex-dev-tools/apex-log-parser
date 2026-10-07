@@ -5,9 +5,14 @@ import type { Fields } from '../catalog/types.js';
 
 /**
  * Builds the adapter under test from a line of text, without its line ending, and its continuation
- * lines or a function that gives them. The line split strips `\r`, so no field ends in one.
+ * lines. The line split strips `\r`, so no field ends in one. The adapter calls `onContinuation`
+ * when it reads the continuation lines, so the suite can check it reads them only when asked.
  */
-export type MakeFields = (line: string, continuation?: string | (() => string)) => Fields;
+export type MakeFields = (
+  line: string,
+  continuation?: string,
+  onContinuation?: () => void,
+) => Fields;
 
 /** What every `Fields` adapter must do, so the test fake and the byte cursor agree. */
 export function describeFieldsContract(name: string, make: MakeFields): void {
@@ -25,8 +30,15 @@ export function describeFieldsContract(name: string, make: MakeFields): void {
       ]);
     });
 
-    it('gives an empty string for a field past the end', () => {
-      expect(make(head).at(5)).toBe('');
+    it('gives an empty string, or no number, for a field past either end', () => {
+      const f = make(`${head}|[12]|Rows:10`);
+      expect([f.at(5), f.at(-1), f.from(-1, ','), f.lineNumber(-1), f.int(-1)]).toEqual([
+        '',
+        '',
+        '',
+        null,
+        null,
+      ]);
     });
 
     it('joins a field and every later one, or gives an empty string when there are none', () => {
@@ -41,8 +53,8 @@ export function describeFieldsContract(name: string, make: MakeFields): void {
     });
 
     it('reads the continuation lines only when asked', () => {
-      const continuation = vi.fn(() => 'more');
-      const f = make(`${head}|[12]|Rows:10`, continuation);
+      const continuation = vi.fn();
+      const f = make(`${head}|[12]|Rows:10`, 'more', continuation);
       f.at(2);
       f.from(2, '|');
       f.lineNumber(2);

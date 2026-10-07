@@ -24,7 +24,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   catalog resolves each name to a position at load, and throws on a name the entry does not list.
   `catalog/fields.ts` is type only: TSDoc for each type and field, so editors show it and no bundle
   carries it. `__tests__/Catalog.test.ts` and `scripts/__tests__/CatalogDocs.test.ts` fail when
-  either drifts from the event database.
+  either drifts from the event database. `bytes/` reads the log's bytes: a `Source` per build
+  (`node.ts`, `browser.ts`), the `ByteFields` cursor and the type id lookup. Every `Fields`
+  adapter passes `__tests__/fieldsContract.ts`.
 - `src/__bench__/` — the `pnpm run bench` benchmarks, which CodSpeed runs on every pull request.
   `fixtures.ts` generates their logs from a seed, with placeholder content only. Its profiles
   (small, developer and large) take their event mix, depth and wrapped lines from

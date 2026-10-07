@@ -24,7 +24,7 @@ export function fieldsOf(line: string, continuation: string | (() => string) = '
     count: parts.length,
     continuation: typeof continuation === 'function' ? continuation : () => continuation,
     at: (i) => parts[i] ?? '',
-    from: (i, separator) => parts.slice(i).join(separator),
+    from: (i, separator) => (i < 0 ? '' : parts.slice(i).join(separator)),
     lineNumber: (i) => {
       const text = parts[i] ?? '';
       if (!text) return null;
