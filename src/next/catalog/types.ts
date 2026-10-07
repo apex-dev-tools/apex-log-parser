@@ -411,14 +411,18 @@ export interface EventTypeInfo {
   readonly exitTypes: readonly EventType[];
 }
 
-/** The fields of one line, split on `|`, for the text rules. */
-export interface Fields {
+/** The fields of one line, split on `|`, as the text rules see them. */
+export interface LineFields {
   /** How many fields the line has. Field 0 is the timestamp and field 1 the type. */
   readonly count: number;
-  /** The untimestamped lines that continue this one, each after a `\n`, or ''. */
-  readonly rest: string;
   /** Field `i`, or '' when the line has fewer fields. */
   at(i: number): string;
   /** Field `i` and every later one, joined by `separator`, or '' when there are none. */
   from(i: number, separator: string): string;
+}
+
+/** One line and its continuation lines, valid only during the call, so one cursor serves all. */
+export interface Fields extends LineFields {
+  /** The continuation lines, joined by `\n`, or ''. Called at most once, and only if needed. */
+  continuation(): string;
 }

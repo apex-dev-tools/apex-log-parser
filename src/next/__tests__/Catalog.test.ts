@@ -12,8 +12,12 @@ const database = eventDatabase as {
   events: { event: string; category: string; level: string }[];
 };
 
-const text = (type: EventType, line: string, rest = ''): string | null =>
-  eventText(idOfType(type), fieldsOf(`00:00:00.0 (1)|${type}|${line}`, rest));
+const text = (
+  type: EventType,
+  line: string,
+  continuation: string | (() => string) = '',
+): string | null =>
+  eventText(idOfType(type), fieldsOf(`00:00:00.0 (1)|${type}|${line}`, continuation));
 
 describe('the catalog against the event database', () => {
   it('holds every documented event, and no other', () => {
@@ -161,8 +165,12 @@ describe('event text', () => {
     expect(text('USER_INFO', '[EXTERNAL]')).toBeNull();
   });
 
+  it('is null when a type that takes text states none and has no continuation', () => {
+    expect(text('EXCEPTION_THROWN', '[12]|')).toBeNull();
+  });
+
   it('is the continuation alone when the text field is empty', () => {
-    expect(text('EXCEPTION_THROWN', '[12]|', '\nmessage')).toBe('message');
+    expect(text('EXCEPTION_THROWN', '[12]|', 'message')).toBe('message');
   });
 
   it('reads only the fields a real line states', () => {
@@ -176,19 +184,28 @@ describe('event text', () => {
   });
 
   it('appends continuation lines on types that take them', () => {
-    expect(text('USER_DEBUG', '[3]|DEBUG|first', '\nsecond')).toBe('DEBUG | first\nsecond');
-    expect(text('STATEMENT_EXECUTE', '[3]', '\nignored')).toBeNull();
+    expect(text('USER_DEBUG', '[3]|DEBUG|first', 'second')).toBe('DEBUG | first\nsecond');
+    expect(text('STATEMENT_EXECUTE', '[3]', 'ignored')).toBeNull();
+  });
+
+  it('reads the continuation lazily, once, and only for types that take text', () => {
+    const continuation = vi.fn(() => 'more');
+    text('STATEMENT_EXECUTE', '[3]', continuation);
+    text('XDS_RESPONSE_ERROR', 'error', continuation);
+    expect(continuation).not.toHaveBeenCalled();
+    text('USER_DEBUG', '[3]|DEBUG|first', continuation);
+    expect(continuation).toHaveBeenCalledTimes(1);
   });
 
   it('is the continuation alone when the line states no text', () => {
-    expect(text('STACK_FRAME_VARIABLE_LIST', 'Frame', '\nx = 1')).toBe('x = 1');
+    expect(text('STACK_FRAME_VARIABLE_LIST', 'Frame', 'x = 1')).toBe('x = 1');
   });
 
   it('rewrites the text after the continuation is appended', () => {
     expect(text('WF_FORMULA', 'Formula:A|Values:B')).toBe('Formula:A : Values:B');
-    expect(
-      text('LIMIT_USAGE_FOR_NS', '(default)', '\n  Number of SOQL queries: 1 out of 100'),
-    ).toBe('(default)\nNumber of SOQL queries: 1/100');
+    expect(text('LIMIT_USAGE_FOR_NS', '(default)', '  Number of SOQL queries: 1 out of 100')).toBe(
+      '(default)\nNumber of SOQL queries: 1/100',
+    );
   });
 
   it('joins every listed field once, with no stray spaces', () => {

@@ -75,7 +75,7 @@ interface PointDef extends CommonDef {
 
 type FieldName<T extends EventType> = keyof EventFields[T] & string;
 
-/** One hand-written catalog entry. Omitted keys take the defaults in `infoOf` and `grammarOf`. */
+/** One hand-written catalog entry. Omitted keys take the defaults in `infoOf`, `grammarOf` and `textOf`. */
 type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef) & {
   /** The line's fields from field 2 on, in order. */
   readonly fields?: readonly FieldName<T>[];
@@ -89,10 +89,9 @@ type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef) & {
 export interface Grammar {
   readonly closes: Closes | null;
   readonly hasLineNumber: boolean;
+  /** A line after this type's line that starts no event is its text, not an `Invalid log line`. */
   readonly acceptsText: boolean;
   readonly discontinuity: boolean;
-  readonly text: TextRule | null;
-  readonly after: AfterRule | null;
   readonly cpuType: CpuType | null;
   readonly suffix: string | null;
   readonly hasValidSymbols: boolean;
@@ -2008,7 +2007,7 @@ function infoOf(type: EventType, typeId: number): EventTypeInfo {
   return Object.freeze({
     typeId,
     type,
-    fields: def.fields ? Object.freeze(def.fields as readonly string[]) : NO_FIELDS,
+    fields: Object.freeze(fieldNamesOf(type)),
     shape: def.shape ?? 'leaf',
     kind: def.kind ?? 'other',
     category: def.category ?? null,
@@ -2018,26 +2017,41 @@ function infoOf(type: EventType, typeId: number): EventTypeInfo {
   });
 }
 
+/** How `eventText` builds one type's text. Private, so text has one seam. */
+interface TextOf {
+  readonly rule: TextRule | null;
+  readonly after: AfterRule | null;
+}
+
+const fieldNamesOf = (type: EventType): readonly string[] =>
+  (ENTRIES[type].fields ?? NO_FIELDS) as readonly string[];
+
 function grammarOf(type: EventType): Grammar {
   const def = ENTRIES[type];
-  const fields = (def.fields ?? NO_FIELDS) as readonly string[];
+  return Object.freeze({
+    closes: def.shape === 'frame' ? (def.closes ?? 'exit') : null,
+    hasLineNumber: fieldNamesOf(type)[0] === 'line',
+    acceptsText: def.acceptsText ?? false,
+    discontinuity: def.discontinuity ?? false,
+    cpuType: def.cpu ?? null,
+    suffix: def.suffix ?? null,
+    hasValidSymbols: def.symbols ?? false,
+  });
+}
+
+function textOf(type: EventType): TextOf {
+  const def = ENTRIES[type];
+  const fields = fieldNamesOf(type);
   const position = (name: string): number => {
     const i = fields.indexOf(name);
     if (i < 0)
       throw new Error(`${type}: a text rule reads '${name}', which is not one of its fields`);
     return i + 2;
   };
-  return Object.freeze({
-    closes: def.shape === 'frame' ? (def.closes ?? 'exit') : null,
-    hasLineNumber: fields[0] === 'line',
-    acceptsText: def.acceptsText ?? false,
-    discontinuity: def.discontinuity ?? false,
-    text: def.text?.(position) ?? null,
+  return {
+    rule: def.text?.(position) ?? null,
     after: def.after ?? null,
-    cpuType: def.cpu ?? null,
-    suffix: def.suffix ?? null,
-    hasValidSymbols: def.symbols ?? false,
-  });
+  };
 }
 
 /** Every event type, indexed by type id. */
@@ -2045,6 +2059,8 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = Object.freeze(EVENT_TYPE_NA
 
 /** The engine's rules for each event type, indexed by type id. Internal. */
 export const GRAMMAR: readonly Grammar[] = Object.freeze(EVENT_TYPE_NAMES.map(grammarOf));
+
+const TEXT: readonly TextOf[] = EVENT_TYPE_NAMES.map(textOf);
 
 /** The type info for a type name. */
 export function eventType(type: EventType): EventTypeInfo;
@@ -2061,16 +2077,17 @@ export function idOfType(name: string): number {
 }
 
 /**
- * An event's text: its type's rule, then its continuation lines, then its type's rewrite.
- * Null when the line states no text and has no continuation.
+ * An event's text: its type's rule, then its continuation lines if the type takes text, then its
+ * type's rewrite. Null when neither gives any text.
  */
 export function eventText(typeId: number, f: Fields): string | null {
+  const text = TEXT[typeId];
   const grammar = GRAMMAR[typeId];
-  if (!grammar) return null;
+  if (!text || !grammar) return null;
   // An empty field is no text, so that a missing field and an absent rule read the same.
-  const base = grammar.text?.(f) || null;
-  const rest = grammar.acceptsText ? f.rest : '';
-  if (base === null && !rest) return null;
-  const text = base === null ? rest.slice(1) : base + rest;
-  return grammar.after ? grammar.after(text) : text;
+  const base = text.rule?.(f) || null;
+  const more = grammar.acceptsText ? f.continuation() : '';
+  const joined = base === null ? more : more ? `${base}\n${more}` : base;
+  if (!joined) return null;
+  return text.after ? text.after(joined) : joined;
 }

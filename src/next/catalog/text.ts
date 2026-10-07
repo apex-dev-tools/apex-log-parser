@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import type { Fields } from './types.js';
+import type { LineFields } from './types.js';
 
 /** Builds an event's text from its line. Null when the line states no text. */
-export type TextRule = (f: Fields) => string | null;
+export type TextRule = (f: LineFields) => string | null;
 
 /** Rewrites the text once the continuation lines are appended. */
 export type AfterRule = (text: string) => string;
