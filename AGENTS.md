@@ -129,7 +129,10 @@ same change: it pins the runtime list, and pins the types through an interface t
    alone keeps it out of every heap rollup.
 6. `src/next/catalog/types.ts` — append the name to the end of `EVENT_TYPE_NAMES`, never in sorted
    order, so no other type id moves. Then add its entry, with its `fields`, to `ENTRIES` in
-   `src/next/catalog/catalog.ts`. A first field named `line` makes the engine read a line number.
+   `src/next/catalog/catalog.ts`. A field named `line` makes the engine read a line number. An
+   event that adds to a rollup or states a namespace declares it in the entry: `count`, `rows`,
+   `heap`, `namespace`. Scan-time work no declaration states is a `hook`, which the engine runs. Text, suffix and
+   cpuType work is not: the views do it.
    Document it in `EventFields` in `src/next/catalog/fields.ts`: the data JSON description, then
    each field with its `Format:`. Add the `@remarks` line unless a real log confirms the layout.
 

@@ -32,6 +32,53 @@ import type {
 } from './types.js';
 import { EVENT_TYPE_NAMES } from './types.js';
 
+/** The rollup counter an event of a type adds one to. */
+export type Count = 'soql' | 'sosl' | 'dml' | 'thrown';
+
+/** The rollup counter a `rows` field adds to. */
+export type RowsOf = 'soql' | 'sosl' | 'dml';
+
+/**
+ * How the engine finds an event's namespace. Each rule reads the fields `NAMESPACE_FIELDS` names.
+ * - `none`: no namespace, and none taken from the frame. Today's parser states `'default'` here.
+ * - `method`: from the signature; a `System.Type.forName(` signature states none.
+ * - `methodExit`: from an exit whose text has no `)`; the frame it closes takes it.
+ */
+export type NamespaceRule =
+  | 'none'
+  | 'method'
+  | 'methodExit'
+  | 'constructor'
+  | 'codeUnit'
+  | 'package'
+  | 'limits';
+
+/**
+ * Scan-time work for one type that no declaration states. Each hook reads `HOOK_FIELDS`. Work on
+ * text, suffix or cpuType is not a hook: the views do it when a caller reads them.
+ */
+export type Hook = 'limitSnapshot' | 'limitException' | 'fatal' | 'flowTotal' | 'vfApexCall';
+
+const NAMESPACE_FIELDS: { readonly [R in NamespaceRule]: readonly string[] } = {
+  none: [],
+  method: ['signature'],
+  methodExit: ['classId', 'signature'],
+  constructor: ['className'],
+  codeUnit: ['unit', 'name', 'typeRef'],
+  // The same field, read two ways: a package's last dotted part, or a limit block's bare name.
+  package: ['namespace'],
+  limits: ['namespace'],
+};
+
+// The text hooks read the event's text, so they name no field.
+const HOOK_FIELDS: { readonly [H in Hook]: readonly string[] } = {
+  limitSnapshot: [],
+  limitException: [],
+  fatal: [],
+  flowTotal: ['usage'],
+  vfApexCall: ['element', 'method', 'controller'],
+};
+
 /** How a frame of a type closes. */
 export type Closes = 'exit' | 'next-line' | 'next-event';
 
@@ -80,6 +127,13 @@ type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef) & {
   /** The line's fields from field 2 on, in order. */
   readonly fields?: readonly FieldName<T>[];
   readonly text?: TextSpec<FieldName<T>>;
+  readonly count?: Count;
+  /** The row count the line states, credited to the frame the line opens or closes. */
+  readonly rows?: { readonly field: FieldName<T>; readonly of: RowsOf };
+  /** The heap bytes the line states, added to the running heap with `sign`. */
+  readonly heap?: { readonly field: FieldName<T>; readonly sign: 1 | -1 };
+  readonly namespace?: NamespaceRule;
+  readonly hook?: Hook;
 };
 
 /**
@@ -88,17 +142,35 @@ type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef) & {
  */
 export interface Grammar {
   readonly closes: Closes | null;
-  readonly hasLineNumber: boolean;
+  /** The position of the `line` field, or -1. Positions are -1 for none, so each stays an integer. */
+  readonly lineField: number;
   /** A line after this type's line that starts no event is its text, not an `Invalid log line`. */
   readonly acceptsText: boolean;
   readonly discontinuity: boolean;
   readonly cpuType: CpuType | null;
   readonly suffix: string | null;
   readonly hasValidSymbols: boolean;
+  readonly count: Count | null;
+  readonly rowsField: number;
+  readonly rowsOf: RowsOf | null;
+  readonly heapField: number;
+  /** 1 adds the bytes to the running heap, -1 takes them off. 0 when the type states no bytes. */
+  readonly heapSign: 1 | -1 | 0;
+  readonly namespace: NamespaceRule | null;
+  readonly namespaceFields: readonly number[];
+  readonly hook: Hook | null;
+  readonly hookFields: readonly number[];
 }
 
 const NO_TYPES: readonly EventType[] = Object.freeze([]);
 const NO_FIELDS: readonly string[] = Object.freeze([]);
+const NO_POSITIONS: readonly number[] = Object.freeze([]);
+/** The position of a line's first named field, after the timestamp and the type. */
+export const FIRST_FIELD = 2;
+/** What a `rows` field states before its count, as in `Rows:10`. */
+export const ROWS_PREFIX = 'Rows:';
+/** What a `heap` field states before its bytes, as in `Bytes:8`. */
+export const HEAP_PREFIX = 'Bytes:';
 
 const atRules: TextRule[] = [];
 const at = <const K extends string>(name: K): TextSpec<K> =>
@@ -165,6 +237,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   BULK_DML_RETRY: { debugCategory: 'database', level: 'INFO', kind: 'dml' },
   BULK_HEAP_ALLOCATE: {
+    heap: { field: 'bytes', sign: 1 },
     fields: ['bytes'],
     debugCategory: 'apexCode',
     level: 'FINEST',
@@ -211,6 +284,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: at('name'),
   },
   CODE_UNIT_STARTED: {
+    namespace: 'codeUnit',
     fields: ['line', 'unit', 'name', 'typeRef'],
     shape: 'frame',
     kind: 'code-unit',
@@ -223,6 +297,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: codeUnitText,
   },
   CONSTRUCTOR_ENTRY: {
+    namespace: 'constructor',
     fields: ['line', 'classId', 'signature', 'className'],
     shape: 'frame',
     kind: 'method',
@@ -243,6 +318,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'FINE',
   },
   CUMULATIVE_LIMIT_USAGE: {
+    namespace: 'none',
     shape: 'frame',
     kind: 'limits',
     exits: ['CUMULATIVE_LIMIT_USAGE_END'],
@@ -258,6 +334,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'INFO',
   },
   CUMULATIVE_PROFILING: {
+    namespace: 'none',
     fields: ['section', 'detail'],
     debugCategory: 'apexProfiling',
     level: 'FINE',
@@ -265,6 +342,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: join(' ', 'section', 'detail'),
   },
   CUMULATIVE_PROFILING_BEGIN: {
+    namespace: 'none',
     shape: 'frame',
     exits: ['CUMULATIVE_PROFILING_END'],
     category: 'System',
@@ -314,6 +392,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'debug',
   },
   DML_BEGIN: {
+    count: 'dml',
+    rows: { field: 'rows', of: 'dml' },
+    namespace: 'none',
     fields: ['line', 'operation', 'objectType', 'rows'],
     shape: 'frame',
     kind: 'dml',
@@ -374,6 +455,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   END_CALL: { debugCategory: 'workflow', level: 'INFO' },
   ENTERING_MANAGED_PKG: {
+    namespace: 'package',
     fields: ['namespace'],
     shape: 'frame',
     kind: 'package',
@@ -451,6 +533,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: join(' ', 'eventType', 'action'),
   },
   EXCEPTION_THROWN: {
+    count: 'thrown',
+    hook: 'limitException',
     fields: ['line', 'exception'],
     debugCategory: 'apexCode',
     level: 'INFO',
@@ -466,6 +550,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'ERROR',
   },
   EXECUTION_STARTED: {
+    namespace: 'none',
     shape: 'frame',
     kind: 'execution',
     exits: ['EXECUTION_FINISHED'],
@@ -488,6 +573,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'callout',
   },
   FATAL_ERROR: {
+    hook: 'fatal',
     fields: ['exception'],
     debugCategory: 'apexCode',
     level: 'ERROR',
@@ -536,6 +622,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'FINE',
   },
   FLOW_BULK_ELEMENT_LIMIT_USAGE: {
+    hook: 'flowTotal',
     fields: ['usage'],
     debugCategory: 'workflow',
     level: 'FINER',
@@ -616,6 +703,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: join(' : ', 'message', 'elementType', 'elementName'),
   },
   FLOW_ELEMENT_LIMIT_USAGE: {
+    hook: 'flowTotal',
     fields: ['usage'],
     debugCategory: 'workflow',
     level: 'FINER',
@@ -798,6 +886,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'callout',
   },
   HEAP_ALLOCATE: {
+    heap: { field: 'bytes', sign: 1 },
     fields: ['line', 'bytes'],
     debugCategory: 'apexCode',
     level: 'FINER',
@@ -805,6 +894,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: at('bytes'),
   },
   HEAP_DEALLOCATE: {
+    heap: { field: 'bytes', sign: -1 },
     fields: ['line', 'bytes'],
     debugCategory: 'apexCode',
     level: 'FINER',
@@ -832,6 +922,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   JSON_DIFF_DETAIL: { fields: ['diffDetail'], debugCategory: 'wave', level: 'FINEST' },
   JSON_DIFF_SUMMARY: { fields: ['diffSummary'], debugCategory: 'wave', level: 'FINE' },
   LIMIT_USAGE: {
+    namespace: 'none',
     fields: ['line', 'limit', 'used', 'max'],
     debugCategory: 'apexProfiling',
     level: 'FINEST',
@@ -842,6 +933,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     ),
   },
   LIMIT_USAGE_FOR_NS: {
+    namespace: 'limits',
+    hook: 'limitSnapshot',
     fields: ['namespace', 'usage'],
     debugCategory: 'apexProfiling',
     level: 'FINEST',
@@ -865,6 +958,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'INFO',
   },
   METHOD_ENTRY: {
+    namespace: 'method',
     fields: ['line', 'classId', 'signature'],
     shape: 'frame',
     kind: 'method',
@@ -877,6 +971,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: at('signature'),
   },
   METHOD_EXIT: {
+    namespace: 'methodExit',
     fields: ['line', 'classId', 'signature'],
     shape: 'exit',
     kind: 'method',
@@ -1292,6 +1387,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: at('caseId'),
   },
   SOQL_EXECUTE_BEGIN: {
+    count: 'soql',
     fields: ['line', 'aggregations', 'query'],
     shape: 'frame',
     kind: 'soql',
@@ -1303,6 +1399,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: at('query'),
   },
   SOQL_EXECUTE_END: {
+    rows: { field: 'rows', of: 'soql' },
     fields: ['line', 'rows'],
     shape: 'exit',
     kind: 'soql',
@@ -1317,6 +1414,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: at('plan'),
   },
   SOSL_EXECUTE_BEGIN: {
+    count: 'sosl',
     fields: ['line', 'query'],
     shape: 'frame',
     kind: 'sosl',
@@ -1328,6 +1426,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: rule(['query'], (query) => (f) => `SOSL: ${f.at(query)}`),
   },
   SOSL_EXECUTE_END: {
+    rows: { field: 'rows', of: 'sosl' },
     fields: ['line', 'rows'],
     shape: 'exit',
     kind: 'sosl',
@@ -1517,6 +1616,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   // A line that names no method, or a page-message controller, opens no frame; the engine decides.
   VF_APEX_CALL_START: {
+    hook: 'vfApexCall',
     fields: ['line', 'element', 'method', 'controller'],
     shape: 'frame',
     kind: 'method',
@@ -2028,14 +2128,32 @@ const fieldNamesOf = (type: EventType): readonly string[] =>
 
 function grammarOf(type: EventType): Grammar {
   const def = ENTRIES[type];
+  const fact = positionIn(type, 'a fact rule');
+  const fields = fieldNamesOf(type);
+  const line = fields.indexOf('line');
+  const namespace = def.namespace ?? null;
+  const hook = def.hook ?? null;
+  const reads = (rule: string, names: readonly string[]): readonly number[] =>
+    names.length ? Object.freeze(names.map(positionIn(type, rule))) : NO_POSITIONS;
   return Object.freeze({
     closes: def.shape === 'frame' ? (def.closes ?? 'exit') : null,
-    hasLineNumber: fieldNamesOf(type)[0] === 'line',
+    lineField: line < 0 ? -1 : line + FIRST_FIELD,
     acceptsText: def.acceptsText ?? false,
     discontinuity: def.discontinuity ?? false,
     cpuType: def.cpu ?? null,
     suffix: def.suffix ?? null,
     hasValidSymbols: def.symbols ?? false,
+    count: def.count ?? null,
+    rowsField: def.rows ? fact(def.rows.field) : -1,
+    rowsOf: def.rows?.of ?? null,
+    heapField: def.heap ? fact(def.heap.field) : -1,
+    heapSign: def.heap?.sign ?? 0,
+    namespace,
+    namespaceFields: namespace
+      ? reads(`the ${namespace} namespace rule`, NAMESPACE_FIELDS[namespace])
+      : NO_POSITIONS,
+    hook,
+    hookFields: hook ? reads(`the ${hook} hook`, HOOK_FIELDS[hook]) : NO_POSITIONS,
   });
 }
 
@@ -2046,7 +2164,7 @@ function positionIn(type: EventType, reader: string): FieldPosition {
     const i = fields.indexOf(name);
     if (i < 0)
       throw new Error(`${type}: ${reader} reads '${name}', which is not one of its fields`);
-    return i + 2;
+    return i + FIRST_FIELD;
   };
 }
 

@@ -2,7 +2,14 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import eventDatabase from '../../../data/salesforce-debug-log-events.json' with { type: 'json' };
-import { EVENT_TYPES, eventText, eventType, GRAMMAR, idOfType } from '../catalog/catalog.js';
+import {
+  EVENT_TYPES,
+  eventText,
+  eventType,
+  FIRST_FIELD,
+  GRAMMAR,
+  idOfType,
+} from '../catalog/catalog.js';
 import type { EventType } from '../catalog/types.js';
 import { DEBUG_CATEGORY } from '../catalog/types.js';
 import { fieldsOf } from './helpers.js';
@@ -100,7 +107,7 @@ describe('field layouts', () => {
 
   // A rename to or from `line` changes what the engine reads, so the full list is pinned.
   it('reads a line number on exactly these types', () => {
-    const types = EVENT_TYPES.filter((info) => GRAMMAR[info.typeId]?.hasLineNumber).map(
+    const types = EVENT_TYPES.filter((info) => (GRAMMAR[info.typeId]?.lineField ?? -1) >= 0).map(
       (info) => info.type,
     );
     expect(types).toMatchInlineSnapshot(`
@@ -153,6 +160,54 @@ describe('field layouts', () => {
         "VARIABLE_ASSIGNMENT",
         "VARIABLE_SCOPE_BEGIN",
         "VF_APEX_CALL_START",
+      ]
+    `);
+  });
+});
+
+describe('fact rules', () => {
+  // Names, not positions, so the table reads as the inventory of today's rules it was ported from.
+  it('states these counts, rows, heap, namespace rules and hooks', () => {
+    const name = (info: (typeof EVENT_TYPES)[number], position: number): string =>
+      info.fields[position - FIRST_FIELD] ?? `<${position}>`;
+    const facts = EVENT_TYPES.flatMap((info) => {
+      const g = GRAMMAR[info.typeId];
+      if (!g) return [];
+      const stated = [
+        g.count && `count ${g.count}`,
+        g.rowsField >= 0 && `${g.rowsOf} rows ${name(info, g.rowsField)}`,
+        g.heapField >= 0 && `heap ${g.heapSign} * ${name(info, g.heapField)}`,
+        g.namespace && `namespace ${g.namespace}(${g.namespaceFields.map((p) => name(info, p))})`,
+        g.hook && `hook ${g.hook}(${g.hookFields.map((p) => name(info, p))})`,
+      ].filter(Boolean);
+      return stated.length ? [`${info.type}: ${stated.join('; ')}`] : [];
+    });
+    expect(facts).toMatchInlineSnapshot(`
+      [
+        "BULK_HEAP_ALLOCATE: heap 1 * bytes",
+        "CODE_UNIT_STARTED: namespace codeUnit(unit,name,typeRef)",
+        "CONSTRUCTOR_ENTRY: namespace constructor(className)",
+        "CUMULATIVE_LIMIT_USAGE: namespace none()",
+        "CUMULATIVE_PROFILING: namespace none()",
+        "CUMULATIVE_PROFILING_BEGIN: namespace none()",
+        "DML_BEGIN: count dml; dml rows rows; namespace none()",
+        "ENTERING_MANAGED_PKG: namespace package(namespace)",
+        "EXCEPTION_THROWN: count thrown; hook limitException()",
+        "EXECUTION_STARTED: namespace none()",
+        "FATAL_ERROR: hook fatal()",
+        "FLOW_BULK_ELEMENT_LIMIT_USAGE: hook flowTotal(usage)",
+        "FLOW_ELEMENT_LIMIT_USAGE: hook flowTotal(usage)",
+        "HEAP_ALLOCATE: heap 1 * bytes",
+        "HEAP_DEALLOCATE: heap -1 * bytes",
+        "LIMIT_USAGE: namespace none()",
+        "LIMIT_USAGE_FOR_NS: namespace limits(namespace); hook limitSnapshot()",
+        "METHOD_ENTRY: namespace method(signature)",
+        "METHOD_EXIT: namespace methodExit(classId,signature)",
+        "SOQL_EXECUTE_BEGIN: count soql",
+        "SOQL_EXECUTE_END: soql rows rows",
+        "SOSL_EXECUTE_BEGIN: count sosl",
+        "SOSL_EXECUTE_END: sosl rows rows",
+        "VF_APEX_CALL_START: hook vfApexCall(element,method,controller)",
       ]
     `);
   });
