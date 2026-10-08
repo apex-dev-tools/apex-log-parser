@@ -24,6 +24,9 @@ applies.
 - `scripts/micro/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's
   low-level choices (`docs/adr/0004`), in Node and headless Chromium.
 - `scripts/versus.ts` — the one wording for a comparison: `4.4× faster (-77.6%)`.
+- `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
+  GC's freeing has finished. One `gc()` is not enough, because V8 frees buffer memory off the
+  main thread.
 - `__tests__/` — `BenchFixtures.test.ts` checks the synthetic logs, and that each profile stays
   close to its real logs. The other suites test the scripts. All run in `pnpm run ci`.
 

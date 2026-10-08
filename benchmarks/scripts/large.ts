@@ -9,6 +9,7 @@ import { parse } from '../../src/index.js';
 import { NodeSource } from '../../src/next/bytes/node.js';
 import { LogBuilder } from '../../src/next/engine/builder.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
+import { liveBytes } from './memory.js';
 import type { Measure } from './versus.js';
 import { parts } from './versus.js';
 
@@ -58,15 +59,7 @@ function median(values: number[]): number {
     : (sorted[Math.floor(middle)] ?? 0);
 }
 
-// The next engine's columns are array buffers, which heapUsed leaves out.
-function held(): number {
-  const { heapUsed, arrayBuffers } = process.memoryUsage();
-  return heapUsed + arrayBuffers;
-}
-
-function main(): void {
-  const gc = (globalThis as { gc?: () => void }).gc;
-  if (!gc) throw new Error('Run with node --expose-gc, as pnpm run bench:large does');
+async function main(): Promise<void> {
   const args = argv.slice(2);
   const runs = Number(flag(args, '--runs') ?? 5);
   if (!Number.isInteger(runs) || runs < 1)
@@ -77,7 +70,8 @@ function main(): void {
   const json = flag(args, '--json');
   const baselinePath = flag(args, '--baseline');
 
-  const results = Object.entries(largeLogs).map(([name, options]): LargeResult => {
+  const results: LargeResult[] = [];
+  for (const [name, options] of Object.entries(largeLogs)) {
     const parseOnce = engine(makeLog(options));
     const times: number[] = [];
     const heaps: number[] = [];
@@ -87,17 +81,15 @@ function main(): void {
     let tree: unknown = null;
     for (let run = 0; run < runs; run++) {
       tree = null;
-      gc();
-      const before = held();
+      const before = await liveBytes();
       const start = performance.now();
       tree = parseOnce();
       times.push(performance.now() - start);
-      gc();
-      heaps.push(held() - before);
+      heaps.push((await liveBytes()) - before);
     }
     void tree;
-    return { name, ms: median(times), heapBytes: median(heaps) };
-  });
+    results.push({ name, ms: median(times), heapBytes: median(heaps) });
+  }
 
   const baseline: LargeResult[] = baselinePath
     ? JSON.parse(readFileSync(baselinePath, 'utf8'))

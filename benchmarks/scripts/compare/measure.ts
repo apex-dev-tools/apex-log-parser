@@ -6,8 +6,9 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { argv, memoryUsage } from 'node:process';
+import { argv } from 'node:process';
 import { flag, runIfMain } from '../../../scripts/cli.js';
+import { liveBytes } from '../memory.js';
 import type { Engine } from './engines.js';
 import { engine } from './engines.js';
 
@@ -18,15 +19,6 @@ export interface Measurement {
   warmRunsMs: number[];
   /** Heap plus array buffers the result keeps alive after a GC, in bytes. Excludes the input. */
   retainedBytes: number;
-}
-
-declare const gc: (() => void) | undefined;
-
-function liveBytes(): number {
-  if (typeof gc !== 'function') throw new Error('Run with node --expose-gc');
-  gc();
-  const { heapUsed, arrayBuffers } = memoryUsage();
-  return heapUsed + arrayBuffers;
 }
 
 // Module scope keeps the result reachable while the GC runs; a local that is never read may not.
@@ -54,10 +46,10 @@ export async function measure(
   const warmRunsMs: number[] = [];
   let retainedBytes = 0;
   for (let i = 0; i < Math.max(1, runs); i++) {
-    const before = liveBytes();
+    const before = await liveBytes();
     warmRunsMs.push(await timedParse(subject, bytes));
     // The engine's modules loaded during the cold parse, so the first warm one leaves them out.
-    if (i === 0) retainedBytes = Math.max(0, liveBytes() - before);
+    if (i === 0) retainedBytes = Math.max(0, (await liveBytes()) - before);
     held.result = null;
   }
   return { coldMs, warmRunsMs, retainedBytes };
