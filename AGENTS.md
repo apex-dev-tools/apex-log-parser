@@ -58,6 +58,8 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   `--baseline` can be a legacy run's JSON.
 - `scripts/cli.ts` — argument reading and the entry-point guard every script uses. No other
   imports, so a small script does not pull the scraper's module graph in to read one flag.
+- `scripts/versus.ts` — the one wording for a benchmark comparison: `4.4× faster (-77.6%)`. Every
+  benchmark output states the raw figures, then the times and the percent change from this.
 - `scripts/ci/` — the scrape workflow's logic, so the YAML only declares what runs.
   `actions.ts` holds the Actions plumbing (step outputs, job summary, annotations); `report.ts`
   renders the pull request body; `seed.ts` seeds `data/` from the open automation branch. See

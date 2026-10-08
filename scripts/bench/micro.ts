@@ -25,6 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runJsonChild } from '../child.js';
 import { flag, runIfMain } from '../cli.js';
 import { formatBytes, formatMs } from '../compare/report.js';
+import { versus } from '../versus.js';
 import type { Input } from './cases.js';
 import { CASES, timeCase } from './cases.js';
 
@@ -167,10 +168,28 @@ runIfMain(import.meta.url, () => {
     }),
   ];
   for (const group of [...new Set(CASES.map((c) => c.group))]) {
-    out.push(`## ${group}`, '', '| Case | Node | Chromium |', '| --- | ---: | ---: |');
-    for (const r of rows.filter((x) => x.c.group === group)) {
+    const inGroup = rows.filter((x) => x.c.group === group);
+    const fastest = (pick: (r: (typeof rows)[number]) => Result | null): number =>
+      Math.min(
+        ...inGroup.flatMap((r) => {
+          const result = pick(r);
+          return result ? [result.ms] : [];
+        }),
+      );
+    const node = fastest((r) => r.node);
+    const browser = fastest((r) => r.browser);
+    const vs = (r: Result | null, best: number): string =>
+      !r ? '—' : r.ms === best ? 'fastest' : versus(best, r.ms, 'time');
+    out.push(
+      `## ${group}`,
+      '',
+      '| Case | Node | Node vs fastest | Chromium | Chromium vs fastest |',
+      '| --- | ---: | ---: | ---: | ---: |',
+    );
+    for (const r of inGroup) {
+      const inChromium = inBrowser && !r.c.nodeOnly;
       out.push(
-        `| ${r.c.name} | ${cell(r.node)} | ${inBrowser && !r.c.nodeOnly ? cell(r.browser) : '—'} |`,
+        `| ${r.c.name} | ${cell(r.node)} | ${vs(r.node, node)} | ${inChromium ? cell(r.browser) : '—'} | ${inChromium ? vs(r.browser, browser) : '—'} |`,
       );
     }
     out.push('');

@@ -8,7 +8,7 @@ describe('bench-large', () => {
     ];
 
     expect(report(results, [{ name: 'large 20 MB', ms: 1000, heapBytes: 300_000_000 }])).toEqual([
-      'large 20 MB: 1100 ms (+10.0%), heap 330 MB (+10.0%)',
+      'large 20 MB: 1100 ms (was 1000 ms, 1.1× slower, +10.0%), heap 330 MB (was 300 MB, 1.1× more, +10.0%)',
       'XL 100 MB: 2000 ms, heap 600 MB (not in baseline)',
     ]);
   });

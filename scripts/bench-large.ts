@@ -9,6 +9,8 @@ import { parse } from '../src/index.js';
 import { NodeSource } from '../src/next/bytes/node.js';
 import { LogBuilder } from '../src/next/engine/builder.js';
 import { flag, runIfMain } from './cli.js';
+import type { Measure } from './versus.js';
+import { parts } from './versus.js';
 
 interface LargeResult {
   name: string;
@@ -29,16 +31,22 @@ const ENGINES: Readonly<Record<string, (log: string) => () => unknown>> = {
 
 /** One line per log, with the change from the baseline when it has the same log. */
 export function report(results: LargeResult[], baseline: LargeResult[] = []): string[] {
-  const change = (now: number, before: number | undefined) =>
-    before
-      ? ` (${now >= before ? '+' : ''}${(((now - before) / Math.abs(before)) * 100).toFixed(1)}%)`
-      : '';
-  return results.map(({ name, ms, heapBytes }) => {
-    const before = baseline.find((result) => result.name === name);
-    const heap = heapBytes / 1_000_000;
+  const ms = (n: number): string => `${n.toFixed(0)} ms`;
+  const mb = (n: number): string => `${(n / 1_000_000).toFixed(0)} MB`;
+  const figure = (
+    now: number,
+    was: number | undefined,
+    unit: (n: number) => string,
+    measure: Measure,
+  ): string => {
+    const both = was ? parts(now / was, measure) : null;
+    return both && was ? `${unit(now)} (was ${unit(was)}, ${both[0]}, ${both[1]})` : unit(now);
+  };
+  return results.map((result) => {
+    const before = baseline.find((b) => b.name === result.name);
     // A renamed log would otherwise print as if no baseline had been given.
     const missing = baseline.length && !before ? ' (not in baseline)' : '';
-    return `${name}: ${ms.toFixed(0)} ms${change(ms, before?.ms)}, heap ${heap.toFixed(0)} MB${change(heapBytes, before?.heapBytes)}${missing}`;
+    return `${result.name}: ${figure(result.ms, before?.ms, ms, 'time')}, heap ${figure(result.heapBytes, before?.heapBytes, mb, 'memory')}${missing}`;
   });
 }
 

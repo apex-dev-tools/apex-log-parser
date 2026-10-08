@@ -352,7 +352,9 @@ describe('report', () => {
     const results: FileResult[] = [
       { file: 'a.log', bytes: 100, runs: { old: run(100, 1000), new: run(10, 100) }, diffs: {} },
     ];
-    expect(renderReport(results, ['old', 'new'])).toMatch(/\| new \|.*\| 10\.0× \| 10\.0× less \|/);
+    expect(renderReport(results, ['old', 'new'])).toMatch(
+      /\| new \|.*\| 10\.0× faster \(-90\.0%\) \| 10\.0× less \(-90\.0%\) \|/,
+    );
   });
 
   it('states each engine against its own figures in a baseline run, for the logs both timed', () => {
@@ -369,7 +371,7 @@ describe('report', () => {
       { file: 'a.log', bytes: 100, runs: { old: run(100, 1000) }, diffs: {} },
     ];
     expect(renderReport(now, ['old'], before)).toContain(
-      '| < 1 MB | old | 1 | -10.0% | -10.0% | +100.0% |',
+      '| < 1 MB | old | 1 | 100 ms → 90 ms, 1.1× faster (-10.0%) | 100 ms → 90 ms, 1.1× faster (-10.0%) | 1 KB → 2 KB, 2.0× more (+100.0%) |',
     );
     expect(renderReport(now, ['old'])).not.toContain('baseline run');
   });
@@ -398,7 +400,7 @@ describe('report', () => {
     const report = renderReport(results, ['old', 'new']);
     expect(report).toContain('### 20–50 MB (1 logs)');
     expect(report).toContain(
-      '| 30.0 MB | 400 ms | 300.0 MB | 100 ms | 10.0 MB | 4.0× | 30.0× less |',
+      '| 30.0 MB | 400 ms | 300.0 MB | 100 ms | 10.0 MB | 4.0× faster (-75.0%) | 30.0× less (-96.7%) |',
     );
     expect(report).not.toContain('| 10.0 MB | 100 ms |');
     expect(report).not.toContain('big.log');

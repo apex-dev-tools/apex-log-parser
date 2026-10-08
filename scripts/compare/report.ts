@@ -2,6 +2,8 @@
  * Renders a harness run as Markdown: parity first, then time and memory per size band.
  */
 
+import type { Measure } from '../versus.js';
+import { fromRatio, versus } from '../versus.js';
 import type { DiffResult } from './diff.js';
 import type { Measurement } from './measure.js';
 
@@ -128,7 +130,7 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
   const out = [
     '## Time and memory',
     '',
-    'Warm is the median of the warm parses, cold the first parse in a fresh process. Retained is heap plus array buffers after a GC. Speed-up and memory are the median per-log ratio against the first engine.',
+    'Warm is the median of the warm parses, cold the first parse in a fresh process. Retained is heap plus array buffers after a GC. Time and memory against the first engine are the median per-log ratio, as times and as a change.',
     '',
   ];
   for (const band of BANDS) {
@@ -137,7 +139,7 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
     out.push(
       `### ${band.label} (${logs.length} logs)`,
       '',
-      '| Engine | Warm p50 | Warm p95 | Cold p50 | Cold p95 | Retained p50 | Retained p95 | Speed-up | Memory |',
+      `| Engine | Warm p50 | Warm p95 | Cold p50 | Cold p95 | Retained p50 | Retained p95 | Warm vs ${baseline} | Retained vs ${baseline} |`,
       '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
     );
     for (const name of engines) {
@@ -151,15 +153,15 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
           rows.map((r) => pick(r.m)),
           p,
         );
-      const vsBase = (pick: (m: Measurement) => number, suffix: string): string => {
+      const vsBase = (pick: (m: Measurement) => number, measure: Measure): string => {
         if (name === baseline) return '—';
         const ratios = rows.flatMap((r) =>
-          r.base && pick(r.m) > 0 ? [pick(r.base) / pick(r.m)] : [],
+          r.base && pick(r.base) > 0 ? [pick(r.m) / pick(r.base)] : [],
         );
-        return `${percentile(ratios, 50).toFixed(1)}×${suffix}`;
+        return fromRatio(percentile(ratios, 50), measure);
       };
       out.push(
-        `| ${name} | ${formatMs(at(warm, 50))} | ${formatMs(at(warm, 95))} | ${formatMs(at(cold, 50))} | ${formatMs(at(cold, 95))} | ${formatBytes(at(kept, 50))} | ${formatBytes(at(kept, 95))} | ${vsBase(warm, '')} | ${vsBase(kept, ' less')} |`,
+        `| ${name} | ${formatMs(at(warm, 50))} | ${formatMs(at(warm, 95))} | ${formatMs(at(cold, 50))} | ${formatMs(at(cold, 95))} | ${formatBytes(at(kept, 50))} | ${formatBytes(at(kept, 95))} | ${vsBase(warm, 'time')} | ${vsBase(kept, 'memory')} |`,
       );
     }
     out.push('');
@@ -178,19 +180,17 @@ function renderLargeLogs(results: readonly FileResult[], engines: readonly strin
   const others = engines.slice(1);
   const columns = [
     ...engines.flatMap((e) => [`${e} warm`, `${e} retained`]),
-    ...others.flatMap((e) => [`${e} speed-up`, `${e} memory`]),
+    ...others.flatMap((e) => [`${e} warm vs ${baseline}`, `${e} retained vs ${baseline}`]),
   ];
   const row = (cells: readonly string[]): string => `| ${cells.join(' | ')} |`;
   const timed = (r: FileResult, name: string): Measurement | null => {
     const m = r.runs[name];
     return m && !isFailure(m) ? m : null;
   };
-  const ratio = (base: number | undefined, now: number | undefined, suffix: string): string =>
-    base !== undefined && now ? `${(base / now).toFixed(1)}×${suffix}` : '—';
   const out = [
     `### Each log over ${formatBytes(LARGE)}`,
     '',
-    'Warm and retained per engine; speed-up and memory against the first engine.',
+    'Warm and retained per engine, then each against the first engine.',
     '',
     row(['Size', ...columns]),
     row(['Size', ...columns].map(() => '---:')),
@@ -203,10 +203,9 @@ function renderLargeLogs(results: readonly FileResult[], engines: readonly strin
     });
     const vs = others.flatMap((e) => {
       const m = timed(r, e);
-      return [
-        ratio(base ? warm(base) : undefined, m ? warm(m) : undefined, ''),
-        ratio(base ? kept(base) : undefined, m ? kept(m) : undefined, ' less'),
-      ];
+      return base && m
+        ? [versus(warm(base), warm(m), 'time'), versus(kept(base), kept(m), 'memory')]
+        : ['—', '—'];
     });
     out.push(row([formatBytes(r.bytes), ...figures, ...vs]));
   }
@@ -224,7 +223,7 @@ function renderChange(
   const out = [
     '## Change against the baseline run',
     '',
-    'Each engine against its own figures in the baseline run: the median per-log change, over the logs both runs timed. Negative is faster or smaller.',
+    'Each engine against its own figures in the baseline run, over the logs both runs timed: the median of each run, then the median per-log ratio, as times and as a change. Negative is faster or smaller.',
     '',
     '| Band | Engine | Logs | Warm | Cold | Retained |',
     '| --- | --- | ---: | ---: | ---: | ---: |',
@@ -237,25 +236,32 @@ function renderChange(
         return now && was && !isFailure(now) && !isFailure(was) ? [{ now, was }] : [];
       });
       if (!pairs.length) continue;
-      const change = (pick: (m: Measurement) => number): string =>
-        formatChange(
-          percentile(
-            pairs.flatMap(({ now, was }) => (pick(was) > 0 ? [pick(now) / pick(was) - 1] : [])),
-            50,
-          ),
+      const change = (
+        pick: (m: Measurement) => number,
+        format: (n: number) => string,
+        measure: Measure,
+      ): string => {
+        const was = percentile(
+          pairs.map((p) => pick(p.was)),
+          50,
         );
+        const now = percentile(
+          pairs.map((p) => pick(p.now)),
+          50,
+        );
+        const ratio = percentile(
+          pairs.flatMap((p) => (pick(p.was) > 0 ? [pick(p.now) / pick(p.was)] : [])),
+          50,
+        );
+        return `${format(was)} → ${format(now)}, ${fromRatio(ratio, measure)}`;
+      };
       out.push(
-        `| ${band.label} | ${name} | ${pairs.length} | ${change(warm)} | ${change(cold)} | ${change(kept)} |`,
+        `| ${band.label} | ${name} | ${pairs.length} | ${change(warm, formatMs, 'time')} | ${change(cold, formatMs, 'time')} | ${change(kept, formatBytes, 'memory')} |`,
       );
     }
   }
   out.push('');
   return out;
-}
-
-function formatChange(fraction: number): string {
-  if (Number.isNaN(fraction)) return '—';
-  return `${fraction >= 0 ? '+' : ''}${(fraction * 100).toFixed(1)}%`;
 }
 
 function renderErrors(results: readonly FileResult[]): string[] {
