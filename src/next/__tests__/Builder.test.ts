@@ -403,6 +403,18 @@ describe('LogBuilder', () => {
     ]);
   });
 
+  it('reads the maximum size from the end of an event line it cut', () => {
+    const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
+    const built = build(`${at(1)}|STATEMENT_EXECUTE|[1]`, cut, `${at(9)}|STATEMENT_EXECUTE|[3]`);
+    expect(built.parsingErrors).toEqual([`Invalid line number: ${cut}`]);
+    expect(built.issues.list.map((i) => [i.summary, i.id, i.startTime])).toEqual([
+      ['Max-Size-reached', 2, 2],
+    ]);
+    expect(built.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+      ['max-size', 2, 9],
+    ]);
+  });
+
   it('reads a CRLF log as an LF log, and starts at the first timestamped line', () => {
     const lf = build(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,

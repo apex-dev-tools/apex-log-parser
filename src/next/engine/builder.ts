@@ -149,6 +149,8 @@ const STAR = 0x2a;
 
 // Looser than TRUNCATION_MARKER, as today: a line only reaches these tests when it is not text.
 const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
+// The platform can write the marker inside an event's line, which it then cuts.
+const CUT_BY_MAX_SIZE = /\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+ *$/;
 const SKIPPED = '*** Skipped';
 const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
 const invalidClasses = [
@@ -237,6 +239,8 @@ export class LogBuilder {
   /** Signed bytes; 0 for a type that states none. */
   private nextHeap = 0;
   private nextFlowTotal: FlowTotal | null = null;
+  /** The next event's line ends with the maximum-size marker. */
+  private nextCut = false;
 
   // The event placed last: its id, or the frame a folded exit closed.
   private lastId = NONE;
@@ -563,7 +567,15 @@ export class LogBuilder {
     this.lastLineEnd = this.nextEnd;
     this.lastAt = this.nextTimestamp;
     if (this.pendingMaxSize.length) this.endMaxSize(this.nextTimestamp);
+    if (this.nextCut) this.maxSizeReached();
     this.readNext();
+  }
+
+  /** The log reached its maximum size after the last event. */
+  private maxSizeReached(): void {
+    const issue = this.markerIssue(ISSUE.maxSize);
+    if (issue) this.pendingMaxSize.push(issue);
+    this.maxSizeTimestamp = this.lastAt;
   }
 
   /** Today ends the maximum size at the next event after it, an exit line or a merged entry too. */
@@ -699,6 +711,11 @@ export class LogBuilder {
     this.nextRows = rows;
     this.nextHeap = heap;
     this.nextFlowTotal = flowTotal;
+    // Last-byte test first: this runs on every event.
+    const lastByte = bytes[end - 1];
+    this.nextCut =
+      (lastByte === STAR || lastByte === SPACE) &&
+      CUT_BY_MAX_SIZE.test(this.source.text(start, end));
     return READ.event;
   }
 
@@ -788,9 +805,7 @@ export class LogBuilder {
       const skipped = text.match(skippedBytesPattern)?.[1];
       if (issue && skipped) issue.skippedBytes = Number.parseInt(skipped.replaceAll(',', ''), 10);
     } else if (text.includes(MAX_SIZE)) {
-      const issue = this.markerIssue(ISSUE.maxSize);
-      if (issue) this.pendingMaxSize.push(issue);
-      this.maxSizeTimestamp = this.lastAt;
+      this.maxSizeReached();
     } else if (!SETTINGS_LINE.test(text)) {
       this.parsingErrors.push(`Invalid log line: ${text}`);
     }
