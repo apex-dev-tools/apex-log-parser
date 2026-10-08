@@ -253,6 +253,19 @@ describe('nextFacts', () => {
     // The issue and its region; the parsing error, and the rows on the query, its method and the log.
     expect(result.explained).toEqual({ 'merged-package-issue': 2, 'malformed-number': 4 });
   });
+
+  it('explains the exit of a package entry that ends the log, which legacy leaves out', () => {
+    const last = (above: string): string =>
+      ['64.0 APEX_CODE,FINE', above, '09:00:00.002 (2000000)|ENTERING_MANAGED_PKG|ns'].join('\n');
+    expect(
+      vsLegacy(last('09:00:00.001 (1000000)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex')),
+    ).toMatchObject({ differing: 0, explained: { 'code-unit-line': 1, 'package-duration': 1 } });
+    // At the top level it also ends the execution.
+    expect(vsLegacy(last('09:00:00.001 (1000000)|EXECUTION_FINISHED'))).toMatchObject({
+      differing: 0,
+      explained: { 'package-duration': 2 },
+    });
+  });
 });
 
 describe('explainer', () => {

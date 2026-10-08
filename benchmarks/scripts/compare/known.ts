@@ -43,6 +43,18 @@ export const KNOWN: readonly KnownDifference[] = [
     // Legacy leaves a package entry at 0 when it ends the log or its run; next times every one.
     name: 'package-duration',
     undo(key, field, value, { left, right, children }) {
+      // The log's last event: legacy states no exit, next one at its own start.
+      const endsLog = (at: string | undefined): boolean => {
+        if (at === undefined) return false;
+        const own = right.get(at);
+        const stamped = own?.type === PACKAGE && own.exitStamp === own.timestamp;
+        return stamped && left.get(at)?.exitStamp === null;
+      };
+      if (field === 'exitStamp') return endsLog(key) ? null : value;
+      // At the top level it is then the last event with an exit, so it ends the execution too.
+      if (key === LOG_KEY && field === 'executionEndTime') {
+        return endsLog(children.get(LOG_KEY)?.at(-1)) ? left.get(key)?.executionEndTime : value;
+      }
       if (field !== 'duration') return value;
       const own = right.get(key);
       const was = left.get(key)?.duration as SelfTotal | undefined;

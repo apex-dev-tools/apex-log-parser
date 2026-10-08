@@ -127,8 +127,8 @@ describe('LogBuilder', () => {
       'ENTERING_MANAGED_PKG@1-8',
       'STATEMENT_EXECUTE@4',
       'ENTERING_MANAGED_PKG@8-9',
-      // Nothing follows the last one, so it has no exit, as today.
-      'ENTERING_MANAGED_PKG@9',
+      // Nothing follows the last one, so it ends where it starts: the log states no later time.
+      'ENTERING_MANAGED_PKG@9-9',
     ]);
   });
 

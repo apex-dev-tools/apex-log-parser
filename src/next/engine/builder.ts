@@ -637,6 +637,17 @@ export class LogBuilder {
     }
     // Nothing follows the last event, so its text is complete.
     this.runHook();
+    this.endLastPackage();
+  }
+
+  /** A package entry ends where the next event starts; with none, the log states no later time. */
+  private endLastPackage(): void {
+    const store = this.store;
+    const id = this.lastId;
+    // id is a row once lastType is a type
+    if (this.lastType === ENTERING_MANAGED_PKG && Number.isNaN(store.exitStamp[id]!)) {
+      store.exitStamp[id] = this.lastAt;
+    }
   }
 
   /** Reads the line as the next event, when it starts one. */
@@ -728,7 +739,7 @@ export class LogBuilder {
   /** Today's `onAfter` of the last event, now that the next one is read. */
   private afterEvent(): void {
     this.runHook();
-    // A package entry ends where the next event starts; the last one in the log stays open.
+    // A package entry ends where the next event starts; `endLastPackage` ends the log's last one.
     if (this.lastType === ENTERING_MANAGED_PKG)
       this.store.exitStamp[this.lastId] = this.nextTimestamp;
   }
