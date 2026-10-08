@@ -19,8 +19,10 @@ import type { LimitMetric, LimitSnapshot } from '../limits.js';
 import { limitsOfBlock, runningTotal } from '../limits.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, Store, TOTAL } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
-import type { IssueType } from './issues.js';
-import { ISSUE, Issues } from './issues.js';
+import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
+import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
+import type { Issue, IssueText, IssueType, Truncation } from './issues.js';
+import { ISSUE, Issues, truncationOf } from './issues.js';
 import { DEFAULT, Namespaces, RULE, UNSTATED } from './namespaces.js';
 import type { FlowTotal, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
@@ -148,7 +150,6 @@ const STAR = 0x2a;
 // Looser than TRUNCATION_MARKER, as today: a line only reaches these tests when it is not text.
 const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
 const SKIPPED = '*** Skipped';
-const settingsPattern = /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+$/;
 const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
 const invalidClasses = [
   'pagemessagescomponentcontroller',
@@ -170,6 +171,14 @@ export interface Built {
   readonly snapshots: readonly LimitSnapshot[];
   /** Nanoseconds: the exit of the last top-level event that has one, or 0. */
   readonly executionEndTime: number;
+  /** Bytes of the source. */
+  readonly size: number;
+  /** Milliseconds since midnight, from the first event's line; null when it states none. */
+  readonly startTime: number | null;
+  readonly debugLevels: DebugSettings['levels'];
+  readonly debugLevelSettings: readonly DebugLevelSetting[];
+  readonly userInfo: UserInfo | null;
+  readonly truncation: Truncation;
 }
 
 /**
@@ -190,6 +199,8 @@ export class LogBuilder {
   private readonly parsingErrors: string[] = [];
   private readonly unsupported = new Set<string>();
   private readonly truncated: number[] = [];
+  /** Max-Size-reached issues the next event after their time ends. */
+  private pendingMaxSize: Issue[] = [];
   private readonly namespaces: Namespaces;
   private readonly snapshots: LimitSnapshot[] = [];
   // The open frames, innermost last: each one's id, and its last child's id or `NONE`.
@@ -207,6 +218,7 @@ export class LogBuilder {
   /** Where the next unread line starts. */
   private pos = 0;
   private discontinuity = false;
+  /** Today's `lastTimestamp`: the last row's time, which a folded exit does not move. */
   private lastTimestamp = 0;
   /** Nanoseconds; 0 until the log states it reached the maximum size. */
   private maxSizeTimestamp = 0;
@@ -233,6 +245,8 @@ export class LogBuilder {
   private lastFolded = false;
   /** Where the last event's own line ends, before its continuation lines. */
   private lastLineEnd = 0;
+  /** Nanoseconds: the last event's own time, which a folded exit or a merged entry keeps. */
+  private lastAt = 0;
   // Where the last line `readEvent` judged an unknown type has that type.
   private unknownStart = 0;
   private unknownEnd = 0;
@@ -250,7 +264,9 @@ export class LogBuilder {
   build(): Built {
     const store = this.store;
     store.add(LOG_TYPE, 0, 0, 0, NONE, 0);
-    this.pos = this.firstEventLine();
+    const len = this.bytes.length;
+    const eventsStart = this.firstEventLine();
+    this.pos = Math.max(0, eventsStart);
     this.readNext();
     while (this.hasNext) {
       const id = this.takeChild(0, 1, -1);
@@ -259,9 +275,19 @@ export class LogBuilder {
     }
     store.subtreeEnd[0] = store.count;
     // Today's passes, in today's order; the package merge ran while the tree was built.
-    const executionEndTime = setLogTimes(store, this.mergedTail);
+    const { executionEndTime, first } = setLogTimes(store, this.mergedTail);
     rollUp(store, IS_FRAME);
     applyFlowResiduals(store, FLOW_ELEMENT, this.flowTotals);
+    // With no timestamped line, the header is the whole text, as today.
+    const debug = debugSettings(this.source.text(0, eventsStart < 0 ? len : eventsStart));
+    this.parsingErrors.push(...debug.errors);
+    const firstLine = eventsStart < 0 ? '' : this.lineText(eventsStart);
+    const truncation = truncationOf(
+      this.issues,
+      store,
+      (id) => this.opensFrame(id),
+      store.exitStamp[0] || 0,
+    );
     store.finish(TYPES + 1);
     return {
       store,
@@ -272,6 +298,12 @@ export class LogBuilder {
       namespaces: this.namespaces.order,
       snapshots: this.snapshots,
       executionEndTime,
+      size: len,
+      startTime: first === NONE ? null : wallClock(this.lineText(store.start[first]!)),
+      debugLevels: debug.levels,
+      debugLevelSettings: debug.settings,
+      userInfo: firstLine ? userInfo(firstLine) : null,
+      truncation,
     };
   }
 
@@ -322,10 +354,15 @@ export class LogBuilder {
     }
   }
 
-  private open(id: number): void {
+  /** Today's entry: a row whose type has exits, unless its line made it a leaf. */
+  private opensFrame(id: number): boolean {
     const store = this.store;
     // id was added by take, so every column holds it
-    if (!HAS_EXITS[store.type[id]!] || store.flags[id]! & FLAG.notEntry) return;
+    return HAS_EXITS[store.type[id]!] === 1 && !(store.flags[id]! & FLAG.notEntry);
+  }
+
+  private open(id: number): void {
+    if (!this.opensFrame(id)) return;
     this.frameIds.push(id);
     this.frameLastChild.push(NONE);
     this.framePackage.push(NONE);
@@ -375,7 +412,8 @@ export class LogBuilder {
     store.exitStamp[id] = exitStamp;
     this.issues.add(exitStamp, id, ISSUE.unexpectedEnd);
     if (store.flags[id]! & FLAG.truncated) {
-      this.issues.replace(exitStamp, id, ISSUE.maxSize);
+      const issue = this.issues.replace(exitStamp, id, ISSUE.maxSize);
+      if (issue) this.pendingMaxSize.push(issue);
       this.maxSizeTimestamp = exitStamp;
     }
     store.flags[id]! |= FLAG.truncated;
@@ -523,7 +561,28 @@ export class LogBuilder {
     this.lastId = id;
     this.lastType = this.nextType;
     this.lastLineEnd = this.nextEnd;
+    this.lastAt = this.nextTimestamp;
+    if (this.pendingMaxSize.length) this.endMaxSize(this.nextTimestamp);
     this.readNext();
+  }
+
+  /** Today ends the maximum size at the next event after it, an exit line or a merged entry too. */
+  private endMaxSize(at: number): void {
+    this.pendingMaxSize = this.pendingMaxSize.filter((issue) => {
+      if (at <= issue.startTime) return true;
+      issue.endTime = at;
+      return false;
+    });
+  }
+
+  /** An issue on the last event, from a line after it: the search for its end starts after it. */
+  private markerIssue(text: IssueText): Issue | null {
+    const issue = this.issues.add(this.lastAt, this.lastId, text);
+    if (issue) {
+      issue.exitType = this.lastFolded ? this.lastType : null;
+      issue.after = this.store.count;
+    }
+    return issue;
   }
 
   /** Today's line generator, one event at a time: reads lines up to and including the next event. */
@@ -544,6 +603,16 @@ export class LogBuilder {
       if (read === READ.event) {
         this.afterEvent();
         return;
+      }
+      if (
+        read === READ.notEvent &&
+        !last &&
+        this.lastId !== NONE &&
+        this.opensNextLog(start, end)
+      ) {
+        this.multipleLogs(start);
+        this.pos = len;
+        break;
       }
       if (read === READ.notEvent) this.notAnEvent(start, end);
       else if (read === READ.unknownType) this.unsupportedType();
@@ -707,26 +776,22 @@ export class LogBuilder {
     }
     const text = this.source.text(start, end);
     if (last === NONE) {
-      if (!settingsPattern.test(text)) this.parsingErrors.push(`Invalid log line: ${text}`);
+      if (!SETTINGS_LINE.test(text)) this.parsingErrors.push(`Invalid log line: ${text}`);
       return;
     }
-    // A folded exit's time is its frame's exitStamp.
-    const at = this.lastFolded ? store.exitStamp[last]! : store.timestamp[last]!;
-    const exitType = this.lastFolded ? this.lastType : null;
     if (text.startsWith(SKIPPED)) {
-      const issue = this.issues.add(at, last, {
+      const issue = this.markerIssue({
         summary: 'Skipped-Lines',
         description: `${text}. A section of the log has been skipped and the log has been truncated. Full details of this section of log can not be provided.`,
         type: 'skip',
       });
       const skipped = text.match(skippedBytesPattern)?.[1];
-      if (issue) issue.exitType = exitType;
       if (issue && skipped) issue.skippedBytes = Number.parseInt(skipped.replaceAll(',', ''), 10);
     } else if (text.includes(MAX_SIZE)) {
-      const issue = this.issues.add(at, last, ISSUE.maxSize);
-      if (issue) issue.exitType = exitType;
-      this.maxSizeTimestamp = at;
-    } else if (!settingsPattern.test(text)) {
+      const issue = this.markerIssue(ISSUE.maxSize);
+      if (issue) this.pendingMaxSize.push(issue);
+      this.maxSizeTimestamp = this.lastAt;
+    } else if (!SETTINGS_LINE.test(text)) {
       this.parsingErrors.push(`Invalid log line: ${text}`);
     }
   }
@@ -756,30 +821,73 @@ export class LogBuilder {
     return this.bytes[start] === STAR && TRUNCATION_MARKER.test(this.source.text(start, end));
   }
 
-  /** The start of the first timestamped line, or 0 when there is none, as today. */
+  /** The start of the first timestamped line, or -1 when there is none. */
   private firstEventLine(): number {
     const bytes = this.bytes;
     for (let start = 0; start < bytes.length; ) {
-      if (this.isTimestamped(start)) return start;
+      if (this.timestampClose(start) >= 0) return start;
       const eol = this.source.lineEnd(start);
       if (eol < 0) break;
       start = eol + 1;
     }
-    return 0;
+    return -1;
   }
 
-  /** `HH:MM:SS.f+ (n+)|` at `start`. */
-  private isTimestamped(start: number): boolean {
+  /** The line at `start`, without its line ending. */
+  private lineText(start: number): string {
+    const eol = this.source.lineEnd(start);
+    let end = eol < 0 ? this.bytes.length : eol;
+    if (end > start && this.bytes[end - 1] === CR) end--;
+    return this.source.text(start, end);
+  }
+
+  /**
+   * Today's test for a second log: a settings line whose next line restarts the nanosecond
+   * counter. A settings line alone is not enough, as a debug message can quote one.
+   */
+  private opensNextLog(start: number, end: number): boolean {
+    const bytes = this.bytes;
+    // Byte tests before any decode: this runs on every line that is not an event.
+    const first = bytes[start]! - 0x30;
+    if (first < 0 || first > 9) return false;
+    const close = this.timestampClose(this.pos);
+    if (close < 0) return false;
+    let open = close;
+    while (bytes[open] !== OPEN) open--;
+    if (!(digits(bytes, open + 1, close) < this.lastAt)) return false;
+    return SETTINGS_LINE.test(this.source.text(start, end));
+  }
+
+  /** Today's Multiple-Logs issue, with the number of logs from the one at `start` on. */
+  private multipleLogs(start: number): void {
+    let count = 1;
+    const len = this.bytes.length;
+    for (let line = start; line < len; ) {
+      const eol = this.source.lineEnd(line);
+      if (eol < 0) break;
+      if (this.timestampClose(eol + 1) >= 0 && SETTINGS_LINE.test(this.lineText(line))) count++;
+      line = eol + 1;
+    }
+    this.markerIssue({
+      summary: 'Multiple-Logs',
+      // At least 2: this runs only once a second log was found.
+      description: `The text holds ${Math.max(2, count)} logs. Only the first log was parsed. Open each log on its own.`,
+      type: 'error',
+    });
+  }
+
+  /** Where `)` closes the `HH:MM:SS.f+ (n+)|` that starts at `start`, or -1 without one. */
+  private timestampClose(start: number): number {
     const bytes = this.bytes;
     const digit = (i: number): boolean => bytes[i]! >= 0x30 && bytes[i]! <= 0x39;
-    if (!(digit(start) && digit(start + 1) && bytes[start + 2] === COLON)) return false;
-    if (!(digit(start + 3) && digit(start + 4) && bytes[start + 5] === COLON)) return false;
-    if (!(digit(start + 6) && digit(start + 7) && bytes[start + 8] === DOT)) return false;
+    if (!(digit(start) && digit(start + 1) && bytes[start + 2] === COLON)) return -1;
+    if (!(digit(start + 3) && digit(start + 4) && bytes[start + 5] === COLON)) return -1;
+    if (!(digit(start + 6) && digit(start + 7) && bytes[start + 8] === DOT)) return -1;
     let i = start + 9;
-    if (!digit(i)) return false;
+    if (!digit(i)) return -1;
     while (digit(i)) i++;
-    if (bytes[i++] !== SPACE || bytes[i++] !== OPEN || !digit(i)) return false;
+    if (bytes[i++] !== SPACE || bytes[i++] !== OPEN || !digit(i)) return -1;
     while (digit(i)) i++;
-    return bytes[i] === CLOSE && bytes[i + 1] === PIPE;
+    return bytes[i] === CLOSE && bytes[i + 1] === PIPE ? i : -1;
   }
 }

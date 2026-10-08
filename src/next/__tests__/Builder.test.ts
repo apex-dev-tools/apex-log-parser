@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { NodeSource } from '../bytes/node.js';
+import { idOfType } from '../catalog/catalog.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import { FLAG, LogBuilder } from '../engine/builder.js';
@@ -301,6 +302,104 @@ describe('LogBuilder', () => {
         'System.LimitException: Too many SOQL queries: 101',
         'Class.ns.MyClass.run: line 2, column 1',
       ],
+    ]);
+  });
+
+  it('reads the header: debug levels, the user, the start time and the size', () => {
+    const text = [
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,LOUD;CUSTOM,FINE',
+      '09:15:30.25 (1)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
+      `${at(2)}|STATEMENT_EXECUTE|[1]`,
+    ].join('\n');
+    const built = new LogBuilder(new NodeSource(encode(text))).build();
+    expect(built.debugLevels).toEqual({ apexCode: 'FINE', apexProfiling: 'INFO' });
+    expect(built.debugLevelSettings.map((s) => [s.token, s.level, s.category])).toEqual([
+      ['APEX_CODE', 'FINE', 'apexCode'],
+      ['APEX_PROFILING', 'INFO', 'apexProfiling'],
+      ['DB', 'LOUD', 'database'],
+      ['CUSTOM', 'FINE', null],
+    ]);
+    expect(built.parsingErrors).toEqual(['Unsupported debug level: DB,LOUD']);
+    expect(built.userInfo).toEqual({
+      id: '005000000000AAA',
+      userName: 'user@example.com',
+      timezone: {
+        text: '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)',
+        label: 'Pacific Standard Time',
+        name: 'America/Los_Angeles',
+        offsetMinutes: -480,
+        offsetText: 'GMT-08:00',
+      },
+    });
+    expect(built.startTime).toBe((9 * 3600 + 15 * 60 + 30) * 1000 + 250);
+    expect(built.size).toBe(encode(text).length);
+  });
+
+  it('stops at a second log, whose counter starts again', () => {
+    const built = build(
+      `${at(5)}|STATEMENT_EXECUTE|[1]`,
+      // A debug message can quote a settings line, so one alone opens no log.
+      HEADER,
+      `${at(6)}|STATEMENT_EXECUTE|[2]`,
+      HEADER,
+      `${at(1)}|STATEMENT_EXECUTE|[3]`,
+      HEADER,
+      `${at(1)}|STATEMENT_EXECUTE|[4]`,
+    );
+    expect(tree(built)).toEqual(['STATEMENT_EXECUTE@5', 'STATEMENT_EXECUTE@6']);
+    expect(built.issues.list.map((i) => [i.summary, i.id, i.startTime, i.description])).toEqual([
+      [
+        'Multiple-Logs',
+        2,
+        6,
+        'The text holds 3 logs. Only the first log was parsed. Open each log on its own.',
+      ],
+    ]);
+  });
+
+  it('ends a skipped block at the next frame, and the maximum size at the next later event', () => {
+    const built = build(
+      `${at(1)}|STATEMENT_EXECUTE|[1]`,
+      '*** Skipped 2,048 bytes of detailed log',
+      `${at(2)}|HEAP_ALLOCATE|[2]|Bytes:10`,
+      `${at(3)}|METHOD_ENTRY|[3]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(4)}|METHOD_EXIT|[3]|01p000000000AAA|ns.MyClass.run()`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(9)}|STATEMENT_EXECUTE|[4]`,
+    );
+    expect(built.truncation).toEqual({
+      regions: [
+        {
+          kind: 'skipped-lines',
+          startTime: 1,
+          endTime: 3,
+          id: 1,
+          exitType: null,
+          skippedBytes: 2048,
+        },
+        {
+          kind: 'max-size',
+          startTime: 4,
+          endTime: 9,
+          id: 3,
+          exitType: idOfType('METHOD_EXIT'),
+          skippedBytes: null,
+        },
+      ],
+      totalSkippedBytes: 2048,
+    });
+  });
+
+  it('ends the maximum size at an exit line after it, which gets no row', () => {
+    const built = build(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(5)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(9)}|STATEMENT_EXECUTE|[3]`,
+    );
+    expect(built.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+      ['max-size', 2, 5],
     ]);
   });
 

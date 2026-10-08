@@ -31,7 +31,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   `engine/builder.ts` builds the tree in one pass with today's rules and today's order of side
   effects. A matched exit line gets no row: it folds into the frame it closes. A package entry
   that today's merge removes gets none either. `engine/rollups.ts` runs today's passes after the
-  build: the log's times, the rollups and the flow residuals.
+  build: the log's times, the rollups and the flow residuals. `engine/header.ts` reads the debug
+  levels, `USER_INFO` and the start time. `engine/issues.ts` holds the log issues and turns them
+  into truncation regions. The builder stops at a second log and reports it as an issue.
   `engine/namespaces.ts` holds today's namespace rules, read from bytes. `limits.ts` parses limit
   text and derives the whole-log figures; it copies `src/limits.ts`, which `src/next` cannot import.
 - `src/__bench__/` — the `pnpm run bench` benchmarks, which CodSpeed runs on every pull request.

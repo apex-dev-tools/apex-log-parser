@@ -31,17 +31,22 @@ function total(store: Store, id: number): number {
   return exit ? exit - store.timestamp[id]! : 0;
 }
 
-/**
- * Today's `setTimes` for row 0: from the first top-level event to the last one's end. Returns
- * the execution end: the exit of the last top-level event that has one, or 0.
- */
-export function setLogTimes(store: Store, tail: MergedTail | null): number {
-  let start = 0;
+/** What `setLogTimes` finds besides row 0's times. */
+export interface LogTimes {
+  /** Nanoseconds: the exit of the last top-level event that has one, or 0. */
+  executionEndTime: number;
+  /** The first top-level event with a time, or `NONE`. */
+  first: number;
+}
+
+/** Today's `setTimes` for row 0: from the first top-level event to the last one's end. */
+export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
+  let first = NONE;
   let last = NONE;
   let executionEnd = 0;
   // Each top-level event's subtree ends where the next one starts; every id here is a row.
   for (let id = 1; id < store.count; id = store.subtreeEnd[id]!) {
-    if (!start) start = store.timestamp[id]!;
+    if (first === NONE && store.timestamp[id]) first = id;
     last = id;
     const exit = tail && id === tail.kept ? tail.keptExit : store.exitStamp[id]!;
     if (exit) executionEnd = exit;
@@ -50,9 +55,9 @@ export function setLogTimes(store: Store, tail: MergedTail | null): number {
   // Nothing follows a merged tail, so it has no exit of its own.
   if (tail) end = tail.timestamp;
   else if (last !== NONE) end = store.exitStamp[last]! || store.timestamp[last]!;
-  store.timestamp[0] = start;
+  store.timestamp[0] = first === NONE ? 0 : store.timestamp[first]!;
   store.exitStamp[0] = end;
-  return executionEnd;
+  return { executionEndTime: executionEnd, first };
 }
 
 /**
