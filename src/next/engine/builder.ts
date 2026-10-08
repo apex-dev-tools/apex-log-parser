@@ -65,7 +65,8 @@ const ROWS_OF: { readonly [R in RowsOf]: number } = {
 };
 
 // Per-type tables, so the loop reads one byte, not an object.
-const IS_FRAME = new Uint8Array(TYPES);
+/** 1 for a frame-shaped type, by type id. A row of one is a leaf when its flags hold `notEntry`. */
+export const IS_FRAME: Uint8Array = new Uint8Array(TYPES);
 const IS_EXIT = new Uint8Array(TYPES);
 /** An exit-shaped line. No such type closes anything, so it never opens a frame. */
 const EXIT_LINE = new Uint8Array(TYPES);

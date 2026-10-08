@@ -11,19 +11,36 @@ import type {
   Level,
 } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
-import { FLAG } from '../engine/builder.js';
+import { FLAG, IS_FRAME } from '../engine/builder.js';
 import type { Store } from '../store/store.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
 
-/** A rollup: the event's own part, and the part with every descendant. */
+/** A rollup: the own part, and the part with every descendant. */
 export interface SelfTotal {
   readonly self: number;
   readonly total: number;
 }
 
-/** What every event states. Times are nanoseconds and heap figures bytes. */
-interface EventBase {
+/** The time and rollups the log and every event state. Times are nanoseconds, heap bytes. */
+export interface Rollups {
+  readonly timestamp: number;
+  readonly duration: SelfTotal;
+  readonly dmlCount: SelfTotal;
+  readonly soqlCount: SelfTotal;
+  readonly soslCount: SelfTotal;
+  readonly dmlRowCount: SelfTotal;
+  readonly soqlRowCount: SelfTotal;
+  readonly soslRowCount: SelfTotal;
+  readonly thrownCount: SelfTotal;
+  readonly heapAllocated: SelfTotal;
+  readonly heapGross: SelfTotal;
+  /** The highest live heap inside: a maximum, not a sum. */
+  readonly heapPeak: number;
+}
+
+/** What every event states. */
+interface EventBase extends Rollups {
   /** The event's position in log order, from 1: id 0 is the log. Valid within one parse only. */
   readonly id: number;
   readonly type: EventType;
@@ -36,25 +53,12 @@ interface EventBase {
   readonly depth: number;
   /** The frame that holds this event; null at the top of the log. */
   readonly parent: FrameEvent | null;
-  readonly timestamp: number;
-  readonly duration: SelfTotal;
   /** The line number the line states, `'EXTERNAL'`, or null when it states none. */
   readonly lineNumber: number | 'EXTERNAL' | null;
   /** Null when the event is in no namespace. */
   readonly namespace: string | null;
   /** The log does not close this frame. Always false for a leaf. */
   readonly isTruncated: boolean;
-  readonly dmlCount: SelfTotal;
-  readonly soqlCount: SelfTotal;
-  readonly soslCount: SelfTotal;
-  readonly dmlRowCount: SelfTotal;
-  readonly soqlRowCount: SelfTotal;
-  readonly soslRowCount: SelfTotal;
-  readonly thrownCount: SelfTotal;
-  readonly heapAllocated: SelfTotal;
-  readonly heapGross: SelfTotal;
-  /** The highest live heap inside the event: a maximum, not a sum. */
-  readonly heapPeak: number;
 }
 
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
@@ -74,6 +78,12 @@ export interface LeafEvent extends EventBase {
 
 /** One event of the log: narrow on `isFrame` to reach `children`. */
 export type ApexEvent = FrameEvent | LeafEvent;
+
+/** The row's type is a frame, and its line did not make it a leaf, as a VF call with no method. */
+export function isFrameRow(store: Store, id: number): boolean {
+  // id is a row, so every column holds it
+  return IS_FRAME[store.type[id]!] === 1 && !(store.flags[id]! & FLAG.notEntry);
+}
 
 const ZERO: SelfTotal = Object.freeze({ self: 0, total: 0 });
 const NO_CHILDREN: readonly ApexEvent[] = Object.freeze([]);
@@ -115,92 +125,24 @@ export class LogEvents {
 }
 
 /**
- * One row of the store, read through. Not exported: callers see `ApexEvent`. Each `!` below reads
- * a column at `id`, a row the store holds.
+ * The time and rollups of one row, read from the store: the log's (row 0) or an event's. Each `!`
+ * below reads a column at `id`, a row the store holds.
  */
-class EventView {
+export class RollupView implements Rollups {
   readonly id: number;
-  private readonly events: LogEvents;
-  private readonly store: Store;
-  private readonly strings: StringTable;
-  private kids: readonly ApexEvent[] | null = null;
+  protected readonly store: Store;
 
-  constructor(events: LogEvents, store: Store, strings: StringTable, id: number) {
-    this.events = events;
+  constructor(store: Store, id: number) {
     this.store = store;
-    this.strings = strings;
     this.id = id;
-  }
-
-  private get info(): EventTypeInfo {
-    // id is a row, so its type is a type id
-    return EVENT_TYPES[this.store.type[this.id]!]!;
-  }
-
-  get type(): EventType {
-    return this.info.type;
-  }
-
-  get kind(): Kind {
-    return this.info.kind;
-  }
-
-  get category(): Category | null {
-    return this.info.category;
-  }
-
-  get debugCategory(): DebugCategory {
-    return this.info.debugCategory;
-  }
-
-  get debugLevel(): Level {
-    return this.info.debugLevel;
-  }
-
-  /** The type is a frame, and the line did not make it a leaf, as a VF call with no method. */
-  get isFrame(): boolean {
-    return this.info.shape === 'frame' && !(this.store.flags[this.id]! & FLAG.notEntry);
-  }
-
-  get depth(): number {
-    return this.store.depth[this.id]!;
-  }
-
-  get parent(): FrameEvent | null {
-    // An event's parent row is a frame, or the log (0), which is not an event
-    return this.events.event(this.store.parent[this.id]!) as FrameEvent | null;
-  }
-
-  get children(): readonly ApexEvent[] {
-    if (!this.isFrame) return NO_CHILDREN;
-    return (this.kids ??= this.events.childrenOf(this.id));
   }
 
   get timestamp(): number {
     return this.store.timestamp[this.id]!;
   }
 
-  get exitStamp(): number | null {
-    if (!this.isFrame) return null;
-    return this.store.exitStamp[this.id]!;
-  }
-
   get duration(): SelfTotal {
     return { self: this.store.durationSelf[this.id]!, total: this.store.durationTotal(this.id) };
-  }
-
-  get lineNumber(): number | 'EXTERNAL' | null {
-    const line = this.store.lineNumber[this.id]!;
-    return line === NO_LINE ? null : line === EXTERNAL_LINE ? 'EXTERNAL' : line;
-  }
-
-  get namespace(): string | null {
-    const ns = this.store.namespace[this.id]!;
-    return ns === NONE ? null : this.strings.text(ns);
-  }
-
-  get isTruncated(): boolean {
-    return (this.store.flags[this.id]! & FLAG.truncated) !== 0;
   }
 
   get dmlCount(): SelfTotal {
@@ -258,5 +200,80 @@ class EventView {
     if (store.heapSlot[this.id] === NONE) return ZERO;
     const at = store.heapOf(this.id);
     return { self: store.heap[at + self]!, total: store.heap[at + total]! };
+  }
+}
+
+/** One event's row. Not exported: callers see `ApexEvent`. */
+class EventView extends RollupView {
+  private readonly events: LogEvents;
+  private readonly strings: StringTable;
+  private kids: readonly ApexEvent[] | null = null;
+
+  constructor(events: LogEvents, store: Store, strings: StringTable, id: number) {
+    super(store, id);
+    this.events = events;
+    this.strings = strings;
+  }
+
+  private get info(): EventTypeInfo {
+    // id is a row, so its type is a type id
+    return EVENT_TYPES[this.store.type[this.id]!]!;
+  }
+
+  get type(): EventType {
+    return this.info.type;
+  }
+
+  get kind(): Kind {
+    return this.info.kind;
+  }
+
+  get category(): Category | null {
+    return this.info.category;
+  }
+
+  get debugCategory(): DebugCategory {
+    return this.info.debugCategory;
+  }
+
+  get debugLevel(): Level {
+    return this.info.debugLevel;
+  }
+
+  get isFrame(): boolean {
+    return isFrameRow(this.store, this.id);
+  }
+
+  get depth(): number {
+    return this.store.depth[this.id]!;
+  }
+
+  get parent(): FrameEvent | null {
+    // An event's parent row is a frame, or the log (0), which is not an event
+    return this.events.event(this.store.parent[this.id]!) as FrameEvent | null;
+  }
+
+  get children(): readonly ApexEvent[] {
+    if (!this.isFrame) return NO_CHILDREN;
+    return (this.kids ??= this.events.childrenOf(this.id));
+  }
+
+  get exitStamp(): number | null {
+    if (!this.isFrame) return null;
+    return this.store.exitStamp[this.id]!;
+  }
+
+  get lineNumber(): number | 'EXTERNAL' | null {
+    const line = this.store.lineNumber[this.id]!;
+    return line === NO_LINE ? null : line === EXTERNAL_LINE ? 'EXTERNAL' : line;
+  }
+
+  get namespace(): string | null {
+    const ns = this.store.namespace[this.id]!;
+    return ns === NONE ? null : this.strings.text(ns);
+  }
+
+  get isTruncated(): boolean {
+    return (this.store.flags[this.id]! & FLAG.truncated) !== 0;
   }
 }
