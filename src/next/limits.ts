@@ -119,7 +119,73 @@ const LABELS = new Map<string, LimitMetric>([
 const USED_OF = /(\d+)\s*(?:out of|\/)\s*(\d+)/;
 const COUNT_LABEL = /^(\d+)\s+(.+)$/;
 
+const CODES = new Map<string, LimitMetric>([
+  ['SOQL', 'soqlQueries'],
+  ['SOQL_ROWS', 'queryRows'],
+  ['SOSL', 'soslQueries'],
+  ['DML', 'dmlStatements'],
+  ['DML_ROWS', 'dmlRows'],
+]);
+
+/** One line's reading of one limit. `cpuTime` is milliseconds, `heapSize` bytes, others a count. */
+export interface LimitUsage {
+  /** Null for a label or code no metric tracks, such as `AGGS`. */
+  readonly metric: LimitMetric | null;
+  /** The label or code, as the line states it. */
+  readonly label: string;
+  readonly used: number;
+  readonly limit: number;
+}
+
 /** A flow report's running total: `used` so far, and `delta`, what the reporting element used. */
+export interface RunningUsage extends LimitUsage {
+  readonly delta: number;
+}
+
+/** `used out of limit` or `used/limit` in `text`, read as `label`; null when it states neither. */
+function usage(label: string, text: string): LimitUsage | null {
+  const match = USED_OF.exec(text);
+  if (!match) return null;
+  return {
+    metric: LABELS.get(label) ?? null,
+    label,
+    // The pattern matched two digit runs.
+    used: Number.parseInt(match[1]!, 10),
+    limit: Number.parseInt(match[2]!, 10),
+  };
+}
+
+/** A `LIMIT_USAGE` line's code and figures; null unless the line states all three. */
+export function codedUsage(
+  code: string | null,
+  used: number | null,
+  limit: number | null,
+): LimitUsage | null {
+  if (code === null || used === null || limit === null) return null;
+  return { metric: CODES.get(code) ?? null, label: code, used, limit };
+}
+
+/** A `Label: used out of limit` line; null when it states no label or no figures. */
+export function labelledUsage(text: string): LimitUsage | null {
+  const colon = text.indexOf(':');
+  return colon < 0 ? null : usage(text.slice(0, colon).trim(), text.slice(colon + 1));
+}
+
+/** A running-total line, as `1 SOQL queries, total 1 out of 100`; null when it states no total. */
+export function runningUsage(text: string): RunningUsage | null {
+  const comma = text.indexOf(',');
+  if (comma < 0) return null;
+  // A head with no leading count still reports a total, so today keeps it with a zero delta.
+  const head = text.slice(0, comma).trim();
+  const [, count = '0', label = head] = COUNT_LABEL.exec(head) ?? [];
+  const found = usage(label, text.slice(comma + 1));
+  return found && { ...found, delta: Number.parseInt(count, 10) };
+}
+
+// The engine's scan reads the two below. Built on the views' parsers above, they made the scan
+// lose its optimised code across a GC (deopt.test.ts), so they stay apart.
+
+/** A flow report's running total of a tracked metric, for the log's figures. */
 export interface RunningTotal {
   metric: LimitMetric;
   used: number;

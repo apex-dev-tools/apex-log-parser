@@ -16,6 +16,7 @@ import { FLAG, IS_FRAME } from '../engine/builder.js';
 import type { Store } from '../store/store.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
+import type { AnyDetails, DetailsOf } from './details.js';
 import { EventLines } from './lines.js';
 
 /** A rollup: the own part, and the part with every descendant. */
@@ -80,6 +81,11 @@ interface EventBase extends Rollups {
    * empty. Throws a RangeError for a name the type does not list.
    */
   field(name: string): string | null;
+  /**
+   * The values the line states beyond its text, parsed on first read, as `aggregations` or a limit
+   * usage: `EventDetails` lists them by type. Null for a type that states none.
+   */
+  readonly details: AnyDetails | null;
 }
 
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
@@ -99,6 +105,11 @@ export interface LeafEvent extends EventBase {
 
 /** One event of the log: narrow on `isFrame` to reach `children`. */
 export type ApexEvent = FrameEvent | LeafEvent;
+
+/** An event of type `T`, with that type's details; for a union, one member per type, so `type` narrows. */
+export type EventOf<T extends EventType> = T extends EventType
+  ? ApexEvent & { readonly type: T; readonly details: DetailsOf<T> }
+  : never;
 
 /** The row's type is a frame, and its line did not make it a leaf, as a VF call with no method. */
 export function isFrameRow(store: Store, id: number): boolean {
@@ -234,6 +245,8 @@ class EventView extends RollupView {
   private kids: readonly ApexEvent[] | null = null;
   // undefined until read; null is text the line does not state.
   private said: string | null | undefined = undefined;
+  // undefined until read; null is a type that states no details.
+  private stated: AnyDetails | null | undefined = undefined;
 
   constructor(events: LogEvents, store: Store, strings: StringTable, id: number) {
     super(store, id);
@@ -331,5 +344,10 @@ class EventView extends RollupView {
 
   field(name: string): string | null {
     return this.events.lines.field(this.id, name);
+  }
+
+  get details(): AnyDetails | null {
+    if (this.stated === undefined) this.stated = this.events.lines.details(this.id);
+    return this.stated;
   }
 }

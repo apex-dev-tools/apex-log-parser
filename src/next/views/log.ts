@@ -8,7 +8,7 @@ import type { DebugLevelSetting, UserInfo } from '../engine/header.js';
 import type { IssueType } from '../engine/issues.js';
 import type { GovernorLimits } from '../limits.js';
 import { governorLimits } from '../limits.js';
-import type { ApexEvent, FrameEvent, Rollups } from './events.js';
+import type { ApexEvent, EventOf, FrameEvent, Rollups } from './events.js';
 import { isFrameRow, LogEvents, RollupView } from './events.js';
 
 // WHATWG and Node 17+; declared here so `lib` stays ES2022.
@@ -89,7 +89,7 @@ export interface ApexLog extends Rollups {
   /** The event with `id`, the same object on every call; null when no event has it. */
   event(id: number): ApexEvent | null;
   /** Every event of the given types, in id order. Throws a RangeError for a name no type has. */
-  ofType(...types: EventType[]): readonly ApexEvent[];
+  ofType<T extends EventType>(...types: T[]): readonly EventOf<T>[];
   /** The deepest frame running at `ns`: its timestamp ≤ ns < its exitStamp. Null when none is. */
   at(ns: number): FrameEvent | null;
   /** Every event's tree links and times as arrays, made on first read. */
@@ -202,13 +202,14 @@ class LogView extends RollupView implements ApexLog {
     return this.all.event(id);
   }
 
-  ofType(...types: EventType[]): readonly ApexEvent[] {
+  ofType<T extends EventType>(...types: T[]): readonly EventOf<T>[] {
     const lists = [...new Set(types)].map((type) => {
       const typeId = idOfType(type);
       if (typeId < 0) throw new RangeError(`No event type ${type}`);
       return this.store.rowsOfType(typeId);
     });
-    return Object.freeze(Array.from(this.merged(lists), (id) => this.all.event(id)!));
+    // Each id is a row of one of the types.
+    return Object.freeze(Array.from(this.merged(lists), (id) => this.all.event(id) as EventOf<T>));
   }
 
   at(ns: number): FrameEvent | null {

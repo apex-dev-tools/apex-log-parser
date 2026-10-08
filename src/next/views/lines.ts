@@ -14,6 +14,8 @@ import {
 } from '../catalog/catalog.js';
 import type { CpuType } from '../catalog/types.js';
 import type { Store } from '../store/store.js';
+import type { AnyDetails } from './details.js';
+import { eventDetails } from './details.js';
 
 const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
 const INTERVIEWS = idOfType('FLOW_START_INTERVIEWS_BEGIN');
@@ -70,6 +72,11 @@ export class EventLines {
   /** The type's cpuType, or the line's for a type whose events differ. */
   cpuType(id: number): CpuType | null {
     return eventCpuType(this.typeOf(id), () => this.at(id));
+  }
+
+  /** The values the row's line states beyond its text; null for a type with none. */
+  details(id: number): AnyDetails | null {
+    return eventDetails(this.typeOf(id), () => this.at(id));
   }
 
   private typeOf(id: number): number {
