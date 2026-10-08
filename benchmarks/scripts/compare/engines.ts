@@ -3,6 +3,8 @@
  * harness times and compares them all the same way.
  */
 
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { ApexLog } from '../../../src/index.js';
 import type { Built } from '../../../src/next/engine/builder.js';
 import { legacyFacts, nextFacts } from './facts.js';
@@ -13,8 +15,10 @@ import { projectLegacy } from './project.js';
 
 export interface Engine {
   readonly name: string;
+  /** The module `parse` takes, from the repository root. The harness times its bundle. */
+  readonly entry: string;
   /** Timed from the bytes, so an engine that must decode them first pays for it. */
-  parse(bytes: Uint8Array): Promise<unknown>;
+  parse(module: unknown, bytes: Uint8Array): unknown;
   /** Every field the result holds. Compares two runs of one engine. */
   project(result: unknown): Projection;
   /** The facts in `facts.ts`. Compares two engines. */
@@ -25,11 +29,10 @@ export interface Engine {
 
 const legacy: Engine = {
   name: 'legacy',
+  entry: 'src/index.ts',
   // Every consumer decodes the whole file to a string before it calls parse().
-  parse: async (bytes) => {
-    const { parse } = await import('../../../src/index.js');
-    return parse(new TextDecoder().decode(bytes));
-  },
+  parse: (module, bytes) =>
+    (module as typeof import('../../../src/index.js')).parse(new TextDecoder().decode(bytes)),
   project: (result) => projectLegacy(result as ApexLog),
   facts: (result) => legacyFacts(result as ApexLog),
 };
@@ -37,11 +40,9 @@ const legacy: Engine = {
 // The engine and store only, until the views and the async driver exist (steps 5 and 6).
 const next: Engine = {
   name: 'next',
-  parse: async (bytes) => {
-    const [{ NodeSource }, { LogBuilder }] = await Promise.all([
-      import('../../../src/next/bytes/node.js'),
-      import('../../../src/next/engine/builder.js'),
-    ]);
+  entry: 'benchmarks/scripts/compare/next-entry.ts',
+  parse: (module, bytes) => {
+    const { LogBuilder, NodeSource } = module as typeof import('./next-entry.js');
     return new LogBuilder(new NodeSource(bytes)).build();
   },
   // Until the views exist, the facts are its whole projection.
@@ -51,6 +52,19 @@ const next: Engine = {
 };
 
 const ENGINES: readonly Engine[] = [legacy, next];
+
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+
+/** The engine's parse, from its bundle in `bundleDir`, or from its source when that is null. */
+export async function loadEngine(
+  name: string,
+  bundleDir: string | null,
+): Promise<(bytes: Uint8Array) => unknown> {
+  const subject = engine(name);
+  const path = bundleDir ? join(bundleDir, `${name}.mjs`) : join(ROOT, subject.entry);
+  const module: unknown = await import(pathToFileURL(path).href);
+  return (bytes) => subject.parse(module, bytes);
+}
 
 export function engine(name: string): Engine {
   const found = ENGINES.find((e) => e.name === name);

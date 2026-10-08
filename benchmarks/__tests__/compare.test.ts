@@ -347,6 +347,7 @@ describe('report', () => {
     const run = (warmMs: number, retainedBytes: number) => ({
       coldMs: warmMs,
       warmRunsMs: [warmMs],
+      warmupRuns: 2,
       retainedBytes,
     });
     const results: FileResult[] = [
@@ -361,6 +362,7 @@ describe('report', () => {
     const run = (ms: number, retainedBytes: number) => ({
       coldMs: ms,
       warmRunsMs: [ms],
+      warmupRuns: 2,
       retainedBytes,
     });
     const now: FileResult[] = [
@@ -380,6 +382,7 @@ describe('report', () => {
     const run = (warmMs: number, retainedBytes: number) => ({
       coldMs: warmMs,
       warmRunsMs: [warmMs],
+      warmupRuns: 2,
       retainedBytes,
     });
     const MB = 1024 * 1024;
@@ -400,9 +403,9 @@ describe('report', () => {
     const report = renderReport(results, ['old', 'new']);
     expect(report).toContain('### 20–50 MB (1 logs)');
     expect(report).toContain(
-      '| 30.0 MB | 400 ms | 300.0 MB | 100 ms | 10.0 MB | 4.0× faster (-75.0%) | 30.0× less (-96.7%) |',
+      '| 30.0 MB | 400 ms | 400 ms | 300.0 MB | 100 ms | 100 ms | 10.0 MB | 4.0× faster (-75.0%) | 4.0× faster (-75.0%) | 30.0× less (-96.7%) |',
     );
-    expect(report).not.toContain('| 10.0 MB | 100 ms |');
+    expect(report).not.toContain('| 10.0 MB | 100 ms | 100 ms |');
     expect(report).not.toContain('big.log');
   });
 

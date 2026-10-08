@@ -5,7 +5,8 @@
  * It diffs every later engine against the first, by the facts in `facts.ts`. A difference a rule in
  * an engine's `known` list explains is counted by rule, not reported. Naming one engine
  * twice with `--projection=full` (`--engines=legacy,legacy`) checks that its whole output is
- * deterministic. `--runs=0` skips timing. `--baseline=<results.jsonl>`
+ * deterministic. Timing runs each engine's tsdown bundle, built into `<out>/bundle`; the diff runs
+ * the source. `--runs=0` skips timing. `--baseline=<results.jsonl>`
  * adds each engine's change against an earlier run, matched by log path.
  *
  * Never commit the output: it names the logs, and the logs come from orgs.
@@ -24,9 +25,10 @@ import { argv, stderr } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { runJsonChild } from '../../../scripts/child.js';
 import { flag, runIfMain } from '../../../scripts/cli.js';
+import { bundleEngines } from './bundle.js';
 import type { DiffResult } from './diff.js';
 import { diffProjections } from './diff.js';
-import { engine } from './engines.js';
+import { engine, loadEngine } from './engines.js';
 import { explainer } from './known.js';
 import type { Measurement } from './measure.js';
 import type { Projection } from './project.js';
@@ -50,11 +52,16 @@ export function findLogs(dir: string): string[] {
     .sort();
 }
 
-function time(engineName: string, file: string, runs: number): Measurement | Failure {
+function time(
+  engineName: string,
+  file: string,
+  runs: number,
+  bundleDir: string,
+): Measurement | Failure {
   try {
     return runJsonChild(
       measureScript,
-      [`--engine=${engineName}`, `--file=${file}`, `--runs=${runs}`],
+      [`--engine=${engineName}`, `--file=${file}`, `--runs=${runs}`, `--bundle=${bundleDir}`],
       ['--expose-gc', '--max-old-space-size=8192'],
     ) as Measurement;
   } catch (err) {
@@ -70,7 +77,7 @@ async function project(
   kind: ProjectionKind,
 ): Promise<Projection> {
   const subject = engine(engineName);
-  const result = await subject.parse(bytes);
+  const result = await (await loadEngine(engineName, null))(bytes);
   return kind === 'full' ? subject.project(result) : subject.facts(result);
 }
 
@@ -127,6 +134,8 @@ runIfMain(import.meta.url, async () => {
   // split always yields at least one name
   const baseline = engines[0]!;
   const timed = [...new Set(engines)];
+  const bundleDir = join(out, 'bundle');
+  if (runs > 0) await bundleEngines(timed, bundleDir);
   const results: FileResult[] = [];
   for (const [i, file] of files.entries()) {
     const name = relative(dir, file);
@@ -134,7 +143,7 @@ runIfMain(import.meta.url, async () => {
     for (const other of engines.slice(1)) {
       result.diffs[`${baseline}→${other} (${kind})`] = await diff(baseline, other, file, kind);
     }
-    if (runs > 0) for (const e of timed) result.runs[e] = time(e, file, runs);
+    if (runs > 0) for (const e of timed) result.runs[e] = time(e, file, runs, bundleDir);
     results.push(result);
     appendFileSync(jsonl, `${JSON.stringify(result)}\n`);
     stderr.write(`[${i + 1}/${files.length}] ${name}\n`);

@@ -37,7 +37,7 @@ function inBand(results: readonly FileResult[], band: (typeof BANDS)[number]): F
   return results.filter((r) => BANDS.find((b) => r.bytes <= b.max) === band);
 }
 
-const warm = (m: Measurement): number => percentile(m.warmRunsMs, 50);
+const steady = (m: Measurement): number => percentile(m.warmRunsMs, 50);
 const cold = (m: Measurement): number => m.coldMs;
 const kept = (m: Measurement): number => m.retainedBytes;
 
@@ -130,7 +130,7 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
   const out = [
     '## Time and memory',
     '',
-    'Warm is the median of the warm parses, cold the first parse in a fresh process. Retained is heap plus array buffers after a GC. Time and memory against the first engine are the median per-log ratio, as times and as a change.',
+    'Each engine runs from its tsdown bundle, as shipped. Cold is the first parse in a fresh process; steady is the median parse after a warm-up of up to 1 s. Retained is heap plus array buffers after a GC. Against the first engine: the median per-log ratio, as times and as a change.',
     '',
   ];
   for (const band of BANDS) {
@@ -139,8 +139,8 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
     out.push(
       `### ${band.label} (${logs.length} logs)`,
       '',
-      `| Engine | Warm p50 | Warm p95 | Cold p50 | Cold p95 | Retained p50 | Retained p95 | Warm vs ${baseline} | Retained vs ${baseline} |`,
-      '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+      `| Engine | Steady p50 | Steady p95 | Cold p50 | Cold p95 | Retained p50 | Retained p95 | Steady vs ${baseline} | Cold vs ${baseline} | Retained vs ${baseline} |`,
+      '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
     );
     for (const name of engines) {
       const rows = logs.flatMap((r) => {
@@ -161,7 +161,7 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
         return fromRatio(percentile(ratios, 50), measure);
       };
       out.push(
-        `| ${name} | ${formatMs(at(warm, 50))} | ${formatMs(at(warm, 95))} | ${formatMs(at(cold, 50))} | ${formatMs(at(cold, 95))} | ${formatBytes(at(kept, 50))} | ${formatBytes(at(kept, 95))} | ${vsBase(warm, 'time')} | ${vsBase(kept, 'memory')} |`,
+        `| ${name} | ${formatMs(at(steady, 50))} | ${formatMs(at(steady, 95))} | ${formatMs(at(cold, 50))} | ${formatMs(at(cold, 95))} | ${formatBytes(at(kept, 50))} | ${formatBytes(at(kept, 95))} | ${vsBase(steady, 'time')} | ${vsBase(cold, 'time')} | ${vsBase(kept, 'memory')} |`,
       );
     }
     out.push('');
@@ -179,8 +179,12 @@ function renderLargeLogs(results: readonly FileResult[], engines: readonly strin
   const baseline = engines[0]!;
   const others = engines.slice(1);
   const columns = [
-    ...engines.flatMap((e) => [`${e} warm`, `${e} retained`]),
-    ...others.flatMap((e) => [`${e} warm vs ${baseline}`, `${e} retained vs ${baseline}`]),
+    ...engines.flatMap((e) => [`${e} steady`, `${e} cold`, `${e} retained`]),
+    ...others.flatMap((e) => [
+      `${e} steady vs ${baseline}`,
+      `${e} cold vs ${baseline}`,
+      `${e} retained vs ${baseline}`,
+    ]),
   ];
   const row = (cells: readonly string[]): string => `| ${cells.join(' | ')} |`;
   const timed = (r: FileResult, name: string): Measurement | null => {
@@ -190,7 +194,7 @@ function renderLargeLogs(results: readonly FileResult[], engines: readonly strin
   const out = [
     `### Each log over ${formatBytes(LARGE)}`,
     '',
-    'Warm and retained per engine, then each against the first engine.',
+    'Steady, cold and retained per engine, then each against the first engine.',
     '',
     row(['Size', ...columns]),
     row(['Size', ...columns].map(() => '---:')),
@@ -199,13 +203,17 @@ function renderLargeLogs(results: readonly FileResult[], engines: readonly strin
     const base = timed(r, baseline);
     const figures = engines.flatMap((e) => {
       const m = timed(r, e);
-      return m ? [formatMs(warm(m)), formatBytes(kept(m))] : ['—', '—'];
+      return m ? [formatMs(steady(m)), formatMs(cold(m)), formatBytes(kept(m))] : ['—', '—', '—'];
     });
     const vs = others.flatMap((e) => {
       const m = timed(r, e);
       return base && m
-        ? [versus(warm(base), warm(m), 'time'), versus(kept(base), kept(m), 'memory')]
-        : ['—', '—'];
+        ? [
+            versus(steady(base), steady(m), 'time'),
+            versus(cold(base), cold(m), 'time'),
+            versus(kept(base), kept(m), 'memory'),
+          ]
+        : ['—', '—', '—'];
     });
     out.push(row([formatBytes(r.bytes), ...figures, ...vs]));
   }
@@ -225,7 +233,7 @@ function renderChange(
     '',
     'Each engine against its own figures in the baseline run, over the logs both runs timed: the median of each run, then the median per-log ratio, as times and as a change. Negative is faster or smaller.',
     '',
-    '| Band | Engine | Logs | Warm | Cold | Retained |',
+    '| Band | Engine | Logs | Steady | Cold | Retained |',
     '| --- | --- | ---: | ---: | ---: | ---: |',
   ];
   for (const band of BANDS) {
@@ -256,7 +264,7 @@ function renderChange(
         return `${format(was)} → ${format(now)}, ${fromRatio(ratio, measure)}`;
       };
       out.push(
-        `| ${band.label} | ${name} | ${pairs.length} | ${change(warm, formatMs, 'time')} | ${change(cold, formatMs, 'time')} | ${change(kept, formatBytes, 'memory')} |`,
+        `| ${band.label} | ${name} | ${pairs.length} | ${change(steady, formatMs, 'time')} | ${change(cold, formatMs, 'time')} | ${change(kept, formatBytes, 'memory')} |`,
       );
     }
   }
