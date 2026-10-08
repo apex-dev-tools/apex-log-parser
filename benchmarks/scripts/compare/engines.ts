@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { ApexLog } from '../../../src/index.js';
 import type { Built } from '../../../src/next/engine/builder.js';
-import { legacyFacts, nextFacts } from './facts.js';
+import { apexLog } from '../../../src/next/views/log.js';
+import { legacyFacts, nextFacts, nextProjection } from './facts.js';
 import type { KnownDifference } from './known.js';
 import { KNOWN } from './known.js';
 import type { Projection } from './project.js';
@@ -37,15 +38,14 @@ const legacy: Engine = {
   facts: (result) => legacyFacts(result as ApexLog),
 };
 
-// The engine and store only, until the views and the async driver exist (steps 5 and 6).
+// The build only, until the async driver exists (step 6): the views read it lazily, so they are untimed.
 const next: Engine = {
   name: 'next',
   entry: 'src/next/node.ts',
   parse: (module, bytes) =>
     (module as typeof import('../../../src/next/node.js')).nodeEngine.build(bytes),
-  // Until the views exist, the facts are its whole projection.
-  project: (result) => nextFacts(result as Built),
-  facts: (result) => nextFacts(result as Built),
+  project: (result) => nextProjection(apexLog(result as Built)),
+  facts: (result) => nextFacts(apexLog(result as Built)),
   known: KNOWN,
 };
 

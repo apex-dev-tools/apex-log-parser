@@ -3,10 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from '../../src/index.js';
 import { nodeEngine } from '../../src/next/node.js';
+import { apexLog } from '../../src/next/views/log.js';
 import { findLogs } from '../scripts/compare/compare.js';
 import { compareKeys, diffProjections, same } from '../scripts/compare/diff.js';
 import type { LogFact } from '../scripts/compare/facts.js';
-import { legacyFacts, nextFacts } from '../scripts/compare/facts.js';
+import { legacyFacts, nextFacts, nextProjection } from '../scripts/compare/facts.js';
 import type { Entry, KnownDifference } from '../scripts/compare/known.js';
 import { explainer } from '../scripts/compare/known.js';
 import type { Projection } from '../scripts/compare/project.js';
@@ -197,7 +198,7 @@ describe('diffProjections', () => {
 
 describe('nextFacts', () => {
   const next = (text: string): Entry[] => [
-    ...nextFacts(nodeEngine.build(new TextEncoder().encode(text))),
+    ...nextFacts(apexLog(nodeEngine.build(new TextEncoder().encode(text)))),
   ];
   const vsLegacy = (text: string) => {
     const left = [...legacyFacts(parse(text))];
@@ -265,6 +266,35 @@ describe('nextFacts', () => {
       differing: 0,
       explained: { 'package-duration': 2 },
     });
+  });
+});
+
+describe('nextProjection', () => {
+  it('states each facts record, and adds each event its text figures', () => {
+    const built = apexLog(nodeEngine.build(new TextEncoder().encode(log)));
+    const facts = [...nextFacts(built)];
+    const full = [...nextProjection(built)];
+    const events = [...built.events];
+
+    expect(full.map(([key]) => key)).toEqual(facts.map(([key]) => key));
+    expect(full[0]).toEqual(facts[0]);
+    expect(full.slice(1)).toEqual(
+      facts.slice(1).map(([key, node], i) => {
+        const event = events[i];
+        return [
+          key,
+          {
+            ...(node as object),
+            text: event?.text,
+            logLine: event?.logLine,
+            suffix: event?.suffix,
+            cpuType: event?.cpuType,
+            hasValidSymbols: event?.hasValidSymbols,
+          },
+        ];
+      }),
+    );
+    expect(full).toHaveLength(built.eventCount + 1);
   });
 });
 

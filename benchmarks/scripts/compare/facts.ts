@@ -8,21 +8,8 @@
  */
 
 import type { ApexLog, LogEvent } from '../../../src/index.js';
-import { idOfType } from '../../../src/next/catalog/catalog.js';
-import { EVENT_TYPE_NAMES } from '../../../src/next/catalog/types.js';
-import type { Built } from '../../../src/next/engine/builder.js';
-import { FLAG } from '../../../src/next/engine/builder.js';
-import { governorLimits } from '../../../src/next/limits.js';
-import type { Store } from '../../../src/next/store/store.js';
-import {
-  COUNTER,
-  EXTERNAL_LINE,
-  HEAP,
-  NO_LINE,
-  NONE,
-  SELF,
-  TOTAL,
-} from '../../../src/next/store/store.js';
+import type { ApexEvent } from '../../../src/next/views/events.js';
+import type { LogPlace, ApexLog as NextLog } from '../../../src/next/views/log.js';
 import type { Projection } from './project.js';
 import { LOG_KEY, preOrder } from './project.js';
 
@@ -110,7 +97,22 @@ export interface LogFact {
 // Today's name for an event outside any namespace.
 const NO_NAMESPACE = 'default';
 
-function countsOf(event: LogEvent): CountsFact {
+/** The rollup getters both engines' events and logs state, by the same names. */
+type Counted = Pick<
+  LogEvent,
+  | 'dmlCount'
+  | 'soqlCount'
+  | 'soslCount'
+  | 'dmlRowCount'
+  | 'soqlRowCount'
+  | 'soslRowCount'
+  | 'thrownCount'
+  | 'heapAllocated'
+  | 'heapGross'
+  | 'heapPeak'
+>;
+
+function countsOf(event: Counted): CountsFact {
   return {
     dml: event.dmlCount,
     soql: event.soqlCount,
@@ -203,38 +205,33 @@ export function* legacyFacts(log: ApexLog): Projection {
   }
 }
 
-const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
-const EXECUTION_STARTED = idOfType('EXECUTION_STARTED');
-const EXCEPTIONS = new Set([idOfType('EXCEPTION_THROWN'), idOfType('FATAL_ERROR')]);
-
-/** The next engine's build, as facts. Ids are in pre-order, so the records come out in it too. */
-export function* nextFacts(built: Built): Projection {
-  const { store, strings } = built;
-  const paths = treePaths(store);
-  const ref = (id: number): EventRef => ({ node: paths[id] ?? LOG_KEY });
+/** The log's facts, then `nodeOf` each event, in id order: pre-order, as the projection needs. */
+function* nextRecords(log: NextLog, nodeOf: (event: ApexEvent) => unknown): Projection {
+  const paths = treePaths(log);
+  const ref = (event: { id: number } | null): EventRef => ({
+    node: (event && paths[event.id]) ?? LOG_KEY,
+  });
   // An issue on an exit line refers to that line, which folded into the frame it closed.
-  const placeOf = (place: { id: number; exitType: number | null }): EventRef =>
+  const placeOf = (place: LogPlace): EventRef =>
     place.exitType === null
-      ? ref(place.id)
-      : { offTree: EVENT_TYPE_NAMES[place.exitType] ?? null, at: store.exitStamp[place.id]! };
-  const counts = (id: number): CountsFact => nextCounts(store, id);
-  const ids = (keep: (id: number) => boolean): number[] =>
-    Array.from({ length: store.count - 1 }, (_, i) => i + 1).filter(keep);
+      ? ref(place.event)
+      : {
+          offTree: place.exitType,
+          at: place.event?.isFrame ? place.event.exitStamp : log.exitStamp,
+        };
 
-  const rootCounts = counts(0);
-  const limits = governorLimits([...built.snapshots], rootCounts.heapPeak);
+  const limits = log.limits;
   const fact: LogFact = {
-    size: built.size,
-    timestamp: store.timestamp[0]!,
-    exitStamp: stamp(store.exitStamp[0]!),
-    duration: nextDuration(store, 0),
-    startTime: built.startTime,
-    executionEndTime: built.executionEndTime,
-    // The log is truncated when the platform dropped content, not when a frame lost its exit.
-    isTruncated: built.truncation.regions.length > 0,
-    counts: rootCounts,
-    namespaces: built.namespaces.map((id) => strings.text(id)),
-    issues: built.issues.list.map((issue) => ({
+    size: log.size,
+    timestamp: log.timestamp,
+    exitStamp: log.exitStamp,
+    duration: log.duration,
+    startTime: log.startTime,
+    executionEndTime: log.executionEndTime,
+    isTruncated: log.isTruncated,
+    counts: countsOf(log),
+    namespaces: [...log.namespaces],
+    issues: log.issues.map((issue) => ({
       type: issue.type,
       summary: issue.summary,
       description: issue.description,
@@ -242,28 +239,23 @@ export function* nextFacts(built: Built): Projection {
       endTime: issue.endTime,
       at: placeOf(issue),
     })),
-    parsingErrors: [...built.parsingErrors],
+    parsingErrors: [...log.parsingErrors],
     truncation: {
-      regions: built.truncation.regions.map((region) => ({
+      regions: log.truncation.regions.map((region) => ({
         kind: region.kind,
         startTime: region.startTime,
         endTime: region.endTime,
         at: placeOf(region),
         skippedBytes: region.skippedBytes,
       })),
-      totalSkippedBytes: built.truncation.totalSkippedBytes,
+      totalSkippedBytes: log.truncation.totalSkippedBytes,
     },
-    truncatedEvents: built.truncated.map(ref),
-    // A code unit at the top of the log or of an execution.
-    entryPoints: ids(
-      (id) =>
-        store.type[id] === CODE_UNIT_STARTED &&
-        (store.parent[id] === 0 || store.type[store.parent[id]!] === EXECUTION_STARTED),
-    ).map(ref),
-    exceptions: ids((id) => EXCEPTIONS.has(store.type[id]!)).map(ref),
-    userInfo: built.userInfo,
-    debugLevels: built.debugLevels,
-    debugLevelSettings: built.debugLevelSettings,
+    truncatedEvents: log.truncatedEvents.map(ref),
+    entryPoints: log.entryPoints.map(ref),
+    exceptions: log.exceptions.map(ref),
+    userInfo: log.userInfo,
+    debugLevels: log.debugLevels,
+    debugLevelSettings: log.debugLevelSettings,
     limits: {
       snapshots: limits.snapshots,
       final: limits.final,
@@ -273,69 +265,46 @@ export function* nextFacts(built: Built): Projection {
   };
   yield [LOG_KEY, fact];
 
-  for (let id = 1; id < store.count; id++) {
-    // id < count, so every column holds it
-    const line = store.lineNumber[id]!;
-    const namespace = store.namespace[id]!;
-    const node: NodeFact = {
-      type: EVENT_TYPE_NAMES[store.type[id]!] ?? null,
-      timestamp: store.timestamp[id]!,
-      exitStamp: stamp(store.exitStamp[id]!),
-      duration: nextDuration(store, id),
-      lineNumber: line === NO_LINE ? null : line === EXTERNAL_LINE ? 'EXTERNAL' : line,
-      namespace: namespace === NONE ? null : strings.text(namespace),
-      isTruncated: (store.flags[id]! & FLAG.truncated) !== 0,
-      counts: counts(id),
-    };
-    yield [paths[id]!, node];
+  for (const event of log.events) {
+    // Every event has a path: treePaths gives one to each.
+    yield [paths[event.id]!, nodeOf(event)];
   }
 }
 
-/** Each row's path of child positions, as `preOrder` states the legacy tree's. */
-function treePaths(store: Store): string[] {
+/** The next engine's log, as facts, read through its views. Ids are in pre-order, so the records come out in it too. */
+export const nextFacts = (log: NextLog): Projection => nextRecords(log, nextNode);
+
+/** Every field the next engine's views state: its facts, then each event's text figures. */
+export const nextProjection = (log: NextLog): Projection =>
+  nextRecords(log, (event) => ({
+    ...nextNode(event),
+    text: event.text,
+    logLine: event.logLine,
+    suffix: event.suffix,
+    cpuType: event.cpuType,
+    hasValidSymbols: event.hasValidSymbols,
+  }));
+
+const nextNode = (event: ApexEvent): NodeFact => ({
+  type: event.type,
+  timestamp: event.timestamp,
+  exitStamp: event.exitStamp,
+  duration: event.duration,
+  lineNumber: event.lineNumber,
+  namespace: event.namespace,
+  isTruncated: event.isTruncated,
+  counts: countsOf(event),
+});
+
+/** Each event's path of child positions, as `preOrder` states the legacy tree's; index 0 is the log. */
+function treePaths(log: NextLog): string[] {
   const paths = [LOG_KEY];
-  const children = new Int32Array(store.count);
-  for (let id = 1; id < store.count; id++) {
-    // id < count, and a parent is an earlier row
-    const parent = store.parent[id]!;
+  const children = new Int32Array(log.eventCount + 1);
+  for (const event of log.events) {
+    const parent = event.parent?.id ?? 0;
+    // parent is an earlier event, or the log, so both indexes are in range
     const index = children[parent]!++;
-    paths[id] = parent === 0 ? `${index}` : `${paths[parent]}/${index}`;
+    paths[event.id] = parent === 0 ? `${index}` : `${paths[parent]}/${index}`;
   }
   return paths;
-}
-
-// The store holds NaN for a leaf's exit; the facts state null.
-function stamp(ns: number): number | null {
-  return Number.isNaN(ns) ? null : ns;
-}
-
-function nextDuration(store: Store, id: number): SelfTotalFact {
-  // id is a row
-  return { self: store.durationSelf[id]!, total: store.durationTotal(id) };
-}
-
-function nextCounts(store: Store, id: number): CountsFact {
-  // id is a row; a slot is NONE while every figure in it is 0
-  const countAt = store.countSlot[id] === NONE ? NONE : store.countsOf(id);
-  const heapAt = store.heapSlot[id] === NONE ? NONE : store.heapOf(id);
-  const pair = (counter: number): SelfTotalFact =>
-    countAt === NONE
-      ? { self: 0, total: 0 }
-      : {
-          self: store.counts[countAt + counter * 2 + SELF]!,
-          total: store.counts[countAt + counter * 2 + TOTAL]!,
-        };
-  const heap = (figure: number): number => (heapAt === NONE ? 0 : store.heap[heapAt + figure]!);
-  return {
-    dml: pair(COUNTER.dml),
-    soql: pair(COUNTER.soql),
-    sosl: pair(COUNTER.sosl),
-    dmlRows: pair(COUNTER.dmlRows),
-    soqlRows: pair(COUNTER.soqlRows),
-    soslRows: pair(COUNTER.soslRows),
-    thrown: pair(COUNTER.thrown),
-    heapAllocated: { self: heap(HEAP.allocatedSelf), total: heap(HEAP.allocatedTotal) },
-    heapGross: { self: heap(HEAP.grossSelf), total: heap(HEAP.grossTotal) },
-    heapPeak: heap(HEAP.peak),
-  };
 }
