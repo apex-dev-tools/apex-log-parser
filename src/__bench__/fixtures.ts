@@ -748,5 +748,7 @@ export const largeLogs: Readonly<Record<string, LogOptions>> = {
   'medium 8 MB': profileLog('developer', 6, 8_000_000),
   // A log cut at the 20 MB default limit is a developer log.
   'large 20 MB': profileLog('developer', 7, 20_000_000),
+  'XL 50 MB': profileLog('large', 13, 50_000_000),
+  'XL 75 MB': profileLog('large', 14, 75_000_000),
   'XL 100 MB': profileLog('large', 12, 100_000_000),
 };

@@ -52,9 +52,10 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `scripts/bench-profiles.ts` — measures a local folder of real logs by size band and prints
   `src/__bench__/profiles.json`. Local only. It prints numbers, never log text. Real logs never
   go into the repository or CI.
-- `scripts/bench-large.ts` — `pnpm run bench:large`, the 8, 20 and 100 MB synthetic logs, which are
-  too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
-  `--baseline=<path>` on the other to compare them.
+- `scripts/bench-large.ts` — `pnpm run bench:large`, the 8, 20, 50, 75 and 100 MB synthetic logs,
+  which are too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
+  `--baseline=<path>` on the other to compare them. `--engine=next` times the new parser; its
+  `--baseline` can be a legacy run's JSON.
 - `scripts/cli.ts` — argument reading and the entry-point guard every script uses. No other
   imports, so a small script does not pull the scraper's module graph in to read one flag.
 - `scripts/ci/` — the scrape workflow's logic, so the YAML only declares what runs.

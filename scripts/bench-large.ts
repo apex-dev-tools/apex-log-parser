@@ -1,19 +1,31 @@
 // For logs too large for CodSpeed. Compare branches: --json=<path> on one, --baseline=<path> on the other.
-//   pnpm run bench:large [--runs=5] [--json=<path>] [--baseline=<path>]
+//   pnpm run bench:large [--engine=legacy|next] [--runs=5] [--json=<path>] [--baseline=<path>]
+// --baseline matches logs by name, so one engine's --json is the other's baseline.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { argv } from 'node:process';
 import { largeLogs, makeLog } from '../src/__bench__/fixtures.js';
 import { parse } from '../src/index.js';
+import { NodeSource } from '../src/next/bytes/node.js';
+import { LogBuilder } from '../src/next/engine/builder.js';
 import { flag, runIfMain } from './cli.js';
 
 interface LargeResult {
   name: string;
   /** Median parse time, in milliseconds. */
   ms: number;
-  /** Heap the parsed tree holds, in bytes. */
+  /** Heap and array buffers the parse result holds, in bytes. */
   heapBytes: number;
 }
+
+// Each engine parses from the input it takes, made before the timing starts.
+const ENGINES: Readonly<Record<string, (log: string) => () => unknown>> = {
+  legacy: (log) => () => parse(log),
+  next: (log) => {
+    const bytes = new TextEncoder().encode(log);
+    return () => new LogBuilder(new NodeSource(bytes)).build();
+  },
+};
 
 /** One line per log, with the change from the baseline when it has the same log. */
 export function report(results: LargeResult[], baseline: LargeResult[] = []): string[] {
@@ -38,6 +50,12 @@ function median(values: number[]): number {
     : (sorted[Math.floor(middle)] ?? 0);
 }
 
+// The next engine's columns are array buffers, which heapUsed leaves out.
+function held(): number {
+  const { heapUsed, arrayBuffers } = process.memoryUsage();
+  return heapUsed + arrayBuffers;
+}
+
 function main(): void {
   const gc = (globalThis as { gc?: () => void }).gc;
   if (!gc) throw new Error('Run with node --expose-gc, as pnpm run bench:large does');
@@ -45,26 +63,29 @@ function main(): void {
   const runs = Number(flag(args, '--runs') ?? 5);
   if (!Number.isInteger(runs) || runs < 1)
     throw new Error('--runs must be a whole number of at least 1');
+  const engineName = flag(args, '--engine') ?? 'legacy';
+  const engine = ENGINES[engineName];
+  if (!engine) throw new Error(`--engine must be one of ${Object.keys(ENGINES).join(', ')}`);
   const json = flag(args, '--json');
   const baselinePath = flag(args, '--baseline');
 
   const results = Object.entries(largeLogs).map(([name, options]): LargeResult => {
-    const log = makeLog(options);
+    const parseOnce = engine(makeLog(options));
     const times: number[] = [];
     const heaps: number[] = [];
     // A first parse compiles the parser, so the runs measure neither the compile nor its code.
-    parse(log);
+    parseOnce();
     // Holds the tree across the collection, so the heap reading includes it.
     let tree: unknown = null;
     for (let run = 0; run < runs; run++) {
       tree = null;
       gc();
-      const before = process.memoryUsage().heapUsed;
+      const before = held();
       const start = performance.now();
-      tree = parse(log);
+      tree = parseOnce();
       times.push(performance.now() - start);
       gc();
-      heaps.push(process.memoryUsage().heapUsed - before);
+      heaps.push(held() - before);
     }
     void tree;
     return { name, ms: median(times), heapBytes: median(heaps) };
