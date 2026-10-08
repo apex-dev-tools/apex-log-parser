@@ -5,11 +5,16 @@ import { ByteFields, digits } from '../bytes/cursor.js';
 import { TRUNCATION_MARKER } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
-import { EVENT_TYPES, GRAMMAR, idOfType } from '../catalog/catalog.js';
+import type { Hook } from '../catalog/catalog.js';
+import { EVENT_TYPES, eventText, GRAMMAR, idOfType } from '../catalog/catalog.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
+import type { LimitSnapshot } from '../limits.js';
+import { limitsOfBlock } from '../limits.js';
 import { EXTERNAL_LINE, NO_LINE, NONE, Store } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
+import type { IssueType } from './issues.js';
 import { ISSUE, Issues } from './issues.js';
+import { DEFAULT, Namespaces, RULE, UNSTATED } from './namespaces.js';
 
 /** Per-event bits in `Store.flags`. */
 export const FLAG = {
@@ -23,6 +28,17 @@ export const FLAG = {
 export const LOG_TYPE: number = EVENT_TYPE_NAMES.length;
 const TYPES = EVENT_TYPE_NAMES.length;
 
+/** The hooks the engine runs when the next event is read. 0: the hook runs elsewhere. */
+const HOOK_ID: { readonly [H in Hook]: number } = {
+  limitSnapshot: 1,
+  limitException: 2,
+  fatal: 3,
+  // The flow residual pass reads these.
+  flowTotal: 0,
+  // readEvent decides the leaf.
+  vfApexCall: 0,
+};
+
 // Per-type tables, so the loop reads one byte, not an object.
 const IS_FRAME = new Uint8Array(TYPES);
 const IS_EXIT = new Uint8Array(TYPES);
@@ -33,6 +49,13 @@ const HAS_EXITS = new Uint8Array(TYPES);
 const ACCEPTS_TEXT = new Uint8Array(TYPES);
 const DISCONTINUITY = new Uint8Array(TYPES);
 const LINE_FIELD = new Int8Array(TYPES);
+/** A `RULE` id, or 0 when the type states no namespace and takes its frame's. */
+const NAMESPACE_RULE = new Uint8Array(TYPES);
+const NAMESPACE_POSITIONS: (readonly number[])[] = [];
+/** A frame that takes the namespace its exit line states, as today's method entry. */
+const TAKES_EXIT_NAMESPACE = new Uint8Array(TYPES);
+/** A `HOOK_ID`, or 0. */
+const HOOK = new Uint8Array(TYPES);
 /** `CLOSES[frame * TYPES + exit]` is 1 when an `exit` line closes a `frame`. */
 const CLOSES = new Uint8Array(TYPES * TYPES);
 for (const info of EVENT_TYPES) {
@@ -48,6 +71,10 @@ for (const info of EVENT_TYPES) {
   ACCEPTS_TEXT[t] = g.acceptsText ? 1 : 0;
   DISCONTINUITY[t] = g.discontinuity ? 1 : 0;
   LINE_FIELD[t] = g.lineField;
+  NAMESPACE_RULE[t] = g.namespace ? RULE[g.namespace] : 0;
+  NAMESPACE_POSITIONS[t] = g.namespaceFields;
+  TAKES_EXIT_NAMESPACE[t] = g.namespace === 'method' ? 1 : 0;
+  HOOK[t] = g.hook ? HOOK_ID[g.hook] : 0;
   for (const exit of info.exitTypes) CLOSES[t * TYPES + idOfType(exit)] = 1;
   if (g.closes === 'next-line') CLOSES[t * TYPES + t] = 1;
 }
@@ -91,6 +118,10 @@ export interface Built {
   readonly parsingErrors: readonly string[];
   /** The frames the log does not close, in the order they ended. */
   readonly truncated: readonly number[];
+  /** The string ids of the namespaces the log states, in first-stated order. */
+  readonly namespaces: readonly number[];
+  /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
+  readonly snapshots: readonly LimitSnapshot[];
 }
 
 /**
@@ -103,12 +134,16 @@ export class LogBuilder {
   private readonly source: Source;
   private readonly bytes: Uint8Array;
   private readonly fields: ByteFields;
+  /** The hooks' own cursor, so a hook never moves the one the next line was read with. */
+  private readonly hookFields: ByteFields;
   private readonly store: Store;
   private readonly strings: StringTable;
   private readonly issues: Issues = new Issues();
   private readonly parsingErrors: string[] = [];
   private readonly unsupported = new Set<string>();
   private readonly truncated: number[] = [];
+  private readonly namespaces: Namespaces;
+  private readonly snapshots: LimitSnapshot[] = [];
   // The open frames, innermost last: each one's id, and its last child's id or `NONE`.
   private readonly frameIds: number[] = [];
   private readonly frameLastChild: number[] = [];
@@ -128,12 +163,16 @@ export class LogBuilder {
   private nextTimestamp = 0;
   private nextLine = NO_LINE;
   private nextFlags = 0;
+  /** The namespace the next line states: a string id, `UNSTATED` or `DEFAULT`. */
+  private nextNamespace = UNSTATED;
 
   // The event placed last: its id, or the frame a folded exit closed.
   private lastId = NONE;
   private lastType = -1;
   /** The last event was an exit line, folded into `lastId`. */
   private lastFolded = false;
+  /** Where the last event's own line ends, before its continuation lines. */
+  private lastLineEnd = 0;
   // Where the last line `readEvent` judged an unknown type has that type.
   private unknownStart = 0;
   private unknownEnd = 0;
@@ -142,8 +181,10 @@ export class LogBuilder {
     this.source = source;
     this.bytes = source.bytes;
     this.fields = new ByteFields(source);
+    this.hookFields = new ByteFields(source);
     this.store = new Store(source.bytes.length);
     this.strings = new StringTable(source);
+    this.namespaces = new Namespaces(source.bytes, this.strings);
   }
 
   build(): Built {
@@ -163,6 +204,8 @@ export class LogBuilder {
       issues: this.issues,
       parsingErrors: this.parsingErrors,
       truncated: this.truncated,
+      namespaces: this.namespaces.order,
+      snapshots: this.snapshots,
     };
   }
 
@@ -183,7 +226,13 @@ export class LogBuilder {
       const next = this.nextType;
       this.discontinuity ||= DISCONTINUITY[next] === 1;
       const nextHasExits = HAS_EXITS[next] === 1 && !(this.nextFlags & FLAG.notEntry);
+      // endMethod can fold the exit line and read past it.
+      const exitNamespace = this.nextNamespace;
       if (!onNextLine && EXIT_LINE[next] && this.endMethod(frame)) {
+        // As today, also when the line unwinds this frame to close one below it.
+        if (TAKES_EXIT_NAMESPACE[store.type[frame]!] && exitNamespace !== UNSTATED) {
+          store.namespace[frame] = exitNamespace === DEFAULT ? NONE : exitNamespace;
+        }
         this.pop();
       } else if (onNextLine && (IS_EXIT[next] || nextHasExits)) {
         store.exitStamp[frame] = this.nextTimestamp;
@@ -289,6 +338,9 @@ export class LogBuilder {
     );
     store.lineNumber[id] = this.nextLine;
     store.flags[id] = this.nextFlags;
+    const own = this.nextNamespace;
+    // parent was added before id, so its namespace is set; the log's own is NONE
+    store.namespace[id] = own >= 0 ? own : own === DEFAULT ? NONE : store.namespace[parent]!;
     this.lastTimestamp = this.nextTimestamp;
     this.lastFolded = false;
     this.placed(id);
@@ -304,6 +356,7 @@ export class LogBuilder {
   private placed(id: number): void {
     this.lastId = id;
     this.lastType = this.nextType;
+    this.lastLineEnd = this.nextEnd;
     this.readNext();
   }
 
@@ -329,6 +382,8 @@ export class LogBuilder {
       if (read === READ.notEvent) this.notAnEvent(start, end);
       else if (read === READ.unknownType) this.unsupportedType();
     }
+    // Nothing follows the last event, so its text is complete.
+    this.runHook();
   }
 
   /** Reads the line as the next event, when it starts one. */
@@ -368,6 +423,11 @@ export class LogBuilder {
       } else line = stated;
     }
     if (type === VF_APEX_CALL_START && this.vfCallIsLeaf()) flags |= FLAG.notEntry;
+    const rule = NAMESPACE_RULE[type]!;
+    // type is a type id, so it has positions
+    const namespace = rule
+      ? this.namespaces.read(rule, fields, NAMESPACE_POSITIONS[type]!)
+      : UNSTATED;
 
     this.hasNext = true;
     this.nextType = type;
@@ -376,14 +436,52 @@ export class LogBuilder {
     this.nextTimestamp = timestamp;
     this.nextLine = line;
     this.nextFlags = flags;
+    this.nextNamespace = namespace;
     return READ.event;
   }
 
   /** Today's `onAfter` of the last event, now that the next one is read. */
   private afterEvent(): void {
+    this.runHook();
     // A package entry ends where the next event starts; the last one in the log stays open.
     if (this.lastType === ENTERING_MANAGED_PKG)
       this.store.exitStamp[this.lastId] = this.nextTimestamp;
+  }
+
+  /** Today's `onAfter` hooks of the last event, which read its whole text. */
+  private runHook(): void {
+    const type = this.lastType;
+    const hook = type < 0 || this.lastFolded ? 0 : HOOK[type];
+    if (!hook) return;
+    const store = this.store;
+    const id = this.lastId;
+    const lineEnd = this.lastLineEnd;
+    // id was placed, so every column holds it
+    const end = store.end[id]!;
+    const lf = end > lineEnd ? this.source.lineEnd(lineEnd) : -1;
+    const from = lf < 0 ? lineEnd : lf + 1;
+    const fields = this.hookFields;
+    fields.reset(store.start[id]!, lineEnd, from, lf < 0 ? lineEnd : end);
+    const text = eventText(type, fields) ?? '';
+    const timestamp = store.timestamp[id]!;
+    if (hook === HOOK_ID.limitSnapshot) {
+      const ns = store.namespace[id]!;
+      // The limits rule always states one, so NONE is its 'default'.
+      const namespace = ns === NONE ? 'default' : this.strings.text(ns);
+      this.snapshots.push({ timestamp, namespace, limits: limitsOfBlock(text) });
+    } else if (hook === HOOK_ID.fatal) {
+      this.textIssue(timestamp, id, text, 'fatal');
+    } else if (text.includes('System.LimitException')) {
+      this.textIssue(timestamp, id, text, 'error');
+    }
+  }
+
+  /** An issue from an event's text: its first line is the summary, as today. */
+  private textIssue(timestamp: number, id: number, text: string, type: IssueType): void {
+    const lf = text.indexOf('\n');
+    const summary = (lf < 0 ? text : text.slice(0, lf)).trim();
+    const description = lf < 0 ? '' : text.slice(lf + 1).trim();
+    this.issues.add(timestamp, id, { summary, description, type });
   }
 
   /** Today's rule: a VF call with no method, on a class with no space or a page-messages class, is a leaf. */

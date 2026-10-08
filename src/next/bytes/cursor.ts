@@ -82,6 +82,16 @@ export class ByteFields implements Fields {
     return separator === '|' ? text : text.replaceAll('|', separator);
   }
 
+  /** Where field `i` starts in the source, or -1 when the line has no field `i`. */
+  startOf(i: number): number {
+    return this.has(i) ? this.start(i) : -1;
+  }
+
+  /** Where field `i` ends in the source. Only for a field `startOf` found. */
+  endOf(i: number): number {
+    return this.fieldEnd(i);
+  }
+
   continuation(): string {
     if (this.continuationStart >= this.continuationEnd) return '';
     return continuationText(this.source.text(this.continuationStart, this.continuationEnd));

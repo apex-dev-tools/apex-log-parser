@@ -31,22 +31,11 @@ export class StringTable {
 
   /** The id of the value in bytes `start` to `end`, added if it is new. */
   intern(start: number, end: number): number {
-    const bytes = this.bytes;
-    const h = hashBytes(bytes, start, end);
-    const mask = this.slots.length - 1;
-    const len = end - start;
-    let slot = h & mask;
-    for (; ; slot = (slot + 1) & mask) {
-      // slot is masked to the table
-      const id = this.slots[slot]!;
-      if (id === EMPTY) break;
-      // id < size, so it indexes every per-id array
-      if (this.hashes[id] !== h || this.ends[id]! - this.starts[id]! !== len) continue;
-      const at = this.starts[id]!;
-      let k = 0;
-      while (k < len && bytes[at + k] === bytes[start + k]) k++;
-      if (k === len) return id;
-    }
+    const h = hashBytes(this.bytes, start, end);
+    const slot = this.probe(start, end, h);
+    // probe returns a slot in the table
+    const held = this.slots[slot]!;
+    if (held !== EMPTY) return held;
     const id = this.size++;
     if (id === this.starts.length) this.growIds();
     this.starts[id] = start;
@@ -57,6 +46,30 @@ export class StringTable {
     this.slots[slot] = id;
     if (this.size * 2 > this.slots.length) this.rehash();
     return id;
+  }
+
+  /** The id of the value in bytes `start` to `end`, or -1 when the table does not hold it. */
+  lookup(start: number, end: number): number {
+    // probe returns a slot in the table
+    return this.slots[this.probe(start, end, hashBytes(this.bytes, start, end))]!;
+  }
+
+  /** The slot that holds the value, or the empty slot where it would go. */
+  private probe(start: number, end: number, h: number): number {
+    const bytes = this.bytes;
+    const mask = this.slots.length - 1;
+    const len = end - start;
+    for (let slot = h & mask; ; slot = (slot + 1) & mask) {
+      // slot is masked to the table
+      const id = this.slots[slot]!;
+      if (id === EMPTY) return slot;
+      // id < size, so it indexes every per-id array
+      if (this.hashes[id] !== h || this.ends[id]! - this.starts[id]! !== len) continue;
+      const at = this.starts[id]!;
+      let k = 0;
+      while (k < len && bytes[at + k] === bytes[start + k]) k++;
+      if (k === len) return slot;
+    }
   }
 
   /** The value of `id`. */

@@ -5,7 +5,7 @@ import { NodeSource } from '../bytes/node.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import { FLAG, LogBuilder } from '../engine/builder.js';
-import { EXTERNAL_LINE, NO_LINE } from '../store/store.js';
+import { EXTERNAL_LINE, NO_LINE, NONE } from '../store/store.js';
 import { encode } from './helpers.js';
 
 const HEADER = '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,INFO';
@@ -183,7 +183,65 @@ describe('LogBuilder', () => {
     );
     expect(tree(built)).toEqual(['METHOD_ENTRY@1-2!', '  STATEMENT_EXECUTE@2', 'FATAL_ERROR@3']);
     // Replaced once the frame ends, so it follows the Unexpected-End issue at the same time, as today.
-    expect(issues(built)).toEqual(['Unexpected-End@2 #1', 'Max-Size-reached@2 #1']);
+    expect(issues(built)).toEqual([
+      'Unexpected-End@2 #1',
+      'Max-Size-reached@2 #1',
+      'System.LimitException@3 #3',
+    ]);
+  });
+
+  it('reads each namespace by its rule, and passes a frame its namespace down', () => {
+    const built = build(
+      `${at(1)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
+      `${at(2)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.Inner.run()`,
+      `${at(3)}|STATEMENT_EXECUTE|[2]`,
+      `${at(4)}|DML_BEGIN|[3]|Op:Insert|Type:Account|Rows:1`,
+      `${at(5)}|DML_END|[3]`,
+      `${at(6)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.Inner.run()`,
+      // Three parts read as a namespace only once the log has stated it.
+      `${at(7)}|METHOD_ENTRY|[4]|01p000000000AAA|ns.MyClass.go()`,
+      `${at(8)}|METHOD_EXIT|[4]|01p000000000AAA|ns.MyClass.go()`,
+      `${at(9)}|METHOD_ENTRY|[5]|01p000000000AAA|MyClass.run()`,
+      `${at(10)}|STATEMENT_EXECUTE|[6]`,
+      `${at(11)}|METHOD_EXIT|[5]|01p000000000AAA|MyClass.run()`,
+      // A class's first use: the exit names the class, and the frame takes its namespace.
+      `${at(12)}|METHOD_ENTRY|[7]|01p000000000AAA|other.MyClass.go()`,
+      `${at(13)}|METHOD_EXIT|[7]|01p000000000AAA|other.MyClass`,
+      `${at(14)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
+    );
+    const { store, strings } = built;
+    const namespaces = [...store.namespace.subarray(1)].map((id) =>
+      id === NONE ? null : strings.text(id),
+    );
+    expect(namespaces).toEqual([null, 'ns', 'ns', null, 'ns', null, null, 'other']);
+    expect(built.namespaces.map((id) => strings.text(id))).toEqual(['ns', 'other']);
+  });
+
+  it('reads a limit block whole, and reports a limit exception and a fatal error', () => {
+    const built = build(
+      `${at(1)}|LIMIT_USAGE_FOR_NS|(default)|`,
+      '  Number of SOQL queries: 2 out of 100',
+      '  Maximum CPU time: 15 out of 10000 ******* CLOSE TO LIMIT',
+      `${at(2)}|EXCEPTION_THROWN|[1]|System.NullPointerException`,
+      `${at(3)}|EXCEPTION_THROWN|[2]|System.LimitException: Too many SOQL queries: 101`,
+      `${at(4)}|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101`,
+      '',
+      'Class.ns.MyClass.run: line 2, column 1',
+    );
+    expect(built.snapshots).toHaveLength(1);
+    const [snapshot] = built.snapshots;
+    expect(snapshot?.namespace).toBe('default');
+    expect(snapshot?.limits.soqlQueries).toEqual({ used: 2, limit: 100, percentUsed: 2 });
+    expect(snapshot?.limits.cpuTime.used).toBe(15);
+    expect(built.issues.list.map((i) => [i.type, i.id, i.summary, i.description])).toEqual([
+      ['error', 3, 'System.LimitException: Too many SOQL queries: 101', ''],
+      [
+        'fatal',
+        4,
+        'System.LimitException: Too many SOQL queries: 101',
+        'Class.ns.MyClass.run: line 2, column 1',
+      ],
+    ]);
   });
 
   it('reads a CRLF log as an LF log, and starts at the first timestamped line', () => {
