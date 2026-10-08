@@ -7,13 +7,13 @@
  * API, not facts of the log.
  */
 
-import type { ApexLog, LogEvent } from '../../src/index.js';
-import { idOfType } from '../../src/next/catalog/catalog.js';
-import { EVENT_TYPE_NAMES } from '../../src/next/catalog/types.js';
-import type { Built } from '../../src/next/engine/builder.js';
-import { FLAG } from '../../src/next/engine/builder.js';
-import { governorLimits } from '../../src/next/limits.js';
-import type { Store } from '../../src/next/store/store.js';
+import type { ApexLog, LogEvent } from '../../../src/index.js';
+import { idOfType } from '../../../src/next/catalog/catalog.js';
+import { EVENT_TYPE_NAMES } from '../../../src/next/catalog/types.js';
+import type { Built } from '../../../src/next/engine/builder.js';
+import { FLAG } from '../../../src/next/engine/builder.js';
+import { governorLimits } from '../../../src/next/limits.js';
+import type { Store } from '../../../src/next/store/store.js';
 import {
   COUNTER,
   EXTERNAL_LINE,
@@ -22,7 +22,7 @@ import {
   NONE,
   SELF,
   TOTAL,
-} from '../../src/next/store/store.js';
+} from '../../../src/next/store/store.js';
 import type { Projection } from './project.js';
 import { LOG_KEY, preOrder } from './project.js';
 

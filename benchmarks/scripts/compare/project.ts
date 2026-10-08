@@ -7,7 +7,7 @@
  * becomes that path.
  */
 
-import type { ApexLog, LogEvent } from '../../src/index.js';
+import type { ApexLog, LogEvent } from '../../../src/index.js';
 
 export type Projection = Iterable<readonly [key: string, value: unknown]>;
 

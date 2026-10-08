@@ -1,13 +1,13 @@
-// Prints numbers only, never log text, so its output can be committed as src/__bench__/profiles.json.
-//   node --import tsx scripts/bench-profiles.ts --dir=<folder of .log and .txt files>
+// Prints numbers only, never log text, so its output can be committed as benchmarks/fixtures/profiles.json.
+//   node --import tsx benchmarks/scripts/profiles.ts --dir=<folder of .log and .txt files>
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { argv } from 'node:process';
-import type { LogShape, ProfileName } from '../src/__bench__/measure.js';
-import { LogTally, profileBands } from '../src/__bench__/measure.js';
-import { utf8ByteLength } from '../src/utf8.js';
-import { flag, runIfMain } from './cli.js';
+import { flag, runIfMain } from '../../scripts/cli.js';
+import { utf8ByteLength } from '../../src/utf8.js';
+import type { LogShape, ProfileName } from '../fixtures/measure.js';
+import { LogTally, profileBands } from '../fixtures/measure.js';
 
 const bands = Object.entries(profileBands) as [ProfileName, number][];
 

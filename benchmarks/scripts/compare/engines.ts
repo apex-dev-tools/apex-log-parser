@@ -3,8 +3,8 @@
  * harness times and compares them all the same way.
  */
 
-import type { ApexLog } from '../../src/index.js';
-import type { Built } from '../../src/next/engine/builder.js';
+import type { ApexLog } from '../../../src/index.js';
+import type { Built } from '../../../src/next/engine/builder.js';
 import { legacyFacts, nextFacts } from './facts.js';
 import type { KnownDifference } from './known.js';
 import { KNOWN } from './known.js';
@@ -27,7 +27,7 @@ const legacy: Engine = {
   name: 'legacy',
   // Every consumer decodes the whole file to a string before it calls parse().
   parse: async (bytes) => {
-    const { parse } = await import('../../src/index.js');
+    const { parse } = await import('../../../src/index.js');
     return parse(new TextDecoder().decode(bytes));
   },
   project: (result) => projectLegacy(result as ApexLog),
@@ -39,8 +39,8 @@ const next: Engine = {
   name: 'next',
   parse: async (bytes) => {
     const [{ NodeSource }, { LogBuilder }] = await Promise.all([
-      import('../../src/next/bytes/node.js'),
-      import('../../src/next/engine/builder.js'),
+      import('../../../src/next/bytes/node.js'),
+      import('../../../src/next/engine/builder.js'),
     ]);
     return new LogBuilder(new NodeSource(bytes)).build();
   },

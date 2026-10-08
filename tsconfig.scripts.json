@@ -7,6 +7,6 @@
     "rootDir": ".",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["scripts/**/*.ts"],
+  "include": ["scripts/**/*.ts", "benchmarks/**/*.ts"],
   "exclude": ["scripts/__fixtures__"]
 }

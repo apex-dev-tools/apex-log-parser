@@ -1,8 +1,8 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import type { LogEvent } from '../index.js';
-import { parse } from '../index.js';
+import type { LogEvent } from '../../src/index.js';
+import { parse } from '../../src/index.js';
 
 export type ProfileName = 'small' | 'developer' | 'large';
 

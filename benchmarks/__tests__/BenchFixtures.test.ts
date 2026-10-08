@@ -1,12 +1,13 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { benchLogs, makeLog, profileLog, profileSettings } from '../__bench__/fixtures.js';
-import type { LogShape, ProfileName } from '../__bench__/measure.js';
-import { LogTally, profileBands } from '../__bench__/measure.js';
-import profiles from '../__bench__/profiles.json' with { type: 'json' };
-import type { ApexLog, LogEvent } from '../index.js';
-import { parse } from '../index.js';
+
+import type { ApexLog, LogEvent } from '../../src/index.js';
+import { parse } from '../../src/index.js';
+import { benchLogs, makeLog, profileLog, profileSettings } from '../fixtures/fixtures.js';
+import type { LogShape, ProfileName } from '../fixtures/measure.js';
+import { LogTally, profileBands } from '../fixtures/measure.js';
+import profiles from '../fixtures/profiles.json' with { type: 'json' };
 
 // A changed log changes what the benchmarks measure, so it must be deliberate.
 const pinnedHashes: Record<string, string> = {

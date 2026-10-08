@@ -1,4 +1,4 @@
-import { report } from '../bench-large.js';
+import { report } from '../scripts/large.js';
 
 describe('bench-large', () => {
   it('reports each log, with its change from the baseline', () => {

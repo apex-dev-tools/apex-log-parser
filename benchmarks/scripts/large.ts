@@ -4,11 +4,11 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { argv } from 'node:process';
-import { largeLogs, makeLog } from '../src/__bench__/fixtures.js';
-import { parse } from '../src/index.js';
-import { NodeSource } from '../src/next/bytes/node.js';
-import { LogBuilder } from '../src/next/engine/builder.js';
-import { flag, runIfMain } from './cli.js';
+import { flag, runIfMain } from '../../scripts/cli.js';
+import { parse } from '../../src/index.js';
+import { NodeSource } from '../../src/next/bytes/node.js';
+import { LogBuilder } from '../../src/next/engine/builder.js';
+import { largeLogs, makeLog } from '../fixtures/fixtures.js';
 import type { Measure } from './versus.js';
 import { parts } from './versus.js';
 

@@ -22,8 +22,8 @@ import {
 import { join, relative } from 'node:path';
 import { argv, stderr } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { runJsonChild } from '../child.js';
-import { flag, runIfMain } from '../cli.js';
+import { runJsonChild } from '../../../scripts/child.js';
+import { flag, runIfMain } from '../../../scripts/cli.js';
 import type { DiffResult } from './diff.js';
 import { diffProjections } from './diff.js';
 import { engine } from './engines.js';

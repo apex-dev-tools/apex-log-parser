@@ -2,8 +2,8 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { bench, describe } from 'vitest';
-import { parse } from '../index.js';
-import { benchLogs, makeLog } from './fixtures.js';
+import { parse } from '../src/index.js';
+import { benchLogs, makeLog } from './fixtures/fixtures.js';
 
 describe('parse', () => {
   for (const [name, options] of Object.entries(benchLogs)) {

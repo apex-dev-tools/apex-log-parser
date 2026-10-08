@@ -2,12 +2,12 @@
  * Times one engine on one log, in a process of its own, and prints the result as one JSON line.
  * `compare.ts` starts it once per log and engine, so no engine inherits another's heap or JIT state.
  *
- * Usage: node --expose-gc --import tsx scripts/compare/measure.ts --engine=<name> --file=<path> [--runs=5]
+ * Usage: node --expose-gc --import tsx benchmarks/scripts/compare/measure.ts --engine=<name> --file=<path> [--runs=5]
  */
 
 import { readFileSync } from 'node:fs';
 import { argv, memoryUsage } from 'node:process';
-import { flag, runIfMain } from '../cli.js';
+import { flag, runIfMain } from '../../../scripts/cli.js';
 import type { Engine } from './engines.js';
 import { engine } from './engines.js';
 

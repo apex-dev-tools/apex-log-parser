@@ -1,4 +1,4 @@
-import { fromRatio, parts, versus } from '../versus.js';
+import { fromRatio, parts, versus } from '../scripts/versus.js';
 
 describe('versus', () => {
   it('states times smaller or larger, and the change', () => {

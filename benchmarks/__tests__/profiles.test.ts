@@ -1,4 +1,4 @@
-import { bandOf, profile } from '../bench-profiles.js';
+import { bandOf, profile } from '../scripts/profiles.js';
 
 const log =
   '64.0 APEX_CODE,FINE\n' +

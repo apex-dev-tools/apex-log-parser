@@ -4,16 +4,16 @@ import { join } from 'node:path';
 import { parse } from '../../src/index.js';
 import { NodeSource } from '../../src/next/bytes/node.js';
 import { LogBuilder } from '../../src/next/engine/builder.js';
-import { findLogs } from '../compare/compare.js';
-import { compareKeys, diffProjections, same } from '../compare/diff.js';
-import type { LogFact } from '../compare/facts.js';
-import { legacyFacts, nextFacts } from '../compare/facts.js';
-import type { Entry, KnownDifference } from '../compare/known.js';
-import { explainer } from '../compare/known.js';
-import type { Projection } from '../compare/project.js';
-import { canonical, projectLegacy } from '../compare/project.js';
-import type { FileResult } from '../compare/report.js';
-import { percentile, renderReport } from '../compare/report.js';
+import { findLogs } from '../scripts/compare/compare.js';
+import { compareKeys, diffProjections, same } from '../scripts/compare/diff.js';
+import type { LogFact } from '../scripts/compare/facts.js';
+import { legacyFacts, nextFacts } from '../scripts/compare/facts.js';
+import type { Entry, KnownDifference } from '../scripts/compare/known.js';
+import { explainer } from '../scripts/compare/known.js';
+import type { Projection } from '../scripts/compare/project.js';
+import { canonical, projectLegacy } from '../scripts/compare/project.js';
+import type { FileResult } from '../scripts/compare/report.js';
+import { percentile, renderReport } from '../scripts/compare/report.js';
 
 const log = [
   '64.0 APEX_CODE,FINE;DB,INFO',
