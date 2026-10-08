@@ -147,6 +147,12 @@ const DOT = 0x2e;
 const SPACE = 0x20;
 const STAR = 0x2a;
 
+/**
+ * Nanoseconds, before the log states any. -0, not 0: a double, as every time is, so V8 never
+ * changes the builder's layout mid-parse, which would throw away the code optimised for it.
+ */
+const NO_TIME = -0;
+
 // Looser than TRUNCATION_MARKER, as today: a line only reaches these tests when it is not text.
 const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
 // The platform can write the marker inside an event's line, which it then cuts.
@@ -221,16 +227,16 @@ export class LogBuilder {
   private pos = 0;
   private discontinuity = false;
   /** Today's `lastTimestamp`: the last row's time, which a folded exit does not move. */
-  private lastTimestamp = 0;
-  /** Nanoseconds; 0 until the log states it reached the maximum size. */
-  private maxSizeTimestamp = 0;
+  private lastTimestamp = NO_TIME;
+  /** Nanoseconds; `NO_TIME` until the log states it reached the maximum size. */
+  private maxSizeTimestamp = NO_TIME;
 
   // The next event, read but not yet placed.
   private hasNext = false;
   private nextType = 0;
   private nextStart = 0;
   private nextEnd = 0;
-  private nextTimestamp = 0;
+  private nextTimestamp = NO_TIME;
   private nextLine = NO_LINE;
   private nextFlags = 0;
   /** The namespace the next line states: a string id, `UNSTATED` or `DEFAULT`. */
@@ -250,7 +256,7 @@ export class LogBuilder {
   /** Where the last event's own line ends, before its continuation lines. */
   private lastLineEnd = 0;
   /** Nanoseconds: the last event's own time, which a folded exit or a merged entry keeps. */
-  private lastAt = 0;
+  private lastAt = NO_TIME;
   // Where the last line `readEvent` judged an unknown type has that type.
   private unknownStart = 0;
   private unknownEnd = 0;
