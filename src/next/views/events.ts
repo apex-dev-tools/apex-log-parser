@@ -32,7 +32,7 @@ interface EventBase {
   readonly category: Category | null;
   readonly debugCategory: DebugCategory;
   readonly debugLevel: Level;
-  /** 0 for an event at the top of the log. */
+  /** 1 for an event at the top of the log, which is depth 0, as `columns.depth` states. */
   readonly depth: number;
   /** The frame that holds this event; null at the top of the log. */
   readonly parent: FrameEvent | null;
@@ -163,8 +163,7 @@ class EventView {
   }
 
   get depth(): number {
-    // The store counts the log as depth 0.
-    return this.store.depth[this.id]! - 1;
+    return this.store.depth[this.id]!;
   }
 
   get parent(): FrameEvent | null {

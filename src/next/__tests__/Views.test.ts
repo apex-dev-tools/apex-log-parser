@@ -52,15 +52,15 @@ describe('LogEvents', () => {
     ]);
   });
 
-  it('links each event to its parent and children, with depth 0 at the top of the log', () => {
+  it('links each event to its parent and children, with the log at depth 0 and its top at 1', () => {
     const events = eventsOf(...method);
     const unit = frame(events.event(1));
     const run = frame(unit.children[0]);
-    expect([unit.parent, unit.depth]).toEqual([null, 0]);
-    expect([run.parent, run.depth]).toEqual([unit, 1]);
+    expect([unit.parent, unit.depth]).toEqual([null, 1]);
+    expect([run.parent, run.depth]).toEqual([unit, 2]);
     expect(run.children.map((e) => e.type)).toEqual(['SOQL_EXECUTE_BEGIN', 'STATEMENT_EXECUTE']);
     expect(run.children).toBe(run.children);
-    expect(run.children.every((e) => e.parent === run && e.depth === 2)).toBe(true);
+    expect(run.children.every((e) => e.parent === run && e.depth === 3)).toBe(true);
   });
 
   it('states times, rollups and the type info, from the columns', () => {
