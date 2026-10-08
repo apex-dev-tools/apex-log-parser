@@ -2,12 +2,18 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { Fields } from '../catalog/types.js';
+import { nodeEngine } from '../node.js';
+import type { ApexLog } from '../views/log.js';
+import { apexLog } from '../views/log.js';
 
 // `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
 declare const TextEncoder: new () => { encode(input: string): Uint8Array };
 
 /** `text` as UTF-8 bytes. */
 export const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+/** The log `text` states, through the views. */
+export const parse = (text: string): ApexLog => apexLog(nodeEngine.build(encode(text)));
 
 const INTEGER = /^-?\d+$/;
 const LINE_NUMBER = /^\[\d+\]$/;
