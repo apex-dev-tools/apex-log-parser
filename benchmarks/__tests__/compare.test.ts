@@ -2,8 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from '../../src/index.js';
-import { NodeSource } from '../../src/next/bytes/node.js';
-import { LogBuilder } from '../../src/next/engine/builder.js';
+import { nodeEngine } from '../../src/next/node.js';
 import { findLogs } from '../scripts/compare/compare.js';
 import { compareKeys, diffProjections, same } from '../scripts/compare/diff.js';
 import type { LogFact } from '../scripts/compare/facts.js';
@@ -198,7 +197,7 @@ describe('diffProjections', () => {
 
 describe('nextFacts', () => {
   const next = (text: string): Entry[] => [
-    ...nextFacts(new LogBuilder(new NodeSource(new TextEncoder().encode(text))).build()),
+    ...nextFacts(nodeEngine.build(new TextEncoder().encode(text))),
   ];
   const vsLegacy = (text: string) => {
     const left = [...legacyFacts(parse(text))];

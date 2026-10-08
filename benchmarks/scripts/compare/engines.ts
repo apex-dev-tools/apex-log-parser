@@ -40,11 +40,9 @@ const legacy: Engine = {
 // The engine and store only, until the views and the async driver exist (steps 5 and 6).
 const next: Engine = {
   name: 'next',
-  entry: 'benchmarks/scripts/compare/next-entry.ts',
-  parse: (module, bytes) => {
-    const { LogBuilder, NodeSource } = module as typeof import('./next-entry.js');
-    return new LogBuilder(new NodeSource(bytes)).build();
-  },
+  entry: 'src/next/node.ts',
+  parse: (module, bytes) =>
+    (module as typeof import('../../../src/next/node.js')).nodeEngine.build(bytes),
   // Until the views exist, the facts are its whole projection.
   project: (result) => nextFacts(result as Built),
   facts: (result) => nextFacts(result as Built),

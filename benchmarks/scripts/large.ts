@@ -6,8 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
 import { parse } from '../../src/index.js';
-import { NodeSource } from '../../src/next/bytes/node.js';
-import { LogBuilder } from '../../src/next/engine/builder.js';
+import { nodeEngine } from '../../src/next/node.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
 import { liveBytes } from './memory.js';
 import type { Measure } from './versus.js';
@@ -26,7 +25,7 @@ const ENGINES: Readonly<Record<string, (log: string) => () => unknown>> = {
   legacy: (log) => () => parse(log),
   next: (log) => {
     const bytes = new TextEncoder().encode(log);
-    return () => new LogBuilder(new NodeSource(bytes)).build();
+    return () => nodeEngine.build(bytes);
   },
 };
 

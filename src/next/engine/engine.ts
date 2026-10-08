@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2026 Certinia Inc. All rights reserved.
+ */
+import type { Source } from '../bytes/source.js';
+import type { Built } from './builder.js';
+import { LogBuilder } from './builder.js';
+
+/** One build's way in: node or browser. Each build holds one for the process. */
+export interface LogEngine {
+  /** The event tree of one log's bytes. */
+  build(bytes: Uint8Array): Built;
+}
+
+/** The engine over one `Source` class. */
+export class SourceEngine implements LogEngine {
+  /**
+   * Never built. V8 drops a class's object layout once no instance of it is alive, and with it the
+   * code it optimised for that layout; this builder keeps every engine class alive between parses.
+   * A field, so no bundler can drop it as unused.
+   */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: held, never read, as the doc says.
+  private readonly idle: LogBuilder;
+  private readonly sourceOf: (bytes: Uint8Array) => Source;
+
+  constructor(sourceOf: (bytes: Uint8Array) => Source) {
+    this.sourceOf = sourceOf;
+    this.idle = new LogBuilder(sourceOf(new Uint8Array(0)));
+  }
+
+  build(bytes: Uint8Array): Built {
+    return new LogBuilder(this.sourceOf(bytes)).build();
+  }
+}
