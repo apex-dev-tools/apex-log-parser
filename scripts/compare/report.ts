@@ -24,8 +24,12 @@ const MB = 1024 * 1024;
 const BANDS = [
   { label: '< 1 MB', max: MB - 1 },
   { label: '1–20 MB', max: 20 * MB },
-  { label: '> 20 MB', max: Number.POSITIVE_INFINITY },
+  { label: '20–50 MB', max: 50 * MB },
+  { label: '50–80 MB', max: 80 * MB },
+  { label: '> 80 MB', max: Number.POSITIVE_INFINITY },
 ] as const;
+/** Logs above this size also get a row each. */
+const LARGE = 20 * MB;
 
 function inBand(results: readonly FileResult[], band: (typeof BANDS)[number]): FileResult[] {
   return results.filter((r) => BANDS.find((b) => r.bytes <= b.max) === band);
@@ -61,6 +65,7 @@ export function renderReport(
     '',
     ...renderParity(results),
     ...renderPerformance(results, [...new Set(engines)]),
+    ...renderLargeLogs(results, [...new Set(engines)]),
     ...renderChange(results, previous, [...new Set(engines)]),
     ...renderErrors(results),
   ];
@@ -159,6 +164,53 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
     }
     out.push('');
   }
+  return out;
+}
+
+/** One row per large log, by size only, so the rows name no log. */
+function renderLargeLogs(results: readonly FileResult[], engines: readonly string[]): string[] {
+  const large = results
+    .filter((r) => r.bytes > LARGE && Object.keys(r.runs).length)
+    .sort((a, b) => a.bytes - b.bytes);
+  if (!large.length) return [];
+  // engines is never empty
+  const baseline = engines[0]!;
+  const others = engines.slice(1);
+  const columns = [
+    ...engines.flatMap((e) => [`${e} warm`, `${e} retained`]),
+    ...others.flatMap((e) => [`${e} speed-up`, `${e} memory`]),
+  ];
+  const row = (cells: readonly string[]): string => `| ${cells.join(' | ')} |`;
+  const timed = (r: FileResult, name: string): Measurement | null => {
+    const m = r.runs[name];
+    return m && !isFailure(m) ? m : null;
+  };
+  const ratio = (base: number | undefined, now: number | undefined, suffix: string): string =>
+    base !== undefined && now ? `${(base / now).toFixed(1)}×${suffix}` : '—';
+  const out = [
+    `### Each log over ${formatBytes(LARGE)}`,
+    '',
+    'Warm and retained per engine; speed-up and memory against the first engine.',
+    '',
+    row(['Size', ...columns]),
+    row(['Size', ...columns].map(() => '---:')),
+  ];
+  for (const r of large) {
+    const base = timed(r, baseline);
+    const figures = engines.flatMap((e) => {
+      const m = timed(r, e);
+      return m ? [formatMs(warm(m)), formatBytes(kept(m))] : ['—', '—'];
+    });
+    const vs = others.flatMap((e) => {
+      const m = timed(r, e);
+      return [
+        ratio(base ? warm(base) : undefined, m ? warm(m) : undefined, ''),
+        ratio(base ? kept(base) : undefined, m ? kept(m) : undefined, ' less'),
+      ];
+    });
+    out.push(row([formatBytes(r.bytes), ...figures, ...vs]));
+  }
+  out.push('');
   return out;
 }
 

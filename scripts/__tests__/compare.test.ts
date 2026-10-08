@@ -374,6 +374,36 @@ describe('report', () => {
     expect(renderReport(now, ['old'])).not.toContain('baseline run');
   });
 
+  it('gives each log over 20 MB a row, by size only', () => {
+    const run = (warmMs: number, retainedBytes: number) => ({
+      coldMs: warmMs,
+      warmRunsMs: [warmMs],
+      retainedBytes,
+    });
+    const MB = 1024 * 1024;
+    const results: FileResult[] = [
+      {
+        file: 'big.log',
+        bytes: 30 * MB,
+        runs: { old: run(400, 300 * MB), new: run(100, 10 * MB) },
+        diffs: {},
+      },
+      {
+        file: 'mid.log',
+        bytes: 10 * MB,
+        runs: { old: run(100, 80 * MB), new: run(30, 3 * MB) },
+        diffs: {},
+      },
+    ];
+    const report = renderReport(results, ['old', 'new']);
+    expect(report).toContain('### 20–50 MB (1 logs)');
+    expect(report).toContain(
+      '| 30.0 MB | 400 ms | 300.0 MB | 100 ms | 10.0 MB | 4.0× | 30.0× less |',
+    );
+    expect(report).not.toContain('| 10.0 MB | 100 ms |');
+    expect(report).not.toContain('big.log');
+  });
+
   it('counts the known differences by rule, and the log as identical', () => {
     const diff = { records: 3, differing: 0, differences: [], explained: { rule: 2 } };
     const results: FileResult[] = [
