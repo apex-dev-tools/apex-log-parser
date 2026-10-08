@@ -279,6 +279,11 @@ export class LogBuilder {
     this.namespaces = new Namespaces(source.bytes, this.strings);
   }
 
+  /** Bytes scanned so far: where the next unread line starts. */
+  get scanned(): number {
+    return this.pos;
+  }
+
   /** The whole build in one call. */
   build(): Built {
     while (!this.scan(Number.POSITIVE_INFINITY));

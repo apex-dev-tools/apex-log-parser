@@ -9,6 +9,8 @@ import { LogBuilder } from './builder.js';
 export interface LogEngine {
   /** The event tree of one log's bytes. */
   build(bytes: Uint8Array): Built;
+  /** A builder over one log's bytes, for a caller that scans it in slices. */
+  builder(bytes: Uint8Array): LogBuilder;
 }
 
 /** The engine over one `Source` class. */
@@ -28,6 +30,10 @@ export class SourceEngine implements LogEngine {
   }
 
   build(bytes: Uint8Array): Built {
-    return new LogBuilder(this.sourceOf(bytes)).build();
+    return this.builder(bytes).build();
+  }
+
+  builder(bytes: Uint8Array): LogBuilder {
+    return new LogBuilder(this.sourceOf(bytes));
   }
 }

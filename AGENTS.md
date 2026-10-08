@@ -34,8 +34,10 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   build: the log's times, the rollups and the flow residuals. `engine/header.ts` reads the debug
   levels, `USER_INFO` and the start time. `engine/issues.ts` holds the log issues and turns them
   into truncation regions. The builder stops at a second log and reports it as an issue.
-  `node.ts` and `browser.ts` are each build's way in: an `Engine` (`engine/engine.ts`) that keeps
-  one idle builder alive. V8 drops a class's object layout once no instance of it is alive, and
+  `node.ts` and `browser.ts` are each build's way in: the async `parse`, and an `Engine`
+  (`engine/engine.ts`) that keeps one idle builder alive. `api/parse.ts` is the driver both share:
+  it reads the source to bytes (`api/sources.ts`), scans in 5 ms slices with `LogBuilder.scan`,
+  and yields between them the build's own way. V8 drops a class's object layout once no instance of it is alive, and
   throws away the code it optimised for it, so without one the parse after a GC runs about 3×
   slower. For the same reason a builder field that holds a time starts as a double (`NO_TIME`,
   -0), not 0. `benchmarks/__tests__/deopt.test.ts` fails when either breaks.
