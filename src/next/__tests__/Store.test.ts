@@ -62,10 +62,20 @@ describe('Store', () => {
     expect([empty.count, empty.counts[0]]).toEqual([1, 3]);
   });
 
-  it('throws on a row whose type is past the type count', () => {
+  it('throws on a type, or a row’s type, past the type count', () => {
     const store = new Store(0);
     store.add(3, 0, 0, 0, NONE, 0);
-    expect(() => store.finish(3)).toThrow(RangeError);
+    store.finish(3);
+    expect(() => store.rowsOfType(0)).toThrow(RangeError);
+    expect(() => store.rowsOfType(3)).toThrow(RangeError);
+    expect(() => store.rowsOfType(-1)).toThrow(RangeError);
+  });
+
+  it('builds the type index once', () => {
+    const store = new Store(0);
+    for (const type of [1, 0]) store.add(type, 0, 0, 0, NONE, 0);
+    store.finish(2);
+    expect(store.rowsOfType(0).buffer).toBe(store.rowsOfType(1).buffer);
   });
 
   it('trims to its rows on finish, and lists each type’s rows in id order', () => {
@@ -74,9 +84,7 @@ describe('Store', () => {
     store.countsOf(1);
     store.finish(4);
     expect([store.type.length, store.durationSelf.length, store.counts.length]).toEqual([5, 5, 14]);
-    const rowsOf = (type: number): number[] => [
-      ...store.typeRows.subarray(store.typeStart[type], store.typeStart[type + 1]),
-    ];
+    const rowsOf = (type: number): number[] => [...store.rowsOfType(type)];
     expect([rowsOf(0), rowsOf(1), rowsOf(2), rowsOf(3)]).toEqual([[1], [3], [0, 2, 4], []]);
   });
 });

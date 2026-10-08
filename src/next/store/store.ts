@@ -80,9 +80,10 @@ export class Store {
   heap: Float64Array = new Float64Array(MIN_ROWS * HEAP_STRIDE);
   heapSlots = 0;
 
-  /** Each type's rows, in id order, from `typeStart[type]` to `typeStart[type + 1]`. Set by `finish`. */
-  typeRows: Int32Array = new Int32Array(0);
-  typeStart: Int32Array = new Int32Array(0);
+  private typeCount = 0;
+  // Each type's rows, in id order, from `typeStart[type]` to `typeStart[type + 1]`; built on first use.
+  private typeRows: Int32Array | null = null;
+  private typeStart: Int32Array = new Int32Array(0);
 
   constructor(sourceBytes: number) {
     const rows = Math.max(MIN_ROWS, Math.ceil(sourceBytes / BYTES_PER_ROW));
@@ -149,13 +150,28 @@ export class Store {
     return slot * HEAP_STRIDE;
   }
 
-  /** Trims every column to its rows, and indexes the rows by type. Call once, after the last `add`. */
+  /** Trims every column to its rows. Call once, after the last `add`; types run from 0 to `typeCount - 1`. */
   finish(typeCount: number): void {
-    const n = this.count;
-    this.resize(n);
+    this.resize(this.count);
     this.counts = resized(this.counts, this.countSlots * COUNT_STRIDE);
     this.heap = resized(this.heap, this.heapSlots * HEAP_STRIDE);
+    this.typeCount = typeCount;
+  }
 
+  /**
+   * The ids of every row of `type`, ascending. Only after `finish`: the first call indexes every
+   * type, and a row added after it is not in the index. A parse that never asks does not pay.
+   */
+  rowsOfType(type: number): Int32Array {
+    // subarray takes undefined as "to the end", so a type past the index would answer every row.
+    if (!(type >= 0 && type < this.typeCount)) throw new RangeError(`No type ${type}`);
+    const rows = this.typeRows ?? this.indexTypes();
+    return rows.subarray(this.typeStart[type], this.typeStart[type + 1]);
+  }
+
+  private indexTypes(): Int32Array {
+    const n = this.count;
+    const typeCount = this.typeCount;
     // A counting sort, so ids ascend within each type; every index below is checked or in range.
     const typeStart = new Int32Array(typeCount + 1);
     for (let id = 0; id < n; id++) {
@@ -169,6 +185,7 @@ export class Store {
     for (let id = 0; id < n; id++) typeRows[next[this.type[id]!]!++] = id;
     this.typeStart = typeStart;
     this.typeRows = typeRows;
+    return typeRows;
   }
 
   /** Every per-row column at `size` rows: the one list of them. */
