@@ -4,7 +4,7 @@
 
 import process, { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
-import { nodeEngine } from '../../src/next/node.js';
+import { nodeEngine } from '../../src/next/engine/node.js';
 import type { ApexLog } from '../../src/next/views/log.js';
 import { apexLog } from '../../src/next/views/log.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';

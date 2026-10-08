@@ -19,8 +19,8 @@ const ROUNDS = 10;
 
 // One build per process, as in production: each entry holds an idle builder over its own source.
 async function engineNamed(name: string | null): Promise<LogEngine> {
-  if (name === 'browser') return (await import('../../src/next/browser.js')).browserEngine;
-  return (await import('../../src/next/node.js')).nodeEngine;
+  if (name === 'browser') return (await import('../../src/next/engine/browser.js')).browserEngine;
+  return (await import('../../src/next/engine/node.js')).nodeEngine;
 }
 
 // Synchronous, as V8's trace is, so no line of one phase can land after the next one's marker.

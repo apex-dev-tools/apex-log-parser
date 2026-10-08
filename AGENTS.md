@@ -16,10 +16,10 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
 - `src/types.ts` — types and their const companions, public and internal together.
 - `src/limits.ts` — governor limit parsing and aggregation.
 - `src/utf8.ts` — UTF-8 byte length, for `ApexLog.size`. Internal; not exported.
-- `src/index.ts` — the only entry point. Runtime values, public types and their const companions.
+- `src/index.ts` — the root entry point. Runtime values, public types and their const companions.
 - `src/__tests__/` — vitest suites. `helpers.ts` holds shared fixtures.
 - `src/next/` — the new parser, which replaces today's for v1. Standalone: it imports nothing from
-  the rest of `src/`. Not exported yet. `catalog/catalog.ts` holds one hand-written entry per event
+  the rest of `src/`. Exported as `./next`, a preview until v1. `catalog/catalog.ts` holds one hand-written entry per event
   type: its type info, its field names and its text rule. A rule names the fields it reads; the
   catalog resolves each name to a position at load, and throws on a name the entry does not list.
   `catalog/fields.ts` is type only: TSDoc for each type and field, so editors show it and no bundle
@@ -34,8 +34,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   build: the log's times, the rollups and the flow residuals. `engine/header.ts` reads the debug
   levels, `USER_INFO` and the start time. `engine/issues.ts` holds the log issues and turns them
   into truncation regions. The builder stops at a second log and reports it as an issue.
-  `node.ts` and `browser.ts` are each build's way in: the async `parse`, and an `Engine`
-  (`engine/engine.ts`) that keeps one idle builder alive. `api/parse.ts` is the driver both share:
+  `node.ts` and `browser.ts` are each build's entry: the async `parse`, and the surface both
+  share (`api/surface.ts`). `engine/node.ts` and `engine/browser.ts` hold each build's `Engine`
+  (`engine/engine.ts`), which keeps one idle builder alive. `api/parse.ts` is the driver both share:
   it reads the source to bytes (`api/sources.ts`), scans in 5 ms slices with `LogBuilder.scan`,
   and yields between them the build's own way. V8 drops a class's object layout once no instance of it is alive, and
   throws away the code it optimised for it, so without one the parse after a GC runs about 3×
@@ -87,8 +88,13 @@ any commit.
 
 ## The public API surface
 
-One entry point, the root (`.`). It exports `parse`, `ApexLogParser`, the event classes, the public
-types and their const companions (`LOG_LEVEL`, `LOG_CATEGORY`, ...).
+Two entry points:
+
+- The root (`.`). It exports `parse`, `ApexLogParser`, the event classes, the public types and their
+  const companions (`LOG_LEVEL`, `LOG_CATEGORY`, ...).
+- `./next`, the new parser. Its `node` condition gives the node build, and every other host gets the
+  browser build. Both export the same surface: `parse`, the catalog (`EVENT_TYPES`, `eventType`),
+  the const companions and the public types. `src/next/__tests__/PublicApi.test.ts` pins it.
 
 Export only what a consumer uses in production. A helper that only a consumer's tests would reuse,
 such as `emptyLimits`, stays internal.

@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { idOfType } from '../catalog/catalog.js';
-import { nodeEngine } from '../node.js';
+import { nodeEngine } from '../engine/node.js';
 import type { ApexLog } from '../views/log.js';
 import { apexLog } from '../views/log.js';
 import { encode } from './helpers.js';

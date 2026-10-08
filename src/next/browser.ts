@@ -4,10 +4,10 @@
 import type { ParseOptions } from './api/parse.js';
 import { parseWith } from './api/parse.js';
 import type { LogSource } from './api/sources.js';
-import { BrowserSource } from './bytes/browser.js';
-import type { LogEngine } from './engine/engine.js';
-import { SourceEngine } from './engine/engine.js';
+import { browserEngine } from './engine/browser.js';
 import type { ApexLog } from './views/log.js';
+
+export * from './api/surface.js';
 
 interface Port {
   onmessage: (() => void) | null;
@@ -16,9 +16,6 @@ interface Port {
 }
 declare const MessageChannel: new () => { port1: Port; port2: Port };
 declare const scheduler: { yield?: () => Promise<void> } | undefined;
-
-/** The browser build's engine. */
-export const browserEngine: LogEngine = new SourceEngine((bytes) => new BrowserSource(bytes));
 
 /**
  * `scheduler.yield` resumes ahead of other queued tasks, where the browser has it (not Safari). A

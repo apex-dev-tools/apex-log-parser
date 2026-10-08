@@ -41,9 +41,9 @@ const legacy: Engine = {
 // The build only, until the async driver exists (step 6): the views read it lazily, so they are untimed.
 const next: Engine = {
   name: 'next',
-  entry: 'src/next/node.ts',
+  entry: 'src/next/engine/node.ts',
   parse: (module, bytes) =>
-    (module as typeof import('../../../src/next/node.js')).nodeEngine.build(bytes),
+    (module as typeof import('../../../src/next/engine/node.js')).nodeEngine.build(bytes),
   project: (result) => nextProjection(apexLog(result as Built)),
   facts: (result) => nextFacts(apexLog(result as Built)),
   known: KNOWN,

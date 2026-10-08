@@ -1,7 +1,12 @@
 import { defineConfig } from 'tsdown';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // package.json's `node` condition picks the next parser's node build; every other host the browser one.
+  entry: {
+    index: 'src/index.ts',
+    'next/node': 'src/next/node.ts',
+    'next/browser': 'src/next/browser.ts',
+  },
   format: 'esm',
   dts: false,
   clean: true,

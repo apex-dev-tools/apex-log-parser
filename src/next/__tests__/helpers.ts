@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { Fields } from '../catalog/types.js';
-import { nodeEngine } from '../node.js';
+import { nodeEngine } from '../engine/node.js';
 import type { ApexLog } from '../views/log.js';
 import { apexLog } from '../views/log.js';
 

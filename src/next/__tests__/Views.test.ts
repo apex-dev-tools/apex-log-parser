@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { nodeEngine } from '../node.js';
+import { nodeEngine } from '../engine/node.js';
 import type { ApexEvent, FrameEvent } from '../views/events.js';
 import { LogEvents } from '../views/events.js';
 import { encode } from './helpers.js';

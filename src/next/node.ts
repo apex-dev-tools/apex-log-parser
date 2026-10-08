@@ -4,15 +4,12 @@
 import type { ParseOptions } from './api/parse.js';
 import { parseWith } from './api/parse.js';
 import type { LogSource } from './api/sources.js';
-import { NodeSource } from './bytes/node.js';
-import type { LogEngine } from './engine/engine.js';
-import { SourceEngine } from './engine/engine.js';
+import { nodeEngine } from './engine/node.js';
 import type { ApexLog } from './views/log.js';
 
-declare const setImmediate: (callback: () => void) => unknown;
+export * from './api/surface.js';
 
-/** The node build's engine. */
-export const nodeEngine: LogEngine = new SourceEngine((bytes) => new NodeSource(bytes));
+declare const setImmediate: (callback: () => void) => unknown;
 
 // setImmediate runs after pending I/O, so a parse never starves the event loop.
 const yieldToHost = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
