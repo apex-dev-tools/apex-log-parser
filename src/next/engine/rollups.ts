@@ -66,7 +66,9 @@ export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
  * Counts and heap sum, the heap peak takes the highest, and heap self comes from leaves only.
  */
 export function rollUp(store: Store, isFrame: Uint8Array): void {
-  // The column starts at 0, and each row adds its total and takes it off its parent.
+  // The column starts at 0, and each row adds its total and takes it off its parent. Row 0 first:
+  // V8 optimises the loop before code after it has run, so a line there deopts on every parse.
+  store.durationSelf[0]! += total(store, 0);
   for (let id = store.count - 1; id > 0; id--) {
     // id > 0, so it has a parent row
     const parent = store.parent[id]!;
@@ -95,7 +97,6 @@ export function rollUp(store: Store, isFrame: Uint8Array): void {
         heap[to + HEAP.peak] = heap[from + HEAP.peak]!;
     }
   }
-  store.durationSelf[0]! += total(store, 0);
 }
 
 /**

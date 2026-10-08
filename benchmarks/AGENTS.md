@@ -24,9 +24,9 @@ applies.
 - `scripts/micro/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's
   low-level choices (`docs/adr/0004`), in Node and headless Chromium.
 - `scripts/versus.ts` — the one wording for a comparison: `4.4× faster (-77.6%)`.
-- `scripts/deopt.ts` — parses the 8 MB log until V8 has optimised the engine, then after each of
-  several full GCs. `__tests__/deopt.test.ts` runs it under `--trace-deopt` for each build and
-  fails on any deopt a GC causes.
+- `scripts/deopt.ts` — parses the 8 MB log until V8 has optimised the engine, then in a plain
+  loop, then after each of several full GCs. `__tests__/deopt.test.ts` runs it under
+  `--trace-deopt` for each build. It fails on any deopt in the loop, and on any deopt a GC causes.
 - `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
   GC's freeing has finished. One `gc()` is not enough, because V8 frees buffer memory off the
   main thread.

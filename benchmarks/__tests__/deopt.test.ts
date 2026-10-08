@@ -1,16 +1,20 @@
 import { spawnSync } from 'node:child_process';
 import { execPath } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { MARKER } from '../scripts/deopt.js';
+import { GC_MARKER, PLAIN_MARKER } from '../scripts/deopt.js';
 
 const script = fileURLToPath(new URL('../scripts/deopt.ts', import.meta.url));
+const DEOPT = /bailout \(kind/;
 // The two deopts a GC causes when the engine's object layouts die with the last parse.
 const LOST_TO_GC = /reason: (weak objects|wrong map)/;
 // Proof the trace is read at all, so a V8 that words it otherwise fails here, not passes.
 const OPTIMISED = /completed \w+ .*\breadEvent\b/;
 
+const linesOf = (text: string, pattern: RegExp): string[] =>
+  text.split('\n').filter((line) => pattern.test(line));
+
 describe.each(['node', 'browser'])('the %s engine', (engine) => {
-  it('keeps its optimised code across full GCs between parses', { timeout: 60_000 }, () => {
+  const run = (): { warmUp: string; plain: string; afterGc: string } => {
     const child = spawnSync(
       execPath,
       [
@@ -25,10 +29,18 @@ describe.each(['node', 'browser'])('the %s engine', (engine) => {
       { encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 },
     );
     expect(child.status, child.stderr).toBe(0);
-    const [before = '', after] = child.stdout.split(MARKER);
-    expect(after, 'the script printed no marker').toBeDefined();
-    expect(before).toMatch(OPTIMISED);
-    const lost = (after ?? '').split('\n').filter((line) => LOST_TO_GC.test(line));
-    expect(lost).toEqual([]);
+    const [warmUp = '', rest = ''] = child.stdout.split(PLAIN_MARKER);
+    const [plain = '', afterGc] = rest.split(GC_MARKER);
+    expect(afterGc, 'the script printed no markers').toBeDefined();
+    return { warmUp, plain, afterGc: afterGc ?? '' };
+  };
+
+  it('keeps its optimised code in a loop of parses, and across full GCs between them', {
+    timeout: 60_000,
+  }, () => {
+    const { warmUp, plain, afterGc } = run();
+    expect(warmUp).toMatch(OPTIMISED);
+    expect(linesOf(plain, DEOPT)).toEqual([]);
+    expect(linesOf(afterGc, LOST_TO_GC)).toEqual([]);
   });
 });
