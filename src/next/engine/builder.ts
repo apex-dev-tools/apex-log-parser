@@ -153,6 +153,11 @@ const STAR = 0x2a;
  * changes the builder's layout mid-parse, which would throw away the code optimised for it.
  */
 const NO_TIME = -0;
+/** `eventsStart` before `scan` reads the header; -1 means a log with no timestamped line. */
+const UNREAD = -2;
+
+// `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
+declare const performance: { now(): number };
 
 // Looser than TRUNCATION_MARKER, as today: a line only reaches these tests when it is not text.
 const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
@@ -226,6 +231,8 @@ export class LogBuilder {
   /** Bytes; today's running live heap, clamped at 0. */
   private runningHeap = 0;
 
+  /** Where the first timestamped line starts, -1 when none does; `UNREAD` until `scan` starts. */
+  private eventsStart = UNREAD;
   /** Where the next unread line starts. */
   private pos = 0;
   private discontinuity = false;
@@ -272,18 +279,46 @@ export class LogBuilder {
     this.namespaces = new Namespaces(source.bytes, this.strings);
   }
 
+  /** The whole build in one call. */
   build(): Built {
+    while (!this.scan(Number.POSITIVE_INFINITY));
+    return this.finish();
+  }
+
+  /**
+   * Scans until the log's events end, or until `deadline`, a `performance.now()` time, passes.
+   * True once they end; call again to go on, then `finish`.
+   */
+  scan(deadline: number): boolean {
+    if (this.eventsStart === UNREAD) this.begin();
     const store = this.store;
-    store.add(LOG_TYPE, 0, 0, 0, NONE, 0);
-    const len = this.bytes.length;
-    const eventsStart = this.firstEventLine();
-    this.pos = Math.max(0, eventsStart);
-    this.readNext();
-    while (this.hasNext) {
+    // A clock read costs more than a step, so a slice reads it once per 256 steps.
+    let steps = 0;
+    for (;;) {
+      if (this.frameIds.length) {
+        steps = this.parseTree(deadline, steps);
+        if (steps < 0) return false;
+      }
+      if (!this.hasNext) return true;
       const id = this.takeChild(0, 1, -1);
       // id was added by take, so it has a type
-      if (id !== NONE && IS_FRAME[store.type[id]!]) this.parseTree(id);
+      if (id !== NONE && IS_FRAME[store.type[id]!]) this.open(id);
+      if ((++steps & 255) === 0 && performance.now() >= deadline) return false;
     }
+  }
+
+  private begin(): void {
+    this.store.add(LOG_TYPE, 0, 0, 0, NONE, 0);
+    this.eventsStart = this.firstEventLine();
+    this.pos = Math.max(0, this.eventsStart);
+    this.readNext();
+  }
+
+  /** Today's passes over the scanned tree, and the header; once `scan` returns true. */
+  finish(): Built {
+    const store = this.store;
+    const len = this.bytes.length;
+    const eventsStart = this.eventsStart;
     store.subtreeEnd[0] = store.count;
     // Today's passes, in today's order; the package merge ran while the tree was built.
     const { executionEndTime, first } = setLogTimes(store, this.mergedTail);
@@ -319,12 +354,17 @@ export class LogBuilder {
     };
   }
 
-  /** Today's `parseTree`, iterative, so a deep log cannot overflow the call stack. */
-  private parseTree(root: number): void {
+  /**
+   * Today's `parseTree`, for the frames open now. Iterative, so a deep log cannot overflow the call
+   * stack. Counts on from the slice's `steps` and returns the count once no frame is open, or a
+   * value below 0 once `deadline` passes; the open frames are fields, so the next call goes on from
+   * there. The count is returned, not stored: a field write after the loop made it deopt.
+   */
+  private parseTree(deadline: number, steps: number): number {
     const store = this.store;
     const ids = this.frameIds;
-    this.open(root);
     while (ids.length) {
+      if ((++steps & 255) === 0 && performance.now() >= deadline) return ~steps;
       const top = ids.length - 1;
       // the loop runs only while a frame is open, and take added it, so it has a type
       const frame = ids[top]!;
@@ -364,6 +404,7 @@ export class LogBuilder {
         if (child !== NONE && IS_FRAME[store.type[child]!]) this.open(child);
       }
     }
+    return steps;
   }
 
   /** Today's entry: a row whose type has exits, unless its line made it a leaf. */
