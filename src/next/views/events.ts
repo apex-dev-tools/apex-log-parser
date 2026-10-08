@@ -1,9 +1,10 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { EVENT_TYPES } from '../catalog/catalog.js';
+import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
 import type {
   Category,
+  CpuType,
   DebugCategory,
   EventType,
   EventTypeInfo,
@@ -15,6 +16,7 @@ import { FLAG, IS_FRAME } from '../engine/builder.js';
 import type { Store } from '../store/store.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
+import { EventLines } from './lines.js';
 
 /** A rollup: the own part, and the part with every descendant. */
 export interface SelfTotal {
@@ -59,6 +61,25 @@ interface EventBase extends Rollups {
   readonly namespace: string | null;
   /** The log does not close this frame. Always false for a leaf. */
   readonly isTruncated: boolean;
+  /**
+   * What the event says, as its type's rule reads its line and continuation lines. Null when it
+   * states nothing; a caller that needs a label can use `text ?? type`. Read from the log once.
+   */
+  readonly text: string | null;
+  /** The event's first line as the log states it, without its line ending. */
+  readonly logLine: string;
+  /** A label for the kind of code, as ` (code unit)`, for a type that has one; else null. */
+  readonly suffix: string | null;
+  /** What the event's time is spent on, as `method` or `custom`. Null for a type that states none. */
+  readonly cpuType: CpuType | null;
+  /** `text` names Apex code that a symbol lookup can find. */
+  readonly hasValidSymbols: boolean;
+  /**
+   * Field `name` of the event's first line, as stated: one of `eventType(type).fields`. The type's
+   * last field runs to the line's end, `|` and all. Null when the line has no such field, or it is
+   * empty. Throws a RangeError for a name the type does not list.
+   */
+  field(name: string): string | null;
 }
 
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
@@ -92,11 +113,14 @@ const NO_CHILDREN: readonly ApexEvent[] = Object.freeze([]);
 export class LogEvents {
   private readonly store: Store;
   private readonly strings: StringTable;
+  /** Shared by every event of the build, so no event holds its own. */
+  readonly lines: EventLines;
   private readonly views: (ApexEvent | undefined)[];
 
-  constructor({ store, strings }: Built) {
+  constructor({ store, strings, source }: Built) {
     this.store = store;
     this.strings = strings;
+    this.lines = new EventLines(store, source);
     this.views = new Array(store.count);
   }
 
@@ -208,6 +232,8 @@ class EventView extends RollupView {
   private readonly events: LogEvents;
   private readonly strings: StringTable;
   private kids: readonly ApexEvent[] | null = null;
+  // undefined until read; null is text the line does not state.
+  private said: string | null | undefined = undefined;
 
   constructor(events: LogEvents, store: Store, strings: StringTable, id: number) {
     super(store, id);
@@ -275,5 +301,35 @@ class EventView extends RollupView {
 
   get isTruncated(): boolean {
     return (this.store.flags[this.id]! & FLAG.truncated) !== 0;
+  }
+
+  get text(): string | null {
+    if (this.said === undefined) this.said = this.events.lines.text(this.id);
+    return this.said;
+  }
+
+  get logLine(): string {
+    return this.events.lines.logLine(this.id);
+  }
+
+  get suffix(): string | null {
+    return this.events.lines.suffix(this.id);
+  }
+
+  get cpuType(): CpuType | null {
+    return this.events.lines.cpuType(this.id);
+  }
+
+  /** The type's, unless the line made the event a leaf, as a VF call with no method. */
+  get hasValidSymbols(): boolean {
+    const store = this.store;
+    // id is a row, so its type is a type id
+    return (
+      GRAMMAR[store.type[this.id]!]!.hasValidSymbols && !(store.flags[this.id]! & FLAG.notEntry)
+    );
+  }
+
+  field(name: string): string | null {
+    return this.events.lines.field(this.id, name);
   }
 }

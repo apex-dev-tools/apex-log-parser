@@ -5,6 +5,7 @@ import type { Fields } from '../catalog/types.js';
 import { continuationText } from './lines.js';
 import type { Source } from './source.js';
 
+const CR = 0x0d;
 const PIPE = 0x7c;
 const OPEN = 0x5b;
 const CLOSE = 0x5d;
@@ -64,6 +65,20 @@ export class ByteFields implements Fields {
     this.end = end;
     this.continuationStart = continuationStart;
     this.continuationEnd = continuationEnd;
+  }
+
+  /**
+   * As `reset`, for a stored row: bytes `start` to `end` hold its line, then any continuation
+   * lines. Only a line ending in `\n` loses its `\r`, as the engine's `end` already states.
+   */
+  resetRow(start: number, end: number): void {
+    const lf = this.source.lineEnd(start);
+    if (lf < 0 || lf >= end) {
+      this.reset(start, end);
+      return;
+    }
+    const lineEnd = lf > start && this.bytes[lf - 1] === CR ? lf - 1 : lf;
+    this.reset(start, lineEnd, lf + 1, end);
   }
 
   /**

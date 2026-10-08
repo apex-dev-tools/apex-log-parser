@@ -2,9 +2,11 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { EventFields } from './fields.js';
-import type { AfterRule, FieldPosition, TextRule, TextSpec } from './text.js';
+import type { AfterRule, CpuRule, CpuSpec, FieldPosition, TextRule, TextSpec } from './text.js';
 import {
+  codeUnitCpu,
   codeUnitText,
+  codeUnitTypeText,
   constructorText,
   flowActionDetailText,
   flowActionErrorText,
@@ -13,6 +15,7 @@ import {
   limitsForNamespaceAfter,
   lineText,
   managedPackageText,
+  methodEntryCpu,
   methodExitText,
   rule,
   validationFormulaAfter,
@@ -28,6 +31,7 @@ import type {
   Fields,
   Kind,
   Level,
+  LineFields,
   Shape,
 } from './types.js';
 import { EVENT_TYPE_NAMES } from './types.js';
@@ -122,11 +126,13 @@ interface PointDef extends CommonDef {
 
 type FieldName<T extends EventType> = keyof EventFields[T] & string;
 
-/** One hand-written catalog entry. Omitted keys take the defaults in `infoOf`, `grammarOf` and `textOf`. */
+/** One hand-written catalog entry. Omitted keys take the defaults in `infoOf`, `grammarOf` and `lineRulesOf`. */
 type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef) & {
   /** The line's fields from field 2 on, in order. */
   readonly fields?: readonly FieldName<T>[];
   readonly text?: TextSpec<FieldName<T>>;
+  /** The cpuType, read from the line, for a type whose events differ; else `cpu` holds. */
+  readonly cpuOf?: CpuSpec<FieldName<T>>;
   readonly count?: Count;
   /** The row count the line states, credited to the frame the line opens or closes. */
   readonly rows?: { readonly field: FieldName<T>; readonly of: RowsOf };
@@ -293,6 +299,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'apexCode',
     level: 'ERROR',
     cpu: 'method',
+    cpuOf: codeUnitCpu,
     suffix: ' (code unit)',
     text: codeUnitText,
   },
@@ -785,7 +792,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'limits',
     text: at('usage'),
   },
-  // Text and suffix come from its first interview and enclosing code unit, not its line.
+  // Text and suffix come from its first interview and what started it: `views/lines.ts`.
   FLOW_START_INTERVIEWS_BEGIN: {
     fields: ['requests'],
     shape: 'frame',
@@ -967,6 +974,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'apexCode',
     level: 'FINE',
     cpu: 'method',
+    cpuOf: methodEntryCpu,
     symbols: true,
     text: at('signature'),
   },
@@ -2117,10 +2125,11 @@ function infoOf(type: EventType, typeId: number): EventTypeInfo {
   });
 }
 
-/** How `eventText` builds one type's text. Private, so text has one seam. */
-interface TextOf {
+/** How `eventText` and `eventCpuType` read one type's line. Private, so each has one seam. */
+interface LineRules {
   readonly rule: TextRule | null;
   readonly after: AfterRule | null;
+  readonly cpu: CpuRule | null;
 }
 
 const fieldNamesOf = (type: EventType): readonly string[] =>
@@ -2168,11 +2177,12 @@ function positionIn(type: EventType, reader: string): FieldPosition {
   };
 }
 
-function textOf(type: EventType): TextOf {
+function lineRulesOf(type: EventType): LineRules {
   const def = ENTRIES[type];
   return {
     rule: def.text?.(positionIn(type, 'a text rule')) ?? null,
     after: def.after ?? null,
+    cpu: def.cpuOf?.(positionIn(type, 'a cpu rule')) ?? null,
   };
 }
 
@@ -2182,7 +2192,7 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = Object.freeze(EVENT_TYPE_NA
 /** The engine's rules for each event type, indexed by type id. Internal. */
 export const GRAMMAR: readonly Grammar[] = Object.freeze(EVENT_TYPE_NAMES.map(grammarOf));
 
-const TEXT: readonly TextOf[] = EVENT_TYPE_NAMES.map(textOf);
+const LINE_RULES: readonly LineRules[] = EVENT_TYPE_NAMES.map(lineRulesOf);
 
 /** The type info for a type name. */
 export function eventType(type: EventType): EventTypeInfo;
@@ -2203,7 +2213,7 @@ export function idOfType(name: string): number {
  * type's rewrite. Null when neither gives any text.
  */
 export function eventText(typeId: number, f: Fields): string | null {
-  const text = TEXT[typeId];
+  const text = LINE_RULES[typeId];
   const grammar = GRAMMAR[typeId];
   if (!text || !grammar) return null;
   // An empty field is no text, so that a missing field and an absent rule read the same.
@@ -2212,4 +2222,30 @@ export function eventText(typeId: number, f: Fields): string | null {
   const joined = base === null ? more : more ? `${base}\n${more}` : base;
   if (!joined) return null;
   return text.after ? text.after(joined) : joined;
+}
+
+/**
+ * An event's cpuType: its type's rule, which reads the line, or the type's own. Null for none.
+ * `line` is called only for a type with a rule, so most reads touch no bytes.
+ */
+export function eventCpuType(typeId: number, line: () => LineFields): CpuType | null {
+  const rule = LINE_RULES[typeId]?.cpu;
+  return rule ? rule(line()) : (GRAMMAR[typeId]?.cpuType ?? null);
+}
+
+/**
+ * Where field `name` of a type's line is, as `LineFields.at` counts, or -1 when the type does not
+ * list it. `last` is true for the type's last listed field.
+ */
+export function fieldPosition(typeId: number, name: string): { at: number; last: boolean } {
+  const fields = EVENT_TYPES[typeId]?.fields ?? NO_FIELDS;
+  const i = fields.indexOf(name);
+  return { at: i < 0 ? -1 : i + FIRST_FIELD, last: i >= 0 && i === fields.length - 1 };
+}
+
+const UNIT_TYPE = codeUnitTypeText(positionIn('CODE_UNIT_STARTED', 'the code unit type'));
+
+/** A `CODE_UNIT_STARTED` line's unit type, as `Flow`; null when the line states none. */
+export function codeUnitType(f: LineFields): string | null {
+  return UNIT_TYPE(f);
 }

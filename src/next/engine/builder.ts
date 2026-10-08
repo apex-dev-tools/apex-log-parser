@@ -188,6 +188,8 @@ export interface Built {
   readonly debugLevelSettings: readonly DebugLevelSetting[];
   readonly userInfo: UserInfo | null;
   readonly truncation: Truncation;
+  /** The log's bytes, which the views read each event's text from when asked. */
+  readonly source: Source;
 }
 
 /**
@@ -254,8 +256,6 @@ export class LogBuilder {
   private lastType = -1;
   /** The last event was an exit line, folded into `lastId`. */
   private lastFolded = false;
-  /** Where the last event's own line ends, before its continuation lines. */
-  private lastLineEnd = 0;
   /** Nanoseconds: the last event's own time, which a folded exit or a merged entry keeps. */
   private lastAt = NO_TIME;
   // Where the last line `readEvent` judged an unknown type has that type.
@@ -315,6 +315,7 @@ export class LogBuilder {
       debugLevelSettings: debug.settings,
       userInfo: firstLine ? userInfo(firstLine) : null,
       truncation,
+      source: this.source,
     };
   }
 
@@ -571,7 +572,6 @@ export class LogBuilder {
   private placed(id: number): void {
     this.lastId = id;
     this.lastType = this.nextType;
-    this.lastLineEnd = this.nextEnd;
     this.lastAt = this.nextTimestamp;
     if (this.pendingMaxSize.length) this.endMaxSize(this.nextTimestamp);
     if (this.nextCut) this.maxSizeReached();
@@ -752,13 +752,9 @@ export class LogBuilder {
     if (!hook) return;
     const store = this.store;
     const id = this.lastId;
-    const lineEnd = this.lastLineEnd;
-    // id was placed, so every column holds it
-    const end = store.end[id]!;
-    const lf = end > lineEnd ? this.source.lineEnd(lineEnd) : -1;
-    const from = lf < 0 ? lineEnd : lf + 1;
     const fields = this.hookFields;
-    fields.reset(store.start[id]!, lineEnd, from, lf < 0 ? lineEnd : end);
+    // id was placed, so every column holds it
+    fields.resetRow(store.start[id]!, store.end[id]!);
     const text = eventText(type, fields) ?? '';
     const timestamp = store.timestamp[id]!;
     if (hook === HOOK_ID.limitSnapshot) {
