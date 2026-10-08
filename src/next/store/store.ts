@@ -150,6 +150,13 @@ export class Store {
     return slot * HEAP_STRIDE;
   }
 
+  /** Nanoseconds from the row's line to its exit; 0 without an exit, or with one at 0, as today. */
+  durationTotal(id: number): number {
+    // id is a row the engine added
+    const exit = this.exitStamp[id]!;
+    return exit ? exit - this.timestamp[id]! : 0;
+  }
+
   /** Trims every column to its rows. Call once, after the last `add`; types run from 0 to `typeCount - 1`. */
   finish(typeCount: number): void {
     this.resize(this.count);

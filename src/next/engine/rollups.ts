@@ -24,13 +24,6 @@ export interface MergedTail {
   keptExit: number;
 }
 
-/** A row's total nanoseconds: from its line to its exit, or 0 without one, as today. */
-function total(store: Store, id: number): number {
-  // id is a row the store holds
-  const exit = store.exitStamp[id]!;
-  return exit ? exit - store.timestamp[id]! : 0;
-}
-
 /** What `setLogTimes` finds besides row 0's times. */
 export interface LogTimes {
   /** Nanoseconds: the exit of the last top-level event that has one, or 0. */
@@ -68,11 +61,11 @@ export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
 export function rollUp(store: Store, isFrame: Uint8Array): void {
   // The column starts at 0, and each row adds its total and takes it off its parent. Row 0 first:
   // V8 optimises the loop before code after it has run, so a line there deopts on every parse.
-  store.durationSelf[0]! += total(store, 0);
+  store.durationSelf[0]! += store.durationTotal(0);
   for (let id = store.count - 1; id > 0; id--) {
     // id > 0, so it has a parent row
     const parent = store.parent[id]!;
-    const time = total(store, id);
+    const time = store.durationTotal(id);
     store.durationSelf[id]! += time;
     store.durationSelf[parent]! -= time;
     if (store.countSlot[id] !== NONE) {

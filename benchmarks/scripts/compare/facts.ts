@@ -311,12 +311,7 @@ function stamp(ns: number): number | null {
 
 function nextDuration(store: Store, id: number): SelfTotalFact {
   // id is a row
-  const exit = store.exitStamp[id]!;
-  return {
-    self: store.durationSelf[id]!,
-    // As the engine and legacy: an exit at 0, or none, is no duration.
-    total: exit ? exit - store.timestamp[id]! : 0,
-  };
+  return { self: store.durationSelf[id]!, total: store.durationTotal(id) };
 }
 
 function nextCounts(store: Store, id: number): CountsFact {
