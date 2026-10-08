@@ -658,7 +658,7 @@ export class LogBuilder {
     let flags = 0;
     let line = NO_LINE;
     const fields = this.fields;
-    fields.reset(start, end);
+    fields.resetFound(start, end, p1, p2);
     // type is a type id, so it indexes the tables
     const lineField = LINE_FIELD[type]!;
     if (lineField >= 0) {

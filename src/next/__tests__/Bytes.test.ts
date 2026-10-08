@@ -119,6 +119,22 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
     fields.reset(bytes.length - 1, bytes.length);
     expect([fields.count, fields.at(0), fields.at(1)]).toEqual([1, 'c', '']);
   });
+
+  it.each(['a|b|c|d', 'a|b', 'a|', 'a||c'])(
+    'reads %j the same when given its first two pipes',
+    (line) => {
+      // A line after another, so offsets in the source are not offsets in the line.
+      const text = `x|y\n${line}`;
+      const bytes = at(1, text);
+      const fields = new ByteFields(sourceOf(bytes));
+      const pipe1 = text.indexOf('|', 4);
+      const pipe2 = text.indexOf('|', pipe1 + 1);
+      fields.resetFound(4, bytes.length, pipe1, pipe2 < 0 ? bytes.length : pipe2);
+      const parts = line.split('|');
+      expect(parts.map((_, i) => fields.at(i))).toEqual(parts);
+      expect([fields.count, fields.startOf(parts.length)]).toEqual([parts.length, -1]);
+    },
+  );
 });
 
 describe('typeIdAt', () => {

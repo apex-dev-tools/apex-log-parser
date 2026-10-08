@@ -66,6 +66,18 @@ export class ByteFields implements Fields {
     this.continuationEnd = continuationEnd;
   }
 
+  /**
+   * As `reset`, for a line whose first `|` is at `pipe1`, before `end`, and whose second is at
+   * `pipe2`, or `end` for none.
+   */
+  resetFound(start: number, end: number, pipe1: number, pipe2: number): void {
+    this.reset(start, end);
+    this.starts[1] = pipe1 + 1;
+    this.found = 2;
+    if (pipe2 < end) this.starts[this.found++] = pipe2 + 1;
+    else this.complete = true;
+  }
+
   get count(): number {
     while (!this.complete) this.scan();
     return this.found;
