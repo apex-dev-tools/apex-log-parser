@@ -4,7 +4,10 @@
  */
 
 import type { ApexLog } from '../../src/index.js';
-import { legacyFacts } from './facts.js';
+import type { Built } from '../../src/next/engine/builder.js';
+import { legacyFacts, nextFacts } from './facts.js';
+import type { KnownDifference } from './known.js';
+import { KNOWN } from './known.js';
 import type { Projection } from './project.js';
 import { projectLegacy } from './project.js';
 
@@ -16,6 +19,8 @@ export interface Engine {
   project(result: unknown): Projection;
   /** The facts in `facts.ts`. Compares two engines. */
   facts(result: unknown): Projection;
+  /** The facts it states differently from legacy on purpose. */
+  readonly known?: readonly KnownDifference[];
 }
 
 const legacy: Engine = {
@@ -29,7 +34,23 @@ const legacy: Engine = {
   facts: (result) => legacyFacts(result as ApexLog),
 };
 
-const ENGINES: readonly Engine[] = [legacy];
+// The engine and store only, until the views and the async driver exist (steps 5 and 6).
+const next: Engine = {
+  name: 'next',
+  parse: async (bytes) => {
+    const [{ NodeSource }, { LogBuilder }] = await Promise.all([
+      import('../../src/next/bytes/node.js'),
+      import('../../src/next/engine/builder.js'),
+    ]);
+    return new LogBuilder(new NodeSource(bytes)).build();
+  },
+  // Until the views exist, the facts are its whole projection.
+  project: (result) => nextFacts(result as Built),
+  facts: (result) => nextFacts(result as Built),
+  known: KNOWN,
+};
+
+const ENGINES: readonly Engine[] = [legacy, next];
 
 export function engine(name: string): Engine {
   const found = ENGINES.find((e) => e.name === name);

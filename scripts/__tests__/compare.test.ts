@@ -2,10 +2,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from '../../src/index.js';
+import { NodeSource } from '../../src/next/bytes/node.js';
+import { LogBuilder } from '../../src/next/engine/builder.js';
 import { findLogs } from '../compare/compare.js';
 import { compareKeys, diffProjections, same } from '../compare/diff.js';
 import type { LogFact } from '../compare/facts.js';
-import { legacyFacts } from '../compare/facts.js';
+import { legacyFacts, nextFacts } from '../compare/facts.js';
+import type { Entry, KnownDifference } from '../compare/known.js';
+import { explainer } from '../compare/known.js';
 import type { Projection } from '../compare/project.js';
 import { canonical, projectLegacy } from '../compare/project.js';
 import type { FileResult } from '../compare/report.js';
@@ -130,7 +134,7 @@ describe('diffProjections', () => {
 
   it('finds no difference between two parses of one log', () => {
     const result = diffProjections(projectLegacy(parse(log)), projectLegacy(parse(log)));
-    expect(result).toEqual({ records: 5, differing: 0, differences: [] });
+    expect(result).toEqual({ records: 5, differing: 0, differences: [], explained: {} });
   });
 
   it('names the path of a changed field', () => {
@@ -176,6 +180,7 @@ describe('diffProjections', () => {
       records: 4,
       differing: 1,
       differences: [{ key: '0/0', path: '', left: '0/0', right: '<absent>' }],
+      explained: {},
     });
   });
 
@@ -188,6 +193,114 @@ describe('diffProjections', () => {
     const result = diffProjections(many(1), many(2), 2);
     expect(result.differing).toBe(3);
     expect(result.differences).toHaveLength(2);
+  });
+});
+
+describe('nextFacts', () => {
+  const next = (text: string): Entry[] => [
+    ...nextFacts(new LogBuilder(new NodeSource(new TextEncoder().encode(text))).build()),
+  ];
+  const vsLegacy = (text: string) => {
+    const left = [...legacyFacts(parse(text))];
+    const right = next(text);
+    return diffProjections(left, right, 20, explainer(left, right));
+  };
+
+  it('states the facts legacy states, apart from the known differences', () => {
+    expect(vsLegacy(log)).toEqual({
+      records: 5,
+      differing: 0,
+      differences: [],
+      explained: { 'code-unit-line': 1 },
+    });
+  });
+
+  it('explains a maximum-size marker inside an event line, which legacy misses', () => {
+    const cut = [
+      '64.0 APEX_CODE,FINE',
+      '09:00:00.001 (1000000)|STATEMENT_EXECUTE|[1]',
+      '09:00:00.002 (2000000)|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      '09:00:00.003 (3000000)|STATEMENT_EXECUTE|[3]',
+    ].join('\n');
+    expect(vsLegacy(cut)).toMatchObject({
+      differing: 0,
+      // The issue, the region, and the log's isTruncated.
+      explained: { 'malformed-number': 2, 'max-size-in-line': 3 },
+    });
+  });
+
+  it('states no duration for an exit at 0, as legacy does', () => {
+    const zero = [
+      '64.0 APEX_CODE,FINE',
+      '09:00:00.001 (1000000)|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()',
+      '09:00:00.000 (0)|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()',
+    ].join('\n');
+    expect(vsLegacy(zero)).toMatchObject({ differing: 0, explained: {} });
+  });
+
+  it('explains an issue on a merged package entry, and malformed rows', () => {
+    const merged = [
+      '64.0 APEX_CODE,FINE',
+      '09:00:00.001 (1000000)|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()',
+      '09:00:00.002 (2000000)|ENTERING_MANAGED_PKG|ns',
+      '09:00:00.003 (3000000)|ENTERING_MANAGED_PKG|ns',
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      '09:00:00.004 (4000000)|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Account',
+      '09:00:00.005 (5000000)|SOQL_EXECUTE_END|[2]|Rows:abc',
+      '09:00:00.006 (6000000)|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()',
+    ].join('\n');
+    const result = vsLegacy(merged);
+    expect(result.differences).toEqual([]);
+    // The issue and its region; the parsing error, and the rows on the query, its method and the log.
+    expect(result.explained).toEqual({ 'merged-package-issue': 2, 'malformed-number': 4 });
+  });
+});
+
+describe('explainer', () => {
+  const half: KnownDifference = {
+    name: 'half',
+    undo: (_key, field, value) => (field === 'n' ? (value as number) / 2 : value),
+  };
+  const run = (left: number, right: number) => {
+    const a: Entry[] = [['0', { n: left, m: 1 }]];
+    const b: Entry[] = [['0', { n: right, m: 1 }]];
+    return diffProjections(a, b, 20, explainer(a, b, [half]));
+  };
+
+  it('counts a field by rule when the rule undoes all of its difference', () => {
+    expect(run(2, 4)).toEqual({
+      records: 1,
+      differing: 0,
+      differences: [],
+      explained: { half: 1 },
+    });
+  });
+
+  it('reports the field with its own values when the rule does not', () => {
+    expect(run(2, 6)).toMatchObject({
+      differing: 1,
+      differences: [{ key: '0', path: 'n', left: '2', right: '6' }],
+      explained: {},
+    });
+  });
+
+  it('gives a parent back the self time its package children gained', () => {
+    const pkg = (total: number) => ({
+      type: 'ENTERING_MANAGED_PKG',
+      duration: { self: total, total },
+    });
+    const a: Entry[] = [
+      ['0', { type: 'METHOD_ENTRY', duration: { self: 10, total: 10 } }],
+      ['0/0', pkg(0)],
+    ];
+    const b: Entry[] = [
+      ['0', { type: 'METHOD_ENTRY', duration: { self: 7, total: 10 } }],
+      ['0/0', pkg(3)],
+    ];
+    expect(diffProjections(a, b, 20, explainer(a, b))).toMatchObject({
+      differing: 0,
+      explained: { 'package-duration': 2 },
+    });
   });
 });
 
@@ -259,5 +372,15 @@ describe('report', () => {
       '| < 1 MB | old | 1 | -10.0% | -10.0% | +100.0% |',
     );
     expect(renderReport(now, ['old'])).not.toContain('baseline run');
+  });
+
+  it('counts the known differences by rule, and the log as identical', () => {
+    const diff = { records: 3, differing: 0, differences: [], explained: { rule: 2 } };
+    const results: FileResult[] = [
+      { file: 'a.log', bytes: 100, runs: {}, diffs: { 'old→new (facts)': diff } },
+    ];
+    const report = renderReport(results, ['old', 'new']);
+    expect(report).toContain('1 of 1 identical');
+    expect(report).toContain('- `rule`: 2 fields in 1 logs');
   });
 });

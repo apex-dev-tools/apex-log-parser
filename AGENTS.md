@@ -63,7 +63,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   `.github/workflows/README.md`.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
   parse engine, diffs their output field by field, and times them. Never commit its output; it
-  names the logs.
+  names the logs. `known.ts` holds one rule per known difference between `next` and `legacy`. A
+  rule undoes its own difference on one field, and the field counts as explained only when it
+  then equals legacy. A new deliberate difference needs a rule there.
 - `scripts/bench/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's
   low-level choices (`docs/adr/0004`), in Node and headless Chromium.
 - `scripts/` is outside `tsconfig.json`, so `pnpm typecheck` does not see it.

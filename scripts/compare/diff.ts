@@ -25,15 +25,30 @@ export interface DiffResult {
   differing: number;
   /** The first differences, at most `limit` records' worth. */
   differences: Difference[];
+  /** Fields a known difference explains, by rule name. They are not in `differing`. */
+  explained: Record<string, number>;
 }
+
+/** The rules that explain a record's differing field, or null when they do not explain all of it. */
+export type Explain = (
+  key: string,
+  field: string,
+  left: unknown,
+  right: unknown,
+) => string[] | null;
 
 const ABSENT = '<absent>';
 const PATHS_PER_RECORD = 5;
 
-export function diffProjections(left: Projection, right: Projection, limit = 20): DiffResult {
+export function diffProjections(
+  left: Projection,
+  right: Projection,
+  limit = 20,
+  explain?: Explain,
+): DiffResult {
   const a = left[Symbol.iterator]();
   const b = right[Symbol.iterator]();
-  const result: DiffResult = { records: 0, differing: 0, differences: [] };
+  const result: DiffResult = { records: 0, differing: 0, differences: [], explained: {} };
   const report = (found: Omit<Difference, 'key'>[], key: string): void => {
     result.differing++;
     if (result.differing <= limit) {
@@ -53,7 +68,8 @@ export function diffProjections(left: Projection, right: Projection, limit = 20)
       report([{ path: '', left: ABSENT, right: y.value[0] }], y.value[0]);
       y = b.next();
     } else if (!x.done && !y.done) {
-      if (!same(x.value[1], y.value[1])) report(paths(x.value[1], y.value[1], ''), x.value[0]);
+      const found = unexplained(x.value[0], x.value[1], y.value[1], result.explained, explain);
+      if (found.length) report(found, x.value[0]);
       x = a.next();
       y = b.next();
     }
@@ -86,6 +102,29 @@ export function same(a: unknown, b: unknown): boolean {
   const ra = a as Record<string, unknown>;
   const rb = b as Record<string, unknown>;
   return ka.every((k) => k in rb && same(ra[k], rb[k]));
+}
+
+/** The differing paths of a record pair, less the fields `explain` explains, which it counts. */
+function unexplained(
+  key: string,
+  a: unknown,
+  b: unknown,
+  explained: Record<string, number>,
+  explain?: Explain,
+): Omit<Difference, 'key'>[] {
+  const found = paths(a, b, '');
+  if (!explain || !found.length || !isRecord(a) || !isRecord(b)) return found;
+  const byField = new Map<string, Omit<Difference, 'key'>[]>();
+  for (const d of found) {
+    const field = d.path.split('.')[0] ?? '';
+    byField.set(field, [...(byField.get(field) ?? []), d]);
+  }
+  return [...byField].flatMap(([field, differences]) => {
+    const rules = field in a && field in b ? explain(key, field, a[field], b[field]) : null;
+    if (!rules) return differences;
+    for (const rule of rules) explained[rule] = (explained[rule] ?? 0) + 1;
+    return [];
+  });
 }
 
 function paths(a: unknown, b: unknown, at: string): Omit<Difference, 'key'>[] {
