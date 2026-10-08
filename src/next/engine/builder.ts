@@ -876,11 +876,22 @@ export class LogBuilder {
   /** Today's Multiple-Logs issue, with the number of logs from the one at `start` on. */
   private multipleLogs(start: number): void {
     let count = 1;
-    const len = this.bytes.length;
+    const bytes = this.bytes;
+    const len = bytes.length;
     for (let line = start; line < len; ) {
       const eol = this.source.lineEnd(line);
       if (eol < 0) break;
-      if (this.timestampClose(eol + 1) >= 0 && SETTINGS_LINE.test(this.lineText(line))) count++;
+      // Byte tests before the decode: a settings line starts with a digit, and a timestamp's third byte is ':'.
+      // line < len, so it is a byte
+      const first = bytes[line]! - 0x30;
+      if (
+        first >= 0 &&
+        first <= 9 &&
+        bytes[line + 2] !== COLON &&
+        this.timestampClose(eol + 1) >= 0 &&
+        SETTINGS_LINE.test(this.lineText(line))
+      )
+        count++;
       line = eol + 1;
     }
     this.markerIssue({
