@@ -79,29 +79,52 @@ export class ByteFields implements Fields {
   }
 
   get count(): number {
-    while (!this.complete) this.scan();
+    // Each call finds one more field or marks the line complete.
+    while (!this.complete) this.startOf(this.found);
     return this.found;
   }
 
   at(i: number): string {
-    return this.has(i) ? this.source.text(this.start(i), this.fieldEnd(i)) : '';
+    const start = this.startOf(i);
+    return start < 0 ? '' : this.source.text(start, this.endOf(i));
   }
 
   from(i: number, separator: string): string {
-    if (!this.has(i)) return '';
+    const start = this.startOf(i);
+    if (start < 0) return '';
     // The line already holds the fields joined by `|`, and every `|` on it separates two fields.
-    const text = this.source.text(this.start(i), this.end);
+    const text = this.source.text(start, this.end);
     return separator === '|' ? text : text.replaceAll('|', separator);
   }
 
-  /** Where field `i` starts in the source, or -1 when the line has no field `i`. */
+  /**
+   * Where field `i` starts in the source, or -1 when the line has no field `i`. Finds offsets only
+   * as far as field `i`.
+   */
   startOf(i: number): number {
-    return this.has(i) ? this.start(i) : -1;
+    if (i < 0) return -1;
+    const bytes = this.bytes;
+    const end = this.end;
+    while (this.found <= i) {
+      if (this.complete) return -1;
+      // An incomplete line was reset, so found is at least 1
+      let p = this.starts[this.found - 1]!;
+      while (p < end && bytes[p] !== PIPE) p++;
+      if (p >= end) {
+        this.complete = true;
+        return -1;
+      }
+      if (this.found === this.starts.length) this.grow();
+      this.starts[this.found++] = p + 1;
+    }
+    // i < found
+    return this.starts[i]!;
   }
 
-  /** Where field `i` ends in the source. Only for a field `startOf` found. */
+  /** Where field `i` ends in the source: before the next field, or at the line's end, also for a field the line does not have. */
   endOf(i: number): number {
-    return this.fieldEnd(i);
+    const next = this.startOf(i + 1);
+    return next < 0 ? this.end : next - 1;
   }
 
   continuation(): string {
@@ -110,9 +133,9 @@ export class ByteFields implements Fields {
   }
 
   lineNumber(i: number): number | 'EXTERNAL' | null {
-    if (!this.has(i)) return null;
-    const start = this.start(i);
-    const end = this.fieldEnd(i);
+    const start = this.startOf(i);
+    if (start < 0) return null;
+    const end = this.endOf(i);
     if (start === end) return null;
     const bytes = this.bytes;
     if (end - start < 3 || bytes[start] !== OPEN || bytes[end - 1] !== CLOSE) return Number.NaN;
@@ -121,9 +144,9 @@ export class ByteFields implements Fields {
   }
 
   int(i: number, prefix = ''): number | null {
-    if (!this.has(i)) return null;
-    let start = this.start(i);
-    const end = this.fieldEnd(i);
+    let start = this.startOf(i);
+    if (start < 0) return null;
+    const end = this.endOf(i);
     if (start === end) return null;
     if (end - start < prefix.length) return Number.NaN;
     if (!this.matches(start, prefix)) return Number.NaN;
@@ -140,39 +163,9 @@ export class ByteFields implements Fields {
     return true;
   }
 
-  /** Field `i` exists, finding offsets only as far as it. */
-  private has(i: number): boolean {
-    if (i < 0) return false;
-    if (i < 0) return false;
-    while (this.found <= i && !this.complete) this.scan();
-    return i < this.found;
-  }
-
-  private start(i: number): number {
-    // Only called after has(i)
-    return this.starts[i]!;
-  }
-
-  /** Where field `i` ends: one before the next field's start, or the line's end. */
-  private fieldEnd(i: number): number {
-    return this.has(i + 1) ? this.start(i + 1) - 1 : this.end;
-  }
-
-  /** Finds the next `|`, or marks the line complete. */
-  private scan(): void {
-    const bytes = this.bytes;
-    const end = this.end;
-    let i = this.start(this.found - 1);
-    while (i < end && bytes[i] !== PIPE) i++;
-    if (i >= end) {
-      this.complete = true;
-      return;
-    }
-    if (this.found === this.starts.length) {
-      const grown = new Int32Array(this.starts.length * 2);
-      grown.set(this.starts);
-      this.starts = grown;
-    }
-    this.starts[this.found++] = i + 1;
+  private grow(): void {
+    const grown = new Int32Array(this.starts.length * 2);
+    grown.set(this.starts);
+    this.starts = grown;
   }
 }
