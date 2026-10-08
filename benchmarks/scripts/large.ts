@@ -50,7 +50,7 @@ export function report(results: LargeResult[], baseline: LargeResult[] = []): st
   });
 }
 
-function median(values: number[]): number {
+export function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = sorted.length / 2;
   return Number.isInteger(middle)

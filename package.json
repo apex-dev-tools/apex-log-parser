@@ -33,6 +33,7 @@
     "ci:seed": "tsx scripts/ci/seed.ts",
     "ci:report": "tsx scripts/ci/report.ts",
     "compare": "node --max-old-space-size=12288 --import tsx benchmarks/scripts/compare/compare.ts",
+    "bench:views": "node --expose-gc --max-old-space-size=8192 --import tsx benchmarks/scripts/views.ts",
     "bench:micro": "node --import tsx benchmarks/scripts/micro/micro.ts"
   },
   "devDependencies": {

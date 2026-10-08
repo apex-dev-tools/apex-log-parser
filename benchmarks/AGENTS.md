@@ -14,6 +14,9 @@ applies.
   are too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
   `--baseline=<path>` on the other to compare them. `--engine=next` times the new parser; its
   `--baseline` can be a legacy run's JSON.
+- `scripts/views.ts` — `pnpm run bench:views`, what reading the next parser's views adds to its
+  build on the same logs: every column of every event, and an object for every event. At
+  100 MB it fails above 30 ms and 250 ms. Local only.
 - `scripts/profiles.ts` — measures a local folder of real logs by size band and prints
   `fixtures/profiles.json`. Local only.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
