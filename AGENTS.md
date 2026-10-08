@@ -29,7 +29,9 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   adapter passes `__tests__/fieldsContract.ts`. `store/` holds the events as typed-array columns
   (ADR 0002), with sparse count and heap pools and the string table of interned byte ranges.
   `engine/builder.ts` builds the tree in one pass with today's rules and today's order of side
-  effects. A matched exit line gets no row: it folds into the frame it closes.
+  effects. A matched exit line gets no row: it folds into the frame it closes. A package entry
+  that today's merge removes gets none either. `engine/rollups.ts` runs today's passes after the
+  build: the log's times, the rollups and the flow residuals.
   `engine/namespaces.ts` holds today's namespace rules, read from bytes. `limits.ts` parses limit
   text and derives the whole-log figures; it copies `src/limits.ts`, which `src/next` cannot import.
 - `src/__bench__/` — the `pnpm run bench` benchmarks, which CodSpeed runs on every pull request.

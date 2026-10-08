@@ -5,7 +5,7 @@ import { NodeSource } from '../bytes/node.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import { FLAG, LogBuilder } from '../engine/builder.js';
-import { EXTERNAL_LINE, NO_LINE, NONE } from '../store/store.js';
+import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE } from '../store/store.js';
 import { encode } from './helpers.js';
 
 const HEADER = '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,INFO';
@@ -48,7 +48,7 @@ describe('LogBuilder', () => {
     ]);
     expect([...built.store.lineNumber.subarray(1)]).toEqual([EXTERNAL_LINE, 1, 2]);
     expect([...built.store.parent.subarray(1)]).toEqual([0, 1, 2]);
-    expect([...built.store.subtreeEnd]).toEqual([1, 2, 3, 4]);
+    expect([...built.store.subtreeEnd]).toEqual([4, 4, 4, 4]);
     expect(issues(built)).toEqual([]);
   });
 
@@ -114,17 +114,77 @@ describe('LogBuilder', () => {
     ]);
   });
 
-  it('ends a package entry at the next event, and leaves the last one open', () => {
+  it('ends a package entry at the next event, and merges the next one in its namespace', () => {
     const built = build(
       `${at(1)}|ENTERING_MANAGED_PKG|ns`,
       `${at(4)}|STATEMENT_EXECUTE|[1]`,
       `${at(6)}|ENTERING_MANAGED_PKG|ns`,
+      `${at(8)}|ENTERING_MANAGED_PKG|other`,
+      `${at(9)}|ENTERING_MANAGED_PKG|ns`,
     );
     expect(tree(built)).toEqual([
-      'ENTERING_MANAGED_PKG@1-4',
+      'ENTERING_MANAGED_PKG@1-8',
       'STATEMENT_EXECUTE@4',
-      'ENTERING_MANAGED_PKG@6',
+      'ENTERING_MANAGED_PKG@8-9',
+      // Nothing follows the last one, so it has no exit, as today.
+      'ENTERING_MANAGED_PKG@9',
     ]);
+  });
+
+  it('times the log as today, which sees a last package entry before it merges', () => {
+    const built = build(
+      `${at(1)}|ENTERING_MANAGED_PKG|ns`,
+      `${at(2)}|STATEMENT_EXECUTE|[1]`,
+      `${at(3)}|ENTERING_MANAGED_PKG|ns`,
+    );
+    expect(tree(built)).toEqual(['ENTERING_MANAGED_PKG@1-3', 'STATEMENT_EXECUTE@2']);
+    expect([built.store.exitStamp[0], built.executionEndTime]).toEqual([3, 2]);
+  });
+
+  it('rolls counts, rows, heap and time up to every frame above, as today', () => {
+    const built = build(
+      `${at(10)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(20)}|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Account`,
+      `${at(30)}|SOQL_EXECUTE_END|[2]|Rows:5`,
+      `${at(40)}|DML_BEGIN|[3]|Op:Insert|Type:Account|Rows:2`,
+      `${at(45)}|HEAP_ALLOCATE|[4]|Bytes:100`,
+      `${at(50)}|DML_END|[3]`,
+      `${at(55)}|HEAP_DEALLOCATE|[5]|Bytes:300`,
+      `${at(56)}|HEAP_ALLOCATE|[6]|Bytes:40`,
+      `${at(60)}|EXCEPTION_THROWN|[7]|System.NullPointerException`,
+      `${at(70)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+    );
+    const { store } = built;
+    const counts = (id: number) => {
+      if (store.countSlot[id] === NONE) return null;
+      const at = store.countsOf(id);
+      return Object.fromEntries(
+        Object.entries(COUNTER).map(([name, c]) => [name, store.counts[at + c * 2 + 1]]),
+      );
+    };
+    const heap = (id: number) => {
+      if (store.heapSlot[id] === NONE) return null;
+      const at = store.heapOf(id);
+      return [...store.heap.subarray(at, at + 5)];
+    };
+    expect(counts(1)).toEqual({
+      dml: 1,
+      soql: 1,
+      sosl: 0,
+      dmlRows: 2,
+      soqlRows: 5,
+      soslRows: 0,
+      thrown: 1,
+    });
+    expect(counts(0)).toEqual(counts(1));
+    // The method's own heap is its leaves': +40 and -300 net, with the DML's +100 in its total.
+    expect(heap(1)).toEqual([-260, -160, 40, 140, 100]);
+    // The free clamps the running heap at 0, so the last allocation peaks at 40.
+    expect(heap(6)?.[HEAP.peak]).toBe(40);
+    expect([store.durationSelf[1], store.durationSelf[2], store.durationSelf[3]]).toEqual([
+      40, 10, 10,
+    ]);
+    expect([store.timestamp[0], store.exitStamp[0], built.executionEndTime]).toEqual([10, 70, 70]);
   });
 
   it('makes a VF call with no method on a page-messages class a leaf', () => {

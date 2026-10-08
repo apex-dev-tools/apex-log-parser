@@ -5,16 +5,25 @@ import { ByteFields, digits } from '../bytes/cursor.js';
 import { TRUNCATION_MARKER } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
-import type { Hook } from '../catalog/catalog.js';
-import { EVENT_TYPES, eventText, GRAMMAR, idOfType } from '../catalog/catalog.js';
+import type { Hook, RowsOf } from '../catalog/catalog.js';
+import {
+  EVENT_TYPES,
+  eventText,
+  GRAMMAR,
+  HEAP_PREFIX,
+  idOfType,
+  ROWS_PREFIX,
+} from '../catalog/catalog.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
-import type { LimitSnapshot } from '../limits.js';
-import { limitsOfBlock } from '../limits.js';
-import { EXTERNAL_LINE, NO_LINE, NONE, Store } from '../store/store.js';
+import type { LimitMetric, LimitSnapshot } from '../limits.js';
+import { limitsOfBlock, runningTotal } from '../limits.js';
+import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, Store, TOTAL } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { IssueType } from './issues.js';
 import { ISSUE, Issues } from './issues.js';
 import { DEFAULT, Namespaces, RULE, UNSTATED } from './namespaces.js';
+import type { FlowTotal, MergedTail } from './rollups.js';
+import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
 
 /** Per-event bits in `Store.flags`. */
 export const FLAG = {
@@ -39,6 +48,20 @@ const HOOK_ID: { readonly [H in Hook]: number } = {
   vfApexCall: 0,
 };
 
+/** The governor metrics a flow report states that are counters. CPU and heap are measures. */
+const FLOW_COUNTERS: ReadonlyMap<LimitMetric, number> = new Map<LimitMetric, number>([
+  ['soqlQueries', COUNTER.soql],
+  ['queryRows', COUNTER.soqlRows],
+  ['soslQueries', COUNTER.sosl],
+  ['dmlStatements', COUNTER.dml],
+  ['dmlRows', COUNTER.dmlRows],
+]);
+const ROWS_OF: { readonly [R in RowsOf]: number } = {
+  soql: COUNTER.soqlRows,
+  sosl: COUNTER.soslRows,
+  dml: COUNTER.dmlRows,
+};
+
 // Per-type tables, so the loop reads one byte, not an object.
 const IS_FRAME = new Uint8Array(TYPES);
 const IS_EXIT = new Uint8Array(TYPES);
@@ -56,6 +79,16 @@ const NAMESPACE_POSITIONS: (readonly number[])[] = [];
 const TAKES_EXIT_NAMESPACE = new Uint8Array(TYPES);
 /** A `HOOK_ID`, or 0. */
 const HOOK = new Uint8Array(TYPES);
+// The `COUNTER` an event adds one to, and the one its rows add to; -1 for none.
+const COUNT_AT = new Int8Array(TYPES).fill(-1);
+const ROWS_AT = new Int8Array(TYPES).fill(-1);
+const ROWS_FIELD = new Int8Array(TYPES);
+/** The row counter a frame takes from its exit line, as today's SOQL and SOSL; -1 for none. */
+const ROWS_FROM_EXIT = new Int8Array(TYPES).fill(-1);
+const HEAP_FIELD = new Int8Array(TYPES);
+const HEAP_SIGN = new Int8Array(TYPES);
+/** The position of a flow running total's field, or -1. */
+const FLOW_TOTAL_FIELD = new Int8Array(TYPES).fill(-1);
 /** `CLOSES[frame * TYPES + exit]` is 1 when an `exit` line closes a `frame`. */
 const CLOSES = new Uint8Array(TYPES * TYPES);
 for (const info of EVENT_TYPES) {
@@ -75,12 +108,25 @@ for (const info of EVENT_TYPES) {
   NAMESPACE_POSITIONS[t] = g.namespaceFields;
   TAKES_EXIT_NAMESPACE[t] = g.namespace === 'method' ? 1 : 0;
   HOOK[t] = g.hook ? HOOK_ID[g.hook] : 0;
+  if (g.count) COUNT_AT[t] = COUNTER[g.count];
+  if (g.rowsOf) ROWS_AT[t] = ROWS_OF[g.rowsOf];
+  ROWS_FIELD[t] = g.rowsField;
+  if (info.shape === 'frame' && !g.rowsOf && (g.count === 'soql' || g.count === 'sosl')) {
+    ROWS_FROM_EXIT[t] = ROWS_OF[g.count];
+  }
+  HEAP_FIELD[t] = g.heapField;
+  HEAP_SIGN[t] = g.heapSign;
+  if (g.hook === 'flowTotal') FLOW_TOTAL_FIELD[t] = g.hookFields[0] ?? -1;
   for (const exit of info.exitTypes) CLOSES[t * TYPES + idOfType(exit)] = 1;
   if (g.closes === 'next-line') CLOSES[t * TYPES + t] = 1;
 }
 const EXECUTION_STARTED = idOfType('EXECUTION_STARTED');
 const ENTERING_MANAGED_PKG = idOfType('ENTERING_MANAGED_PKG');
 const VF_APEX_CALL_START = idOfType('VF_APEX_CALL_START');
+/** The flow elements the residual pass credits, as today's list of them. */
+const FLOW_ELEMENT = new Uint8Array(TYPES);
+FLOW_ELEMENT[idOfType('FLOW_ELEMENT_BEGIN')] = 1;
+FLOW_ELEMENT[idOfType('FLOW_BULK_ELEMENT_BEGIN')] = 1;
 const [VF_ELEMENT = -1, VF_METHOD = -1, VF_CONTROLLER = -1] =
   GRAMMAR[VF_APEX_CALL_START]?.hookFields ?? [];
 
@@ -122,6 +168,8 @@ export interface Built {
   readonly namespaces: readonly number[];
   /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
   readonly snapshots: readonly LimitSnapshot[];
+  /** Nanoseconds: the exit of the last top-level event that has one, or 0. */
+  readonly executionEndTime: number;
 }
 
 /**
@@ -146,7 +194,15 @@ export class LogBuilder {
   private readonly snapshots: LimitSnapshot[] = [];
   // The open frames, innermost last: each one's id, and its last child's id or `NONE`.
   private readonly frameIds: number[] = [];
-  private readonly frameLastChild: number[] = [];
+  // Indexed by open-frame slot + 1: slot 0 is the log's own children.
+  private readonly frameLastChild: number[] = [NONE];
+  /** Each open frame's package run: the package entry the next one in its namespace merges into. */
+  private readonly framePackage: number[] = [NONE];
+  /** Set while the log's last child is a package entry that merged. */
+  private mergedTail: MergedTail | null = null;
+  private readonly flowTotals = new Map<number, FlowTotal>();
+  /** Bytes; today's running live heap, clamped at 0. */
+  private runningHeap = 0;
 
   /** Where the next unread line starts. */
   private pos = 0;
@@ -165,6 +221,10 @@ export class LogBuilder {
   private nextFlags = 0;
   /** The namespace the next line states: a string id, `UNSTATED` or `DEFAULT`. */
   private nextNamespace = UNSTATED;
+  private nextRows = 0;
+  /** Signed bytes; 0 for a type that states none. */
+  private nextHeap = 0;
+  private nextFlowTotal: FlowTotal | null = null;
 
   // The event placed last: its id, or the frame a folded exit closed.
   private lastId = NONE;
@@ -193,10 +253,15 @@ export class LogBuilder {
     this.pos = this.firstEventLine();
     this.readNext();
     while (this.hasNext) {
-      const id = this.take(0, 1);
+      const id = this.takeChild(0, 1, -1);
       // id was added by take, so it has a type
-      if (IS_FRAME[store.type[id]!]) this.parseTree(id);
+      if (id !== NONE && IS_FRAME[store.type[id]!]) this.parseTree(id);
     }
+    store.subtreeEnd[0] = store.count;
+    // Today's passes, in today's order; the package merge ran while the tree was built.
+    const executionEndTime = setLogTimes(store, this.mergedTail);
+    rollUp(store, IS_FRAME);
+    applyFlowResiduals(store, FLOW_ELEMENT, this.flowTotals);
     store.finish(TYPES + 1);
     return {
       store,
@@ -206,6 +271,7 @@ export class LogBuilder {
       truncated: this.truncated,
       namespaces: this.namespaces.order,
       snapshots: this.snapshots,
+      executionEndTime,
     };
   }
 
@@ -228,14 +294,14 @@ export class LogBuilder {
       const nextHasExits = HAS_EXITS[next] === 1 && !(this.nextFlags & FLAG.notEntry);
       // endMethod can fold the exit line and read past it.
       const exitNamespace = this.nextNamespace;
+      const exitRows = this.nextRows;
       if (!onNextLine && EXIT_LINE[next] && this.endMethod(frame)) {
         // As today, also when the line unwinds this frame to close one below it.
-        if (TAKES_EXIT_NAMESPACE[store.type[frame]!] && exitNamespace !== UNSTATED) {
-          store.namespace[frame] = exitNamespace === DEFAULT ? NONE : exitNamespace;
-        }
+        this.endedBy(frame, next, exitNamespace, exitRows);
         this.pop();
       } else if (onNextLine && (IS_EXIT[next] || nextHasExits)) {
         store.exitStamp[frame] = this.nextTimestamp;
+        this.endedBy(frame, next, exitNamespace, exitRows);
         this.pop();
       } else if (
         this.discontinuity &&
@@ -249,10 +315,9 @@ export class LogBuilder {
         this.discontinuity = false;
         this.closeUnterminated();
       } else {
-        const child = this.take(frame, store.depth[frame]! + 1);
-        this.frameLastChild[top] = child;
+        const child = this.takeChild(frame, store.depth[frame]! + 1, top);
         // child was added by take, so it has a type
-        if (IS_FRAME[store.type[child]!]) this.open(child);
+        if (child !== NONE && IS_FRAME[store.type[child]!]) this.open(child);
       }
     }
   }
@@ -263,11 +328,33 @@ export class LogBuilder {
     if (!HAS_EXITS[store.type[id]!] || store.flags[id]! & FLAG.notEntry) return;
     this.frameIds.push(id);
     this.frameLastChild.push(NONE);
+    this.framePackage.push(NONE);
   }
 
+  /** Closes the innermost frame: every row after it so far is in its subtree. */
   private pop(): void {
-    this.frameIds.pop();
+    // only called while a frame is open
+    this.store.subtreeEnd[this.frameIds.pop()!] = this.store.count;
     this.frameLastChild.pop();
+    this.framePackage.pop();
+  }
+
+  /** Today's `onEnd`: what a frame takes from the line that closes or unwinds it. */
+  private endedBy(frame: number, exitType: number, exitNamespace: number, exitRows: number): void {
+    const store = this.store;
+    // frame was added by take, so it has a type
+    const type = store.type[frame]!;
+    if (TAKES_EXIT_NAMESPACE[type] && exitNamespace !== UNSTATED) {
+      store.namespace[frame] = exitNamespace === DEFAULT ? NONE : exitNamespace;
+    }
+    const rowsAt = ROWS_FROM_EXIT[type]!;
+    if (rowsAt < 0) return;
+    // An exit of another kind states none of these rows.
+    const rows = ROWS_AT[exitType] === rowsAt ? exitRows : 0;
+    if (!rows && store.countSlot[frame] === NONE) return;
+    const at = store.countsOf(frame) + rowsAt * 2;
+    store.counts[at + SELF] = rows;
+    store.counts[at + TOTAL] = rows;
   }
 
   /** The log stops inside the innermost frame, or a new execution or the maximum size ends it. */
@@ -276,7 +363,7 @@ export class LogBuilder {
     const top = this.frameIds.length - 1;
     // only called while a frame is open
     const id = this.frameIds[top]!;
-    const last = this.frameLastChild[top]!;
+    const last = this.frameLastChild[top + 1]!;
     // last is an id from take, when it is not NONE
     const lastEnd =
       last === NONE
@@ -325,6 +412,60 @@ export class LogBuilder {
     );
   }
 
+  /**
+   * Places the next event under `parent`, whose open-frame slot is `top`, or -1 for the log. A
+   * package entry in the namespace of the run before it merges into that run, as today's merge,
+   * and gets no row: the result is then `NONE`.
+   */
+  private takeChild(parent: number, depth: number, top: number): number {
+    const store = this.store;
+    const slot = top + 1;
+    const previous = this.frameLastChild[slot]!;
+    let run = this.framePackage[slot]!;
+    // A frame with an exit between two package entries ends the run; a leaf does not.
+    if (run !== NONE && previous !== NONE) {
+      // previous is a row
+      const type = store.type[previous]!;
+      if (IS_FRAME[type] && type !== ENTERING_MANAGED_PKG && store.exitStamp[previous]) run = NONE;
+    }
+    let id = NONE;
+    if (top < 0) this.mergedTail = null;
+    if (this.nextType !== ENTERING_MANAGED_PKG) id = this.take(parent, depth);
+    else if (run !== NONE && store.namespace[run] === this.namespaceUnder(parent)) {
+      if (top < 0) {
+        // run is a row
+        this.mergedTail = {
+          timestamp: this.nextTimestamp,
+          kept: run,
+          keptExit: store.exitStamp[run]!,
+        };
+      }
+      this.mergePackage(run);
+    } else {
+      id = this.take(parent, depth);
+      run = id;
+    }
+    this.frameLastChild[slot] = id === NONE ? run : id;
+    this.framePackage[slot] = run;
+    return id;
+  }
+
+  /** The next event's namespace once placed under `parent`. */
+  private namespaceUnder(parent: number): number {
+    const own = this.nextNamespace;
+    // parent was added before, so its namespace is set; the log's own is NONE
+    return own >= 0 ? own : own === DEFAULT ? NONE : this.store.namespace[parent]!;
+  }
+
+  /** The next package entry extends `into` instead of getting a row. */
+  private mergePackage(into: number): void {
+    // Today's `exitStamp || timestamp`: the event after it moves this on, when there is one.
+    this.store.exitStamp[into] = this.nextTimestamp;
+    this.lastTimestamp = this.nextTimestamp;
+    this.lastFolded = false;
+    this.placed(into);
+  }
+
   /** Places the next event as a row under `parent`, then reads the event after it. */
   private take(parent: number, depth: number): number {
     const store = this.store;
@@ -338,13 +479,38 @@ export class LogBuilder {
     );
     store.lineNumber[id] = this.nextLine;
     store.flags[id] = this.nextFlags;
-    const own = this.nextNamespace;
-    // parent was added before id, so its namespace is set; the log's own is NONE
-    store.namespace[id] = own >= 0 ? own : own === DEFAULT ? NONE : store.namespace[parent]!;
+    store.namespace[id] = this.namespaceUnder(parent);
+    this.seed(id);
     this.lastTimestamp = this.nextTimestamp;
     this.lastFolded = false;
     this.placed(id);
     return id;
+  }
+
+  /** The counts, rows and heap figures the next event's own line states, on its row. */
+  private seed(id: number): void {
+    const store = this.store;
+    const type = this.nextType;
+    // type is a type id, so it indexes the tables
+    const count = COUNT_AT[type]!;
+    const rowsAt = ROWS_AT[type]!;
+    const rows = rowsAt < 0 ? 0 : this.nextRows;
+    if (count >= 0 || rows) {
+      const at = store.countsOf(id);
+      const counts = store.counts;
+      if (count >= 0) counts[at + count * 2 + SELF] = counts[at + count * 2 + TOTAL] = 1;
+      if (rows) counts[at + rowsAt * 2 + SELF] = counts[at + rowsAt * 2 + TOTAL] = rows;
+    }
+    // readEvent moved the running heap to this line's figure, and nothing has read past it yet.
+    if (HEAP_SIGN[type] && (this.nextHeap || this.runningHeap)) {
+      const at = store.heapOf(id);
+      const heap = store.heap;
+      const bytes = this.nextHeap;
+      heap[at + HEAP.allocatedSelf] = heap[at + HEAP.allocatedTotal] = bytes;
+      heap[at + HEAP.grossSelf] = heap[at + HEAP.grossTotal] = bytes > 0 ? bytes : 0;
+      heap[at + HEAP.peak] = this.runningHeap;
+    }
+    if (this.nextFlowTotal) this.flowTotals.set(id, this.nextFlowTotal);
   }
 
   /** Takes the next event, a matched exit line, into the frame it closes: it gets no row. */
@@ -428,6 +594,30 @@ export class LogBuilder {
     const namespace = rule
       ? this.namespaces.read(rule, fields, NAMESPACE_POSITIONS[type]!)
       : UNSTATED;
+    let rows = 0;
+    if (ROWS_AT[type]! >= 0) {
+      const stated = fields.int(ROWS_FIELD[type]!, ROWS_PREFIX);
+      if (stated !== null && Number.isNaN(stated)) {
+        this.parsingErrors.push(`Invalid row count: ${this.source.text(start, end)}`);
+      } else if (stated !== null) rows = stated;
+    }
+    let heap = 0;
+    const sign = HEAP_SIGN[type]!;
+    if (sign) {
+      // Today reads anything but `Bytes:` and a number as no bytes.
+      const stated = fields.int(HEAP_FIELD[type]!, HEAP_PREFIX);
+      heap = stated === null || Number.isNaN(stated) ? 0 : sign * stated;
+      // Clamped, so a free the log kept without its allocation cannot swallow later ones.
+      this.runningHeap = Math.max(0, this.runningHeap + heap);
+    }
+    let flowTotal: FlowTotal | null = null;
+    const flowField = FLOW_TOTAL_FIELD[type]!;
+    if (flowField >= 0) {
+      const line = runningTotal(fields.at(flowField));
+      const counter = line ? FLOW_COUNTERS.get(line.metric) : undefined;
+      if (line && counter !== undefined)
+        flowTotal = { counter, used: line.used, delta: line.delta };
+    }
 
     this.hasNext = true;
     this.nextType = type;
@@ -437,6 +627,9 @@ export class LogBuilder {
     this.nextLine = line;
     this.nextFlags = flags;
     this.nextNamespace = namespace;
+    this.nextRows = rows;
+    this.nextHeap = heap;
+    this.nextFlowTotal = flowTotal;
     return READ.event;
   }
 

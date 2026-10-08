@@ -117,6 +117,34 @@ const LABELS = new Map<string, LimitMetric>([
 ]);
 
 const USED_OF = /(\d+)\s*(?:out of|\/)\s*(\d+)/;
+const COUNT_LABEL = /^(\d+)\s+(.+)$/;
+
+/** A flow report's running total: `used` so far, and `delta`, what the reporting element used. */
+export interface RunningTotal {
+  metric: LimitMetric;
+  used: number;
+  limit: number;
+  delta: number;
+}
+
+/** A running-total line, as `1 SOQL queries, total 1 out of 100`; null for an untracked label. */
+export function runningTotal(text: string): RunningTotal | null {
+  const comma = text.indexOf(',');
+  if (comma < 0) return null;
+  // A head with no leading count still reports a total, so today keeps it with a zero delta.
+  const head = text.slice(0, comma).trim();
+  const [, count = '0', label = head] = COUNT_LABEL.exec(head) ?? [];
+  const metric = LABELS.get(label);
+  const match = metric ? USED_OF.exec(text.slice(comma + 1)) : null;
+  if (!metric || !match) return null;
+  return {
+    metric,
+    // The pattern matched two digit runs.
+    used: Number.parseInt(match[1]!, 10),
+    limit: Number.parseInt(match[2]!, 10),
+    delta: Number.parseInt(count, 10),
+  };
+}
 
 /**
  * The usage a limit text states, one `Label: used/limit` or `Label: used out of limit` line per

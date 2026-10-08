@@ -13,7 +13,10 @@ export const COUNTER = {
   soslRows: 5,
   thrown: 6,
 } as const;
-const COUNTERS = 7;
+export const COUNTERS = 7;
+/** Where a counter's self and total sit in its pair: `counts[at + counter * 2 + TOTAL]`. */
+export const SELF = 0;
+export const TOTAL = 1;
 /** Self and total per counter. */
 const COUNT_STRIDE = COUNTERS * 2;
 
