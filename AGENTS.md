@@ -28,6 +28,8 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   (`node.ts`, `browser.ts`), the `ByteFields` cursor and the type id lookup. Every `Fields`
   adapter passes `__tests__/fieldsContract.ts`. `store/` holds the events as typed-array columns
   (ADR 0002), with sparse count and heap pools and the string table of interned byte ranges.
+  `engine/builder.ts` builds the tree in one pass with today's rules and today's order of side
+  effects. A matched exit line gets no row: it folds into the frame it closes.
 - `src/__bench__/` — the `pnpm run bench` benchmarks, which CodSpeed runs on every pull request.
   `fixtures.ts` generates their logs from a seed, with placeholder content only. Its profiles
   (small, developer and large) take their event mix, depth and wrapped lines from

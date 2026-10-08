@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { Fields } from '../catalog/types.js';
+import { continuationText } from './lines.js';
 import type { Source } from './source.js';
 
 const PIPE = 0x7c;
@@ -10,6 +11,21 @@ const CLOSE = 0x5d;
 const MINUS = 0x2d;
 const ZERO = 0x30;
 const EXTERNAL = 'EXTERNAL';
+
+/** The unsigned decimal in bytes `start` to `end`, or NaN when it is not one or is not safe. */
+export function digits(bytes: Uint8Array, start: number, end: number): number {
+  if (start >= end) return Number.NaN;
+  let n = 0;
+  for (let i = start; i < end; i++) {
+    // i < end, which is inside the line
+    const d = bytes[i]! - ZERO;
+    if (d < 0 || d > 9) return Number.NaN;
+    n = n * 10 + d;
+    // Past this, n * 10 + d is no longer exact, and every later value is larger still.
+    if (n > Number.MAX_SAFE_INTEGER) return Number.NaN;
+  }
+  return n;
+}
 
 /**
  * `Fields` over a source's bytes. One cursor serves every line: `reset` points it at the next one.
@@ -68,19 +84,7 @@ export class ByteFields implements Fields {
 
   continuation(): string {
     if (this.continuationStart >= this.continuationEnd) return '';
-    const text = this.source.text(this.continuationStart, this.continuationEnd);
-    // Rare: a CRLF log, or an empty line between continuation lines, which the log drops.
-    const clean =
-      text.indexOf('\r') < 0 &&
-      text.indexOf('\n\n') < 0 &&
-      text[0] !== '\n' &&
-      text.at(-1) !== '\n';
-    if (clean) return text;
-    return text
-      .split('\n')
-      .map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line))
-      .filter((line) => line !== '')
-      .join('\n');
+    return continuationText(this.source.text(this.continuationStart, this.continuationEnd));
   }
 
   lineNumber(i: number): number | 'EXTERNAL' | null {
@@ -91,7 +95,7 @@ export class ByteFields implements Fields {
     const bytes = this.bytes;
     if (end - start < 3 || bytes[start] !== OPEN || bytes[end - 1] !== CLOSE) return Number.NaN;
     if (end - start === EXTERNAL.length + 2 && this.matches(start + 1, EXTERNAL)) return 'EXTERNAL';
-    return this.digits(start + 1, end - 1);
+    return digits(this.bytes, start + 1, end - 1);
   }
 
   int(i: number, prefix = ''): number | null {
@@ -102,24 +106,8 @@ export class ByteFields implements Fields {
     if (end - start < prefix.length) return Number.NaN;
     if (!this.matches(start, prefix)) return Number.NaN;
     start += prefix.length;
-    if (start < end && this.bytes[start] === MINUS) return -this.digits(start + 1, end);
-    return this.digits(start, end);
-  }
-
-  /** The unsigned decimal in bytes `start` to `end`, or NaN when it is not one or is not safe. */
-  private digits(start: number, end: number): number {
-    if (start >= end) return Number.NaN;
-    const bytes = this.bytes;
-    let n = 0;
-    for (let i = start; i < end; i++) {
-      // i < end, which is inside the line
-      const d = bytes[i]! - ZERO;
-      if (d < 0 || d > 9) return Number.NaN;
-      n = n * 10 + d;
-      // Past this, n * 10 + d is no longer exact, and every later value is larger still.
-      if (n > Number.MAX_SAFE_INTEGER) return Number.NaN;
-    }
-    return n;
+    if (start < end && this.bytes[start] === MINUS) return -digits(this.bytes, start + 1, end);
+    return digits(this.bytes, start, end);
   }
 
   /** Bytes from `start` spell `ascii`. */

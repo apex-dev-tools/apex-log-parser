@@ -83,6 +83,19 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
   it.each([
     ['a CRLF log', 'line\r\none\r\n\r\n  \r\ntwo\r\n', 6, 'one\n  \ntwo'],
     ['a leading empty line', 'line\n\nmore', 5, 'more'],
+    // The log's last line keeps its CR, as today, so it is text, not a marker.
+    [
+      'a CRLF log with no final LF',
+      'line\r\none\r\n*** Skipped 10 bytes of detailed log\r',
+      6,
+      'one\n*** Skipped 10 bytes of detailed log\r',
+    ],
+    [
+      'a marker or an event-like line',
+      'line\none\n*** Skipped 10 bytes of detailed log\nx|NOT_A_TYPE\na|b|c\ntwo',
+      5,
+      'one\na|b|c\ntwo',
+    ],
   ])('drops the CRs and empty lines among the continuation lines of %s', (_, text, from, out) => {
     const bytes = at(2, text);
     const fields = new ByteFields(sourceOf(bytes));
