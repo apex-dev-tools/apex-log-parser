@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "description": "Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor limits and SOQL/DML counts. No dependencies.",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": ["./dist/next/worker-node.js", "./dist/next/worker-browser.js"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -16,6 +16,10 @@
       },
       "types": "./dist/next/browser.d.ts",
       "import": "./dist/next/browser.js"
+    },
+    "./next/worker": {
+      "node": "./dist/next/worker-node.js",
+      "default": "./dist/next/worker-browser.js"
     },
     "./package.json": "./package.json"
   },

@@ -39,6 +39,7 @@ import type {
   LogTimezone,
   LogTruncation,
   LogTruncationRegion,
+  LogWorker,
   NamespaceLimits,
   ParseOptions,
   ParseProgress,
@@ -106,6 +107,7 @@ interface PublicTypeSurface {
   logTimezone: LogTimezone;
   logTruncation: LogTruncation;
   logTruncationRegion: LogTruncationRegion;
+  logWorker: LogWorker;
   namespaceLimits: NamespaceLimits;
   parseOptions: ParseOptions;
   parseProgress: ParseProgress;

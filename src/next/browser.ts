@@ -3,45 +3,25 @@
  */
 import type { LogBuffers } from './api/buffers.js';
 import { logFromBuffers } from './api/buffers.js';
+import { yieldToBrowser } from './api/hosts.js';
 import type { ParseOptions } from './api/parse.js';
 import { parseWith } from './api/parse.js';
 import type { LogSource } from './api/sources.js';
+import { parseInWorker } from './api/worker.js';
 import { browserEngine } from './engine/browser.js';
 import type { ApexLog } from './views/log.js';
 
 export * from './api/surface.js';
 
-interface Port {
-  onmessage: (() => void) | null;
-  postMessage(message: null): void;
-  close(): void;
-}
-declare const MessageChannel: new () => { port1: Port; port2: Port };
-declare const scheduler: { yield?: () => Promise<void> } | undefined;
-
-/**
- * `scheduler.yield` resumes ahead of other queued tasks, where the browser has it (not Safari). A
- * message is the fallback: a timeout of 0 is clamped to 4 ms after a few nested calls.
- */
-function yieldToHost(): Promise<void> {
-  if (typeof scheduler !== 'undefined' && scheduler.yield) return scheduler.yield();
-  return new Promise((resolve) => {
-    const { port1, port2 } = new MessageChannel();
-    port1.onmessage = () => {
-      port1.close();
-      port2.close();
-      resolve();
-    };
-    port2.postMessage(null);
-  });
-}
-
 /**
  * Parses one Apex debug log. It works in time slices and yields between them, so the page stays
- * responsive; `options.signal` stops it, and `options.onProgress` reports how far it is.
+ * responsive; `options.signal` stops it, `options.onProgress` reports how far it is, and
+ * `options.worker` moves the scan to a worker.
  */
-export function parse(source: LogSource, options?: ParseOptions): Promise<ApexLog> {
-  return parseWith(browserEngine, yieldToHost, source, options);
+export function parse(source: LogSource, options: ParseOptions = {}): Promise<ApexLog> {
+  if (options.worker)
+    return parseInWorker(browserEngine, yieldToBrowser, options.worker, source, options);
+  return parseWith(browserEngine, yieldToBrowser, source, options);
 }
 
 /**

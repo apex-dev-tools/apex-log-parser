@@ -43,7 +43,12 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   move a log between threads: `engine/buffers.ts` turns a build into typed arrays and plain
   values that structured clone carries whole, and back. `Store.restore` and
   `StringTable.restore` make their objects as the engine does, so a restored log has the same
-  object layout. The format is internal to one version of the package; it is not for storage. V8 drops a class's object layout once no instance of it is alive, and
+  object layout. The format is internal to one version of the package; it is not for storage.
+  `api/worker.ts` is `parse`'s `worker` option: the read stays on the caller's thread, the bytes
+  move to the worker (a copy when the caller holds them), and the log comes back as buffers.
+  `worker/serve.ts` is the worker's side; `worker/node.ts` and `worker/browser.ts` start it, each
+  built as one file with no imports, so a webview can start it from a `blob:` URL. `api/hosts.ts`
+  holds each build's way to yield. V8 drops a class's object layout once no instance of it is alive, and
   throws away the code it optimised for it, so without one the parse after a GC runs about 3×
   slower. For the same reason a builder field that holds a time starts as a double (`NO_TIME`,
   -0), not 0. `benchmarks/__tests__/deopt.test.ts` fails when either breaks.
@@ -100,6 +105,8 @@ Two entry points:
 - `./next`, the new parser. Its `node` condition gives the node build, and every other host gets the
   browser build. Both export the same surface: `parse`, the catalog (`EVENT_TYPES`, `eventType`),
   the const companions and the public types. `src/next/__tests__/PublicApi.test.ts` pins it.
+- `./next/worker`, the file a worker runs for `parse`'s `worker` option: the node build for the
+  `node` condition, else the browser build as a classic script. It exports nothing.
 
 Export only what a consumer uses in production. A helper that only a consumer's tests would reuse,
 such as `emptyLimits`, stays internal.
@@ -118,7 +125,8 @@ same change: it pins the runtime list, and pins the types through an interface t
 - `erasableSyntaxOnly` bans enums, so a union needs a const companion beside it.
 - Import with a `.js` extension.
 - `types: ["vitest/globals"]` in `tsconfig.json` is what keeps ambient node types out. `src/` uses
-  no `node:*` and reads no files at runtime. `tsconfig.scripts.json` adds `node` for `scripts/`
+  no `node:*` and reads no files at runtime; `src/next/worker/node.ts` reaches `worker_threads`
+  through the global `process.getBuiltinModule` instead. `tsconfig.scripts.json` adds `node` for `scripts/`
   only. A test may statically import the data JSON, as
   `EventMetadata.test.ts` does; `tsconfig.build.json` excludes the tests, so `rootDir` still holds
   for the build. A WHATWG global `src/` needs is declared in the module that uses it, as

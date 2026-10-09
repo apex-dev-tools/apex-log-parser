@@ -29,6 +29,11 @@ export function ownBytes(bytes: Uint8Array): Uint8Array {
   return bytes;
 }
 
+/** `bytes` was made by this package, so no caller holds it. */
+export function isOwned(bytes: Uint8Array): boolean {
+  return OWNED.has(bytes);
+}
+
 /** `built` as data that shares its memory. */
 export function dataOf(built: Built): BuiltData {
   const bytes = built.source.bytes;

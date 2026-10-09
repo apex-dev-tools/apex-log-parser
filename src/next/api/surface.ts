@@ -2,6 +2,9 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
+// What both builds export beside their own `parse` and `fromBuffers`. `__tests__/PublicApi.test.ts`
+// pins it.
+
 export { EVENT_TYPES, eventType } from '../catalog/catalog.js';
 export type { EventFields } from '../catalog/fields.js';
 export type {
@@ -44,8 +47,6 @@ export type {
   LogTruncation,
   LogTruncationRegion,
 } from '../views/log.js';
-// What both builds export beside their own `parse` and `fromBuffers`. `__tests__/PublicApi.test.ts`
-// pins it.
 export type { LogBuffers, TransferableLog } from './buffers.js';
 export { toBuffers } from './buffers.js';
 export type { ParseOptions } from './parse.js';
@@ -58,3 +59,4 @@ export type {
   ParseProgress,
   StreamRead,
 } from './sources.js';
+export type { LogWorker } from './worker.js';
