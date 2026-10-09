@@ -101,9 +101,11 @@ export interface FrameEvent extends EventBase {
 export interface LeafEvent extends EventBase {
   readonly isFrame: false;
   readonly exitStamp: null;
+  /** Always empty, so a walk of the tree reads `children` on any event. */
+  readonly children: readonly [];
 }
 
-/** One event of the log: narrow on `isFrame` to reach `children`. */
+/** One event of the log: narrow on `isFrame` to tell a frame from a leaf. */
 export type ApexEvent = FrameEvent | LeafEvent;
 
 /** An event of type `T`, with that type's details; for a union, one member per type, so `type` narrows. */

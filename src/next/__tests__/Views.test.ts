@@ -121,8 +121,8 @@ describe('LogEvents', () => {
   it('makes a leaf with no exit, no children and no duration', () => {
     const leaf = eventsOf(...method).event(4);
     expect(leaf?.isFrame).toBe(false);
-    // The type has no `children` on a leaf; at run time it is empty, never undefined.
-    expect((leaf as unknown as FrameEvent).children).toEqual([]);
+    expect(leaf?.children).toEqual([]);
+    expect(Object.isFrozen(leaf?.children)).toBe(true);
     expect([leaf?.exitStamp, leaf?.duration, leaf?.heapPeak]).toEqual([
       null,
       { self: 0, total: 0 },
