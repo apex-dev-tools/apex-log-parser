@@ -12,9 +12,11 @@ import {
   GRAMMAR,
   idOfType,
 } from '../catalog/catalog.js';
-import type { CpuType } from '../catalog/types.js';
+import type { CpuType, Fields } from '../catalog/types.js';
+import type { Issues } from '../engine/issues.js';
+import { caughtOf, throwOutcomes } from '../engine/throws.js';
 import type { Store } from '../store/store.js';
-import type { AnyDetails } from './details.js';
+import type { AnyDetails, RowReads } from './details.js';
 import { eventDetails } from './details.js';
 
 const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
@@ -26,12 +28,16 @@ const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
  * Reads each row's line from the source, on demand: its text, raw line, fields, suffix and
  * cpuType. One cursor serves every read, so each result is taken before the next read starts.
  */
-export class EventLines {
+export class EventLines implements RowReads {
   private readonly store: Store;
+  private readonly issues: Issues;
   private readonly fields: ByteFields;
+  /** Each throw's outcome, made on the first `caughtOf`. */
+  private outcomes: Int8Array | null = null;
 
-  constructor(store: Store, source: Source) {
+  constructor(store: Store, source: Source, issues: Issues) {
     this.store = store;
+    this.issues = issues;
     this.fields = new ByteFields(source);
   }
 
@@ -75,17 +81,20 @@ export class EventLines {
     return eventCpuType(this.typeOf(id), () => this.at(id));
   }
 
-  /** The values the row's line states beyond its text; null for a type with none. */
+  /** What the row's line states beyond its text, or derives from the rows after; null if none. */
   details(id: number): AnyDetails | null {
-    return eventDetails(
-      this.typeOf(id),
-      () => this.at(id),
-      () => {
-        // The platform writes a query's plan as a child line of the query.
-        const plan = this.firstChildOf(id, EXPLAIN);
-        return plan < 0 ? null : this.at(plan);
-      },
-    );
+    return eventDetails(this.typeOf(id), id, () => this.at(id), this);
+  }
+
+  explainOf(id: number): Fields | null {
+    // The platform writes a query's plan as a child line of the query.
+    const plan = this.firstChildOf(id, EXPLAIN);
+    return plan < 0 ? null : this.at(plan);
+  }
+
+  caughtOf(id: number): boolean | null {
+    this.outcomes ??= throwOutcomes(this.store, this.issues);
+    return caughtOf(this.outcomes, id);
   }
 
   private typeOf(id: number): number {

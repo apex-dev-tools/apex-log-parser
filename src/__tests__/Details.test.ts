@@ -199,3 +199,51 @@ describe('limit and heap details', () => {
     expect(log.children[0]?.details).toBeNull();
   });
 });
+
+describe('EXCEPTION_THROWN details', () => {
+  const THROW =
+    '09:18:22.6 (300)|EXCEPTION_THROWN|[5]|System.NullPointerException: Attempt to de-reference a null object';
+  const FATAL =
+    '09:18:22.6 (500)|FATAL_ERROR|System.NullPointerException: Attempt to de-reference a null object';
+  const DEBUG = '09:18:22.6 (600)|USER_DEBUG|[9]|DEBUG|went on';
+  const ENTRY = '09:18:22.6 (200)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()';
+  const EXIT = '09:18:22.6 (400)|METHOD_EXIT|[1]|01p000000000AAA|MyClass.run()';
+  const SKIP = '*** Skipped 1,024 bytes of detailed log';
+  const caught = (...lines: string[]) =>
+    parse(inExecution(...lines))
+      .ofType('EXCEPTION_THROWN')
+      .map((e) => e.details.caught);
+
+  it('is caught when execution goes on after the throw', () => {
+    expect(caught(ENTRY, THROW, EXIT, DEBUG)).toEqual([true]);
+  });
+
+  it('is not caught when the frames exit and a fatal error follows', () => {
+    expect(caught(ENTRY, THROW, EXIT, FATAL)).toEqual([false]);
+  });
+
+  it('ends a run of throws at the first row that is not a throw or an exit', () => {
+    expect(caught(THROW, DEBUG, THROW, FATAL)).toEqual([true, false]);
+  });
+
+  it('skips an exit line that closes no frame', () => {
+    expect(caught(THROW, EXIT, FATAL)).toEqual([false]);
+  });
+
+  it('is caught when the platform drops lines before the throw only', () => {
+    expect(caught(SKIP, THROW, DEBUG)).toEqual([true]);
+  });
+
+  it.each([
+    ['the log ends after it', [THROW]],
+    ['the limit block follows it', [THROW, '09:18:22.6 (900)|CUMULATIVE_LIMIT_USAGE']],
+    ['a test limit block follows it', [THROW, '09:18:22.6 (900)|TESTING_LIMITS']],
+    ['the platform drops lines after it', [THROW, SKIP, DEBUG]],
+    [
+      'the log reaches its maximum size after it',
+      [ENTRY, THROW, '*** MAXIMUM DEBUG LOG SIZE REACHED ***', DEBUG],
+    ],
+  ])('is null when %s', (_name, lines) => {
+    expect(caught(...lines)).toEqual([null]);
+  });
+});

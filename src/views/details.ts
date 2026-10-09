@@ -23,8 +23,9 @@ export interface ExplainPlan {
 }
 
 /**
- * The values each type's line states beyond its text, by type. A value is null when the line does
- * not state it, or states it malformed; `field()` still gives the raw text.
+ * The values each type's line states beyond its text, or derives from the rows after it, by type. A
+ * value is null when the log does not state it, or states it malformed; `field()` still gives the
+ * raw text.
  */
 export interface EventDetails {
   readonly SOQL_EXECUTE_BEGIN: {
@@ -46,6 +47,16 @@ export interface EventDetails {
   readonly FLOW_INTERVIEW_FINISHED_LIMIT_USAGE: LimitUsage | null;
   readonly FLOW_ELEMENT_LIMIT_USAGE: RunningUsage | null;
   readonly FLOW_BULK_ELEMENT_LIMIT_USAGE: RunningUsage | null;
+  readonly EXCEPTION_THROWN: {
+    /**
+     * The parser's reading of the rows after the throw; the log does not state it. True when
+     * execution goes on, false when a `FATAL_ERROR` ends it. Throws with only exit lines between
+     * them share one answer, so a throw that a catch block wraps and throws again is false too.
+     * Null when the log cannot tell: it ends, a limit block starts, or it drops lines before the
+     * next event. A merged `ENTERING_MANAGED_PKG` has no row, so the code it ran is not seen.
+     */
+    readonly caught: boolean | null;
+  };
 }
 
 /** The details of an event of type `T`: null for a type that states none. */
@@ -54,9 +65,17 @@ export type DetailsOf<T extends EventType> = T extends keyof EventDetails ? Even
 /** The details of any event. */
 export type AnyDetails = EventDetails[keyof EventDetails];
 
+/** What a reader can ask of the other rows of its log. */
+export interface RowReads {
+  /** Row `id`'s explain child's line, or null when it has none. It moves the shared cursor. */
+  explainOf(id: number): Fields | null;
+  /** Whether row `id`'s throw was caught, as `caught` states it. */
+  caughtOf(id: number): boolean | null;
+}
+
 type Read<T> = (f: Fields) => T;
-/** Reads a line's details; `explain` gives a query's explain line, or null when it has none. */
-type Reader<T> = (f: Fields, explain: () => Fields | null) => T;
+/** Reads row `id`'s details from its line `f`; `rows` gives the other rows of its log. */
+type Reader<T> = (f: Fields, id: number, rows: RowReads) => T;
 
 /** Field `name`'s position in `typeId`'s line; throws at load for a name the entry does not list. */
 function position(typeId: number, name: string): { at: number; last: boolean } {
@@ -134,10 +153,10 @@ const planOf = (f: Fields): ExplainPlan | null => explainPlan(f.at(PLAN) || null
 
 reader('SOQL_EXECUTE_BEGIN', (t) => {
   const aggregations = int(t, 'aggregations', 'Aggregations:');
-  return (f, explain) => {
-    // Read before explain(), which can move a shared cursor to the child's line.
+  return (f, id, rows) => {
+    // Read before the plan, which moves the shared cursor to the child's line.
     const stated = aggregations(f);
-    const line = explain();
+    const line = rows.explainOf(id);
     return { aggregations: stated, explain: line && planOf(line) };
   };
 });
@@ -174,13 +193,16 @@ for (const [type, parse] of FLOW_USAGE) {
   });
 }
 
-/** The details `typeId`'s line states, or null for a type that has none. Frozen: views share them. */
+reader('EXCEPTION_THROWN', () => (_f, id, rows) => ({ caught: rows.caughtOf(id) }));
+
+/** Row `id`'s details, or null for a type that has none. Frozen: views share them. */
 export function eventDetails(
   typeId: number,
+  id: number,
   f: () => Fields,
-  explain: () => Fields | null,
+  rows: RowReads,
 ): AnyDetails | null {
   const read = READERS[typeId];
-  const details = read ? read(f(), explain) : null;
+  const details = read ? read(f(), id, rows) : null;
   return details && Object.freeze(details);
 }

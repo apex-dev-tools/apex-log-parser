@@ -20,8 +20,8 @@ const LIMITS = [
   '09:00:00.0 (900)|CUMULATIVE_LIMIT_USAGE_END',
 ];
 
-// Every part of a build: the header, namespaces, counts, heap, details, a flow running total,
-// limits, a skipped block, a frame left open and a line the parser cannot read.
+// Every part of a build: the header, namespaces, counts, heap, details, a caught throw, a flow
+// running total, limits, a skipped block, a frame left open and a line the parser cannot read.
 const LOG = [
   '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;CALLOUT,INFO;DB,INFO;SYSTEM,DEBUG;WORKFLOW,INFO',
   '09:15:30.25 (1)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
@@ -33,6 +33,7 @@ const LOG = [
   '09:00:00.0 (55)|SOQL_EXECUTE_EXPLAIN|[2]|TableScan on MyObject__c : [], cardinality: 1, sobjectCardinality: 1, relativeCost 1.3',
   '09:00:00.0 (60)|SOQL_EXECUTE_END|[2]|Rows:2',
   '09:00:00.0 (70)|HEAP_ALLOCATE|[3]|Bytes:64',
+  '09:00:00.0 (75)|EXCEPTION_THROWN|[3]|System.NullPointerException: Attempt to de-reference a null object',
   '09:00:00.0 (80)|USER_DEBUG|[4]|DEBUG|café ☕',
   'a line that continues the debug text',
   '09:00:00.0 (90)|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()',
@@ -116,6 +117,7 @@ it('the fixture states every part of a build', async () => {
   expect(log.heapPeak).toBeGreaterThan(0);
   expect(log.ofType('FLOW_ELEMENT_BEGIN')[0]?.dmlCount.self).toBe(1);
   expect(log.ofType('SOQL_EXECUTE_EXPLAIN')[0]?.details).not.toBeNull();
+  expect(log.ofType('EXCEPTION_THROWN')[0]?.details.caught).toBe(true);
 });
 
 describe.each([

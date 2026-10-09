@@ -22,7 +22,8 @@ VS Code extension and its [MCP server](https://github.com/certinia/debug-log-ana
 - **Node and browser builds**, with one API. An optional worker moves the parse off the main
   thread.
 - **Every documented event type**, each with its kind of work (`kind`), its timeline group, its
-  debug level and the values its line states (`details`).
+  debug level and its extra values (`details`), such as a query's plan or whether a throw was
+  caught.
 - **An event tree** where each entry is matched to its exit, with self and total times in
   nanoseconds.
 - **Counts up the tree**: SOQL, DML and SOSL statements and rows, exceptions and heap.
