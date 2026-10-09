@@ -118,8 +118,8 @@ const methods = [...log.ofType('METHOD_ENTRY')].sort((a, b) => b.duration.self -
 console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.duration.self })));
 
 for (const query of log.ofType('SOQL_EXECUTE_BEGIN')) {
-  // details is typed by the event type: here { aggregations: number | null }.
-  console.log(query.lineNumber, query.soqlRowCount.self, query.details);
+  // details is typed by the event type: here the aggregations, and the plan when the log states one.
+  console.log(query.lineNumber, query.soqlRowCount.self, query.details.explain?.relativeCost);
 }
 ```
 
@@ -209,7 +209,8 @@ for (let id = 1; id <= log.eventCount; id++) {
 
 Everything comes from the package root: `parse`, `toBuffers`, `fromBuffers`, the event catalog
 (`EVENT_TYPES`, `eventType`), every type, and the const companions that go with them
-(`CATEGORY`, `DEBUG_CATEGORY`, `EVENT_TYPE_NAMES`, `LEVEL`):
+(`CATEGORY`, `DEBUG_CATEGORY`, `EVENT_TYPE_NAMES`, `LEVEL`, `LIMIT_UNIT`). `LIMIT_METRICS` gives
+the unit of each limit metric:
 
 ```typescript
 import { eventType, parse, type ApexLog } from '@apexdevtools/apex-log-parser';
@@ -260,6 +261,19 @@ can tell the two apart.
   network calls of its own.
 - **ESM only.** There is no CommonJS build, so `require()` does not work.
 - **TypeScript declarations ship with the package.** No `@types` install is needed.
+
+**Tests under jsdom**, as in Jest's `jsdom` environment, do not have all the globals the parser
+uses. Both builds need `structuredClone`. The Node build needs `setImmediate`. The browser build
+needs `MessageChannel` where `scheduler.yield` is not available. Add the missing ones in a setup
+file. For the Node build:
+
+```typescript
+import { setImmediate } from 'node:timers';
+import { deserialize, serialize } from 'node:v8';
+
+globalThis.setImmediate ??= setImmediate;
+globalThis.structuredClone ??= (value) => deserialize(serialize(value));
+```
 
 To upgrade from v0, see the v1 entry in the [CHANGELOG](./CHANGELOG.md).
 
