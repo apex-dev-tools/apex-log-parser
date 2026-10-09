@@ -213,24 +213,22 @@ export class RollupView implements Rollups {
   }
 
   get heapPeak(): number {
-    const store = this.store;
-    if (store.heapSlot[this.id] === NONE) return 0;
-    return store.heap[store.heapOf(this.id) + HEAP.peak]!;
+    const at = this.store.heapIndex(this.id);
+    return at < 0 ? 0 : this.store.heap[at + HEAP.peak]!;
   }
 
   private count(counter: number): SelfTotal {
-    const store = this.store;
-    // A slot is NONE while every count in it is 0, so countsOf below only reads.
-    if (store.countSlot[this.id] === NONE) return ZERO;
-    const at = store.countsOf(this.id) + counter * 2;
-    return { self: store.counts[at + SELF]!, total: store.counts[at + TOTAL]! };
+    const at = this.store.countIndex(this.id);
+    if (at < 0) return ZERO;
+    const counts = this.store.counts;
+    return { self: counts[at + counter * 2 + SELF]!, total: counts[at + counter * 2 + TOTAL]! };
   }
 
   private heap(self: number, total: number): SelfTotal {
-    const store = this.store;
-    if (store.heapSlot[this.id] === NONE) return ZERO;
-    const at = store.heapOf(this.id);
-    return { self: store.heap[at + self]!, total: store.heap[at + total]! };
+    const at = this.store.heapIndex(this.id);
+    if (at < 0) return ZERO;
+    const heap = this.store.heap;
+    return { self: heap[at + self]!, total: heap[at + total]! };
   }
 }
 
