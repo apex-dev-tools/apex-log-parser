@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { ownBytes } from '../engine/buffers.js';
+import { tagOf } from '../tags.js';
 
 // `tsconfig.json` keeps ambient DOM types out, so the WHATWG shapes parse reads are stated here, as
 // far as it reads them. The platform's own objects match them.
@@ -82,8 +83,6 @@ const ENCODE_CHARS = 1 << 20;
 /** The largest stated length read into one buffer made up front: 256 MiB. */
 const MAX_STATED = 1 << 28;
 
-/** The type tag, which holds across realms, as a view from an iframe, where `instanceof` fails. */
-const tagOf = (value: unknown): string => Object.prototype.toString.call(value);
 const isBytes = (value: unknown): value is Uint8Array => tagOf(value) === '[object Uint8Array]';
 const isBuffer = (value: unknown): value is ArrayBuffer =>
   tagOf(value) === '[object ArrayBuffer]' || tagOf(value) === '[object SharedArrayBuffer]';

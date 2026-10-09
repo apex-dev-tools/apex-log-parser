@@ -6,6 +6,7 @@ import type { StoreState } from '../store/store.js';
 import { Store } from '../store/store.js';
 import type { StringState } from '../store/strings.js';
 import { StringTable } from '../store/strings.js';
+import { tagOf } from '../tags.js';
 import type { Built } from './builder.js';
 import type { Issue } from './issues.js';
 import { Issues } from './issues.js';
@@ -91,8 +92,6 @@ export function restoreBuilt(data: BuiltData, sourceOf: (bytes: Uint8Array) => S
     source,
   };
 }
-
-const tagOf = (value: unknown): string => Object.prototype.toString.call(value);
 
 /**
  * Every buffer under `data` that `postMessage` can move, once each. The source's moves only when

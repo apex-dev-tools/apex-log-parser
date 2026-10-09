@@ -2,15 +2,10 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { Fields } from '../catalog/types.js';
+import { CR, LBRACKET, MINUS, matchesAscii, PIPE, RBRACKET, ZERO } from './ascii.js';
 import { continuationText } from './lines.js';
 import type { Source } from './source.js';
 
-const CR = 0x0d;
-const PIPE = 0x7c;
-const OPEN = 0x5b;
-const CLOSE = 0x5d;
-const MINUS = 0x2d;
-const ZERO = 0x30;
 const EXTERNAL = 'EXTERNAL';
 
 /** The unsigned decimal in bytes `start` to `end`, or NaN when it is not one or is not safe. */
@@ -153,8 +148,10 @@ export class ByteFields implements Fields {
     const end = this.endOf(i);
     if (start === end) return null;
     const bytes = this.bytes;
-    if (end - start < 3 || bytes[start] !== OPEN || bytes[end - 1] !== CLOSE) return Number.NaN;
-    if (end - start === EXTERNAL.length + 2 && this.matches(start + 1, EXTERNAL)) return 'EXTERNAL';
+    if (end - start < 3 || bytes[start] !== LBRACKET || bytes[end - 1] !== RBRACKET)
+      return Number.NaN;
+    if (end - start === EXTERNAL.length + 2 && matchesAscii(this.bytes, start + 1, EXTERNAL))
+      return 'EXTERNAL';
     return digits(this.bytes, start + 1, end - 1);
   }
 
@@ -164,18 +161,10 @@ export class ByteFields implements Fields {
     const end = this.endOf(i);
     if (start === end) return null;
     if (end - start < prefix.length) return Number.NaN;
-    if (!this.matches(start, prefix)) return Number.NaN;
+    if (!matchesAscii(this.bytes, start, prefix)) return Number.NaN;
     start += prefix.length;
     if (start < end && this.bytes[start] === MINUS) return -digits(this.bytes, start + 1, end);
     return digits(this.bytes, start, end);
-  }
-
-  /** Bytes from `start` spell `ascii`. */
-  private matches(start: number, ascii: string): boolean {
-    for (let k = 0; k < ascii.length; k++) {
-      if (this.bytes[start + k] !== ascii.charCodeAt(k)) return false;
-    }
-    return true;
   }
 
   private grow(): void {

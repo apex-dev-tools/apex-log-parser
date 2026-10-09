@@ -14,8 +14,6 @@ export interface Source {
   text(start: number, end: number): string;
 }
 
-export const LF = 0x0a;
-
 /** Offsets are 32-bit integers in the cursor and the line search, so a view must end below 2^31. */
 export function checkSize(bytes: Uint8Array): Uint8Array {
   if (bytes.byteOffset + bytes.byteLength > 0x7fffffff) {

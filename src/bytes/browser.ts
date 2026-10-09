@@ -1,8 +1,10 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+
+import { LF } from './ascii.js';
 import type { Source } from './source.js';
-import { checkSize, LF } from './source.js';
+import { checkSize } from './source.js';
 
 // `tsconfig.json` keeps ambient DOM types out, so declare the one WHATWG global used here.
 declare const TextDecoder: new (

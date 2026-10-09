@@ -1,6 +1,20 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+
+import {
+  COLON,
+  countByte,
+  DOT,
+  findAscii,
+  indexOfByte,
+  LPAREN,
+  lastIndexOfByte,
+  RPAREN,
+  SLASH,
+  spellsAscii,
+  startsWithAscii,
+} from '../bytes/ascii.js';
 import type { ByteFields } from '../bytes/cursor.js';
 import type { NamespaceRule } from '../catalog/catalog.js';
 import type { StringTable } from '../store/strings.js';
@@ -20,12 +34,6 @@ export const RULE: { readonly [R in NamespaceRule]: number } = {
   package: 6,
   limits: 7,
 };
-
-const DOT = 0x2e;
-const COLON = 0x3a;
-const SLASH = 0x2f;
-const OPEN = 0x28;
-const CLOSE = 0x29;
 
 const TYPE_FOR_NAME = 'System.Type.forName(';
 const APEX_SCHEME = 'apex://';
@@ -108,7 +116,8 @@ export class Namespaces {
   /** Bytes `start` to `end` as a namespace the log stated before this line, or `UNSTATED`. */
   private stated(start: number, end: number): number {
     if (start >= end) return UNSTATED;
-    if (this.spells(start, end, DEFAULT_TEXT)) return this.defaultSeen ? DEFAULT : UNSTATED;
+    if (spellsAscii(this.bytes, start, end, DEFAULT_TEXT))
+      return this.defaultSeen ? DEFAULT : UNSTATED;
     const id = this.strings.lookup(start, end);
     return id >= 0 && this.seen[id] === 1 ? id : UNSTATED;
   }
@@ -116,7 +125,7 @@ export class Namespaces {
   /** The namespace in bytes `start` to `end`: none when empty, and `'default'` as `DEFAULT`. */
   private id(start: number, end: number): number {
     if (start >= end) return UNSTATED;
-    if (this.spells(start, end, DEFAULT_TEXT)) return DEFAULT;
+    if (spellsAscii(this.bytes, start, end, DEFAULT_TEXT)) return DEFAULT;
     return this.strings.intern(start, end);
   }
 
@@ -124,7 +133,7 @@ export class Namespaces {
     const s = fields.startOf(signature);
     if (s < 0) return UNSTATED;
     const e = fields.endOf(signature);
-    if (this.startsWith(s, e, TYPE_FOR_NAME)) return UNSTATED;
+    if (startsWithAscii(this.bytes, s, e, TYPE_FOR_NAME)) return UNSTATED;
     // One pass: the first '(', the first '.' anywhere, and the dots before the '('.
     const bytes = this.bytes;
     let bracket = -1;
@@ -132,7 +141,7 @@ export class Namespaces {
     let dotsBefore = 0;
     for (let i = s; i < e && (bracket < 0 || dot < 0); i++) {
       const c = bytes[i];
-      if (c === OPEN) bracket = i;
+      if (c === LPAREN) bracket = i;
       else if (c === DOT) {
         if (dot < 0) dot = i;
         if (bracket < 0) dotsBefore++;
@@ -153,8 +162,8 @@ export class Namespaces {
     const s = fields.startOf(field);
     if (s < 0) return UNSTATED;
     const e = fields.endOf(field);
-    if (e > s && this.bytes[e - 1] === CLOSE) return UNSTATED;
-    const dot = this.indexOf(DOT, s, e);
+    if (e > s && this.bytes[e - 1] === RPAREN) return UNSTATED;
+    const dot = indexOfByte(this.bytes, DOT, s, e);
     return dot < 0 ? UNSTATED : this.id(s, dot);
   }
 
@@ -162,13 +171,13 @@ export class Namespaces {
     const s = fields.startOf(className);
     if (s < 0) return UNSTATED;
     const e = fields.endOf(className);
-    const dot = this.indexOf(DOT, s, e);
+    const dot = indexOfByte(this.bytes, DOT, s, e);
     // v0's slice(0, indexOf('.')): with no dot, every byte but the last.
     const possible = dot < 0 ? e - 1 : dot;
     const known = this.stated(s, possible);
     if (known !== UNSTATED) return known;
     // An inner class with a namespace: ns.Outer.Inner.
-    return this.count(DOT, s, e) === 2 ? this.id(s, dot) : UNSTATED;
+    return countByte(this.bytes, DOT, s, e) === 2 ? this.id(s, dot) : UNSTATED;
   }
 
   private codeUnit(fields: ByteFields, unit: number, name: number, typeRef: number): number {
@@ -176,8 +185,8 @@ export class Namespaces {
     const typeField = this.firstStated(fields, typeRef, name, unit);
     const ts = typeField < 0 ? 0 : fields.startOf(typeField);
     const te = typeField < 0 ? 0 : fields.endOf(typeField);
-    let sep = this.indexOf(COLON, ts, te);
-    if (sep < 0) sep = this.indexOf(SLASH, ts, te);
+    let sep = indexOfByte(this.bytes, COLON, ts, te);
+    if (sep < 0) sep = indexOfByte(this.bytes, SLASH, ts, te);
     const unitType = sep < 0 ? '' : this.unitType(ts, sep);
     const nameField = this.firstStated(fields, name, unit);
     let ns = 0;
@@ -203,9 +212,9 @@ export class Namespaces {
         found = this.vfNamespace(ns, ne);
         break;
       case 'apex': {
-        const dot = this.indexOf(DOT, ns, ne);
+        const dot = indexOfByte(this.bytes, DOT, ns, ne);
         if (dot < 0) break;
-        const scheme = this.find(APEX_SCHEME, ns, ne);
+        const scheme = findAscii(this.bytes, APEX_SCHEME, ns, ne);
         // v0's indexOf('apex://') + 7 is 6 when the name has no scheme.
         const from = scheme < 0 ? ns + 6 : scheme + APEX_SCHEME.length;
         found = from < dot ? this.id(from, dot) : UNSTATED;
@@ -215,20 +224,20 @@ export class Namespaces {
         const ref = fields.startOf(typeRef);
         if (ref < 0) break;
         const refEnd = fields.endOf(typeRef);
-        if (this.count(SLASH, ref, refEnd) !== 2) break;
-        const first = this.indexOf(SLASH, ref, refEnd);
-        found = this.id(first + 1, this.indexOf(SLASH, first + 1, refEnd));
+        if (countByte(this.bytes, SLASH, ref, refEnd) !== 2) break;
+        const first = indexOfByte(this.bytes, SLASH, ref, refEnd);
+        found = this.id(first + 1, indexOfByte(this.bytes, SLASH, first + 1, refEnd));
         break;
       }
       default: {
-        const bracket = this.lastIndexOf(OPEN, ns, ne);
+        const bracket = lastIndexOfByte(this.bytes, LPAREN, ns, ne);
         // v0 split the name up to and including its last '(' on '.'.
         const end = bracket < 0 ? ne : bracket + 1;
-        const parts = this.count(DOT, ns, end) + 1;
+        const parts = countByte(this.bytes, DOT, ns, end) + 1;
         // With two parts, the second ends at `end`; a dot there leaves it empty, never '('.
-        const secondIsCall = end > ns && this.bytes[end - 1] === OPEN;
+        const secondIsCall = end > ns && this.bytes[end - 1] === LPAREN;
         if (parts === 3 || (parts === 2 && !secondIsCall)) {
-          const dot = this.indexOf(DOT, ns, end);
+          const dot = indexOfByte(this.bytes, DOT, ns, end);
           found = dot < 0 ? UNSTATED : this.id(ns, dot);
         }
       }
@@ -239,17 +248,17 @@ export class Namespaces {
   /** An object's namespace: the prefix before `__`, or `'default'` without one. */
   private objectNamespace(start: number, end: number): number {
     if (start >= end) return UNSTATED;
-    const sep = this.find('__', start, end);
+    const sep = findAscii(this.bytes, '__', start, end);
     return sep < 0 ? DEFAULT : this.id(start, sep);
   }
 
   /** A VF page's namespace: between the second `/` and the first `__`. */
   private vfNamespace(start: number, end: number): number {
-    const sep = this.find('__', start, end);
+    const sep = findAscii(this.bytes, '__', start, end);
     if (sep < 0) return DEFAULT;
-    const first = this.indexOf(SLASH, start, end);
+    const first = indexOfByte(this.bytes, SLASH, start, end);
     if (first < 0) return DEFAULT;
-    const second = this.indexOf(SLASH, first + 1, end);
+    const second = indexOfByte(this.bytes, SLASH, first + 1, end);
     if (second < 0) return DEFAULT;
     // v0's substring() swapped its bounds when the first is the larger.
     const from = second + 1;
@@ -261,7 +270,7 @@ export class Namespaces {
     const s = fields.startOf(field);
     if (s < 0) return UNSTATED;
     const e = fields.endOf(field);
-    const dot = this.lastIndexOf(DOT, s, e);
+    const dot = lastIndexOfByte(this.bytes, DOT, s, e);
     return this.id(dot < 0 ? s : dot + 1, e);
   }
 
@@ -271,8 +280,8 @@ export class Namespaces {
     if (s < 0) return DEFAULT;
     let e = fields.endOf(field);
     const bytes = this.bytes;
-    while (s < e && (bytes[s] === OPEN || bytes[s] === CLOSE)) s++;
-    while (e > s && (bytes[e - 1] === OPEN || bytes[e - 1] === CLOSE)) e--;
+    while (s < e && (bytes[s] === LPAREN || bytes[s] === RPAREN)) s++;
+    while (e > s && (bytes[e - 1] === LPAREN || bytes[e - 1] === RPAREN)) e--;
     const id = this.id(s, e);
     return id === UNSTATED ? DEFAULT : id;
   }
@@ -288,44 +297,7 @@ export class Namespaces {
 
   /** The code unit type the bytes spell, or `''` for any other. */
   private unitType(start: number, end: number): string {
-    for (const type of UNIT_TYPES) if (this.spells(start, end, type)) return type;
+    for (const type of UNIT_TYPES) if (spellsAscii(this.bytes, start, end, type)) return type;
     return '';
-  }
-
-  private indexOf(byte: number, start: number, end: number): number {
-    const bytes = this.bytes;
-    for (let i = start; i < end; i++) if (bytes[i] === byte) return i;
-    return -1;
-  }
-
-  private lastIndexOf(byte: number, start: number, end: number): number {
-    const bytes = this.bytes;
-    for (let i = end - 1; i >= start; i--) if (bytes[i] === byte) return i;
-    return -1;
-  }
-
-  private count(byte: number, start: number, end: number): number {
-    const bytes = this.bytes;
-    let n = 0;
-    for (let i = start; i < end; i++) if (bytes[i] === byte) n++;
-    return n;
-  }
-
-  /** Where `ascii` first appears in bytes `start` to `end`, or -1. */
-  private find(ascii: string, start: number, end: number): number {
-    for (let i = start; i + ascii.length <= end; i++) if (this.startsWith(i, end, ascii)) return i;
-    return -1;
-  }
-
-  private startsWith(start: number, end: number, ascii: string): boolean {
-    if (end - start < ascii.length) return false;
-    for (let k = 0; k < ascii.length; k++) {
-      if (this.bytes[start + k] !== ascii.charCodeAt(k)) return false;
-    }
-    return true;
-  }
-
-  private spells(start: number, end: number, ascii: string): boolean {
-    return end - start === ascii.length && this.startsWith(start, end, ascii);
   }
 }

@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import { tagOf } from '../tags.js';
 import type { Column } from './columns.js';
 import { resized } from './columns.js';
 
@@ -356,6 +357,3 @@ export class Store {
     }
   }
 }
-
-/** The type tag, which holds across realms, as for an array from a worker. */
-const tagOf = (value: unknown): string => Object.prototype.toString.call(value);

@@ -3,6 +3,7 @@
  */
 import { hashBytes } from '../bytes/hash.js';
 import type { Source } from '../bytes/source.js';
+import { tagOf } from '../tags.js';
 import { resized } from './columns.js';
 
 const EMPTY = -1;
@@ -87,11 +88,10 @@ export class StringTable {
   /** A table over `source` that answers `text` from `state`. Its hash index is empty: never intern into it. */
   static restore(source: Source, state: StringState): StringTable {
     const kind = '[object Int32Array]';
-    const tag = (value: unknown): string => Object.prototype.toString.call(value);
     if (
       !Number.isInteger(state.size) ||
-      tag(state.starts) !== kind ||
-      tag(state.ends) !== kind ||
+      tagOf(state.starts) !== kind ||
+      tagOf(state.ends) !== kind ||
       state.starts.length < state.size ||
       state.ends.length < state.size
     )

@@ -1,6 +1,19 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import {
+  COLON,
+  CR,
+  DOT,
+  LPAREN,
+  PIPE,
+  RPAREN,
+  SPACE,
+  STAR,
+  UNDERSCORE,
+  UPPER_A,
+  UPPER_Z,
+} from '../bytes/ascii.js';
 import { ByteFields, digits } from '../bytes/cursor.js';
 import { TRUNCATION_MARKER } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
@@ -62,18 +75,6 @@ const [VF_ELEMENT = -1, VF_METHOD = -1, VF_CONTROLLER = -1] =
 
 /** What `readEvent` made of a line. */
 const READ = { notEvent: 0, event: 1, error: 2, unknownType: 3 } as const;
-
-const CR = 0x0d;
-const PIPE = 0x7c;
-const OPEN = 0x28;
-const UPPER_A = 0x41;
-const UPPER_Z = 0x5a;
-const UNDERSCORE = 0x5f;
-const CLOSE = 0x29;
-const COLON = 0x3a;
-const DOT = 0x2e;
-const SPACE = 0x20;
-const STAR = 0x2a;
 
 /**
  * Nanoseconds, before the log states any. -0, not 0: a double, as every time is, so V8 never
@@ -793,8 +794,8 @@ export class LogBuilder {
   private timestampIn(start: number, end: number): number {
     const bytes = this.bytes;
     let i = start;
-    while (i < end && bytes[i] !== OPEN) i++;
-    if (i >= end || bytes[end - 1] !== CLOSE) return Number.NaN;
+    while (i < end && bytes[i] !== LPAREN) i++;
+    if (i >= end || bytes[end - 1] !== RPAREN) return Number.NaN;
     return digits(bytes, i + 1, end - 1);
   }
 
@@ -883,7 +884,7 @@ export class LogBuilder {
     const close = this.timestampClose(this.pos);
     if (close < 0) return false;
     let open = close;
-    while (bytes[open] !== OPEN) open--;
+    while (bytes[open] !== LPAREN) open--;
     if (!(digits(bytes, open + 1, close) < this.lastAt)) return false;
     return SETTINGS_LINE.test(this.source.text(start, end));
   }
@@ -927,8 +928,8 @@ export class LogBuilder {
     let i = start + 9;
     if (!digit(i)) return -1;
     while (digit(i)) i++;
-    if (bytes[i++] !== SPACE || bytes[i++] !== OPEN || !digit(i)) return -1;
+    if (bytes[i++] !== SPACE || bytes[i++] !== LPAREN || !digit(i)) return -1;
     while (digit(i)) i++;
-    return bytes[i] === CLOSE && bytes[i + 1] === PIPE ? i : -1;
+    return bytes[i] === RPAREN && bytes[i + 1] === PIPE ? i : -1;
   }
 }
