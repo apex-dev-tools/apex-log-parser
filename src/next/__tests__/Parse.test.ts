@@ -66,6 +66,14 @@ const summary = (log: ApexLog) => ({
 });
 const expected = summary(syncParse(LOG));
 
+/** Enough lines that a parse takes several slices. */
+function longLog(): string {
+  const lines = ['64.0 APEX_CODE,FINE'];
+  for (let i = 0; i < 200_000; i++)
+    lines.push(`09:00:00.0 (${i + 1})|USER_DEBUG|[1]|DEBUG|line ${i}`);
+  return lines.join('\n');
+}
+
 /** A stream that hands out `chunks` one read at a time, each `delayMs` after it is asked for. */
 function streamOf(chunks: Uint8Array[], delayMs = 0): LogStream & { cancelled: unknown } {
   const queue = [...chunks];
@@ -176,13 +184,9 @@ describe.each([
   });
 
   it('stops within a slice when the signal aborts mid-scan', async () => {
-    // Enough lines that the scan takes several slices.
-    const lines = ['64.0 APEX_CODE,FINE'];
-    for (let i = 0; i < 200_000; i++)
-      lines.push(`09:00:00.0 (${i + 1})|USER_DEBUG|[1]|DEBUG|line ${i}`);
     const controller = new platform.AbortController();
     const scans: number[] = [];
-    const error = await parse(lines.join('\n'), {
+    const error = await parse(longLog(), {
       signal: controller.signal,
       onProgress: (p) => {
         if (p.phase !== 'scan') return;
@@ -192,6 +196,17 @@ describe.each([
     }).catch((e) => e);
     expect(error).toBe(controller.signal.reason);
     expect(scans).toHaveLength(1);
+  });
+
+  it('rejects when the signal aborts in the last scan report of a small log', async () => {
+    const controller = new platform.AbortController();
+    const error = await parse(LOG, {
+      signal: controller.signal,
+      onProgress: (p) => {
+        if (p.phase === 'scan') controller.abort();
+      },
+    }).catch((e) => e);
+    expect(error).toBe(controller.signal.reason);
   });
 
   it('cancels a stream it stops reading', async () => {
@@ -282,11 +297,10 @@ describe('the browser build', () => {
     const yields = vi.fn(async () => undefined);
     host.scheduler = { yield: yields };
     try {
-      await browserParse(LOG);
+      await browserParse(longLog());
     } finally {
       delete host.scheduler;
     }
-    // The yield before finish is unconditional, so even a small log yields once.
     expect(yields).toHaveBeenCalled();
   });
 });

@@ -4,6 +4,11 @@
 import type { Store } from '../store/store.js';
 import { COUNTERS, HEAP, NONE, SELF, TOTAL } from '../store/store.js';
 
+declare const performance: { now(): number };
+
+/** Rows between clock reads: a read costs more than a row. */
+const CLOCK_ROWS = 1023;
+
 /** A flow limit line's running total, which the flow residual pass reads. */
 export interface FlowTotal {
   /** A `COUNTER` value. */
@@ -57,12 +62,16 @@ export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
  * Today's `aggregateTotals`: each row's counts, heap and duration into its parent. Rows are in
  * prefix order, so going down from the last id adds every subtree before its root moves up.
  * Counts and heap sum, the heap peak takes the highest, and heap self comes from leaves only.
+ * Goes down from id `from` until `deadline`, a `performance.now()` time, passes; returns the id
+ * to go on from, or 0 once every row is done.
  */
-export function rollUp(store: Store, isFrame: Uint8Array): void {
+export function rollUp(store: Store, isFrame: Uint8Array, from: number, deadline: number): number {
   // The column starts at 0, and each row adds its total and takes it off its parent. Row 0 first:
   // V8 optimises the loop before code after it has run, so a line there deopts on every parse.
-  store.durationSelf[0]! += store.durationTotal(0);
-  for (let id = store.count - 1; id > 0; id--) {
+  if (from === store.count - 1) store.durationSelf[0]! += store.durationTotal(0);
+  for (let id = from; id > 0; id--) {
+    // Never on the first row: a call that stopped there would run the row 0 line again.
+    if ((id & CLOCK_ROWS) === 0 && id < from && performance.now() >= deadline) return id;
     // id > 0, so it has a parent row
     const parent = store.parent[id]!;
     const time = store.durationTotal(id);
@@ -90,20 +99,26 @@ export function rollUp(store: Store, isFrame: Uint8Array): void {
         heap[to + HEAP.peak] = heap[from + HEAP.peak]!;
     }
   }
+  return 0;
 }
 
 /**
  * Today's `applyFlowDbResiduals`, after `rollUp`: a flow element gets the part of the database
  * work its limit lines report that no statement under it accounts for. Elements go innermost
  * first, so a nested one's residual is in its parent's total before the parent is measured.
+ * Goes down from id `from` until `deadline` passes, and returns where to go on, as `rollUp`.
  */
 export function applyFlowResiduals(
   store: Store,
   isFlowElement: Uint8Array,
   totals: ReadonlyMap<number, FlowTotal>,
-): void {
-  if (!totals.size) return;
-  for (let id = store.count - 1; id > 0; id--) {
+  from: number,
+  deadline: number,
+): number {
+  if (!totals.size) return 0;
+  for (let id = from; id > 0; id--) {
+    // Never on the first row, so each call does some work.
+    if ((id & CLOCK_ROWS) === 0 && id < from && performance.now() >= deadline) return id;
     // id is a row, so it has a type
     if (!isFlowElement[store.type[id]!]) continue;
     // Per counter: the deltas summed, the total before the first line, the total after the last.
@@ -140,4 +155,5 @@ export function applyFlowResiduals(
       }
     }
   }
+  return 0;
 }

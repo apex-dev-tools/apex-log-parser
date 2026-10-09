@@ -24,7 +24,7 @@ import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
 import type { Issue, IssueText, IssueType, Truncation } from './issues.js';
 import { ISSUE, Issues, truncationOf } from './issues.js';
 import { DEFAULT, Namespaces, RULE, UNSTATED } from './namespaces.js';
-import type { FlowTotal, MergedTail } from './rollups.js';
+import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
 
 /** Per-event bits in `Store.flags`. */
@@ -155,6 +155,8 @@ const STAR = 0x2a;
 const NO_TIME = -0;
 /** `eventsStart` before `scan` reads the header; -1 means a log with no timestamped line. */
 const UNREAD = -2;
+/** Today's passes after the scan, in today's order, as `settle` runs them. */
+const PASS = { times: 0, rollUp: 1, flow: 2, trim: 3, done: 4 } as const;
 
 // `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
 declare const performance: { now(): number };
@@ -233,6 +235,10 @@ export class LogBuilder {
 
   /** Where the first timestamped line starts, -1 when none does; `UNREAD` until `scan` starts. */
   private eventsStart = UNREAD;
+  /** The `PASS` that `settle` runs next, and the id it goes on from. */
+  private pass: number = PASS.times;
+  private passFrom = 0;
+  private logTimes: LogTimes | null = null;
   /** Where the next unread line starts. */
   private pos = 0;
   private discontinuity = false;
@@ -319,16 +325,46 @@ export class LogBuilder {
     this.readNext();
   }
 
-  /** Today's passes over the scanned tree, and the header; once `scan` returns true. */
+  /**
+   * Today's passes over the scanned tree, until `deadline`, a `performance.now()` time, passes. The
+   * package merge ran during the scan. True once they end; call again to go on, then `finish`.
+   * Only once `scan` returns true.
+   */
+  settle(deadline: number): boolean {
+    const store = this.store;
+    if (this.pass === PASS.times) {
+      store.subtreeEnd[0] = store.count;
+      this.logTimes = setLogTimes(store, this.mergedTail);
+      this.passFrom = store.count - 1;
+      this.pass = PASS.rollUp;
+    }
+    if (this.pass === PASS.rollUp) {
+      this.passFrom = rollUp(store, IS_FRAME, this.passFrom, deadline);
+      if (this.passFrom) return false;
+      this.passFrom = store.count - 1;
+      this.pass = PASS.flow;
+    }
+    if (this.pass === PASS.flow) {
+      const totals = this.flowTotals;
+      this.passFrom = applyFlowResiduals(store, FLOW_ELEMENT, totals, this.passFrom, deadline);
+      if (this.passFrom) return false;
+      this.pass = PASS.trim;
+    }
+    if (this.pass === PASS.trim) {
+      if (!store.finish(TYPES + 1, deadline)) return false;
+      this.pass = PASS.done;
+    }
+    return true;
+  }
+
+  /** The build, with the header and truncation; runs whatever `settle` has not. */
   finish(): Built {
+    while (!this.settle(Number.POSITIVE_INFINITY));
     const store = this.store;
     const len = this.bytes.length;
     const eventsStart = this.eventsStart;
-    store.subtreeEnd[0] = store.count;
-    // Today's passes, in today's order; the package merge ran while the tree was built.
-    const { executionEndTime, first } = setLogTimes(store, this.mergedTail);
-    rollUp(store, IS_FRAME);
-    applyFlowResiduals(store, FLOW_ELEMENT, this.flowTotals);
+    // settle set them
+    const { executionEndTime, first } = this.logTimes!;
     // With no timestamped line, the header is the whole text, as today.
     const debug = debugSettings(this.source.text(0, eventsStart < 0 ? len : eventsStart));
     this.parsingErrors.push(...debug.errors);
@@ -339,7 +375,6 @@ export class LogBuilder {
       (id) => this.opensFrame(id),
       store.exitStamp[0] || 0,
     );
-    store.finish(TYPES + 1);
     return {
       store,
       strings: this.strings,

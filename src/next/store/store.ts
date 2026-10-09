@@ -41,6 +41,10 @@ export const NONE = -1;
 // and growing by half keeps both the growth copies and the unused tail small.
 const BYTES_PER_ROW = 256;
 const MIN_ROWS = 64;
+/** The per-row columns `resizeColumn` lists. */
+const COLUMNS = 14;
+
+declare const performance: { now(): number };
 
 /**
  * The events of one parse as parallel columns indexed by id, in log order. Row 0 is the log
@@ -81,6 +85,8 @@ export class Store {
   heapSlots = 0;
 
   private typeCount = 0;
+  /** The columns `finish` has trimmed so far. */
+  private trimmed = 0;
   // Each type's rows, in id order, from `typeStart[type]` to `typeStart[type + 1]`; built on first use.
   private typeRows: Int32Array | null = null;
   private typeStart: Int32Array = new Int32Array(0);
@@ -157,12 +163,21 @@ export class Store {
     return exit ? exit - this.timestamp[id]! : 0;
   }
 
-  /** Trims every column to its rows. Call once, after the last `add`; types run from 0 to `typeCount - 1`. */
-  finish(typeCount: number): void {
-    this.resize(this.count);
+  /**
+   * Trims every column to its rows, one column a step, until `deadline`, a `performance.now()`
+   * time, passes. True once all are; call again to go on. Only after the last `add`; types run
+   * from 0 to `typeCount - 1`.
+   */
+  finish(typeCount: number, deadline: number = Number.POSITIVE_INFINITY): boolean {
+    while (this.trimmed < COLUMNS) {
+      this.resizeColumn(this.trimmed++, this.count);
+      // A trim can copy a whole column, so the clock is read after each one.
+      if (this.trimmed < COLUMNS && performance.now() >= deadline) return false;
+    }
     this.counts = resized(this.counts, this.countSlots * COUNT_STRIDE);
     this.heap = resized(this.heap, this.heapSlots * HEAP_STRIDE);
     this.typeCount = typeCount;
+    return true;
   }
 
   /**
@@ -195,21 +210,56 @@ export class Store {
     return typeRows;
   }
 
-  /** Every per-row column at `size` rows: the one list of them. */
+  /** Every per-row column at `size` rows. */
   private resize(size: number): void {
-    this.type = resized(this.type, size);
-    this.start = resized(this.start, size);
-    this.end = resized(this.end, size);
-    this.timestamp = resized(this.timestamp, size);
-    this.exitStamp = resized(this.exitStamp, size);
-    this.parent = resized(this.parent, size);
-    this.subtreeEnd = resized(this.subtreeEnd, size);
-    this.depth = resized(this.depth, size);
-    this.lineNumber = resized(this.lineNumber, size);
-    this.namespace = resized(this.namespace, size);
-    this.flags = resized(this.flags, size);
-    this.durationSelf = resized(this.durationSelf, size);
-    this.countSlot = resized(this.countSlot, size);
-    this.heapSlot = resized(this.heapSlot, size);
+    for (let c = 0; c < COLUMNS; c++) this.resizeColumn(c, size);
+  }
+
+  /** Per-row column `c` at `size` rows: the one list of them. */
+  private resizeColumn(c: number, size: number): void {
+    switch (c) {
+      case 0:
+        this.type = resized(this.type, size);
+        break;
+      case 1:
+        this.start = resized(this.start, size);
+        break;
+      case 2:
+        this.end = resized(this.end, size);
+        break;
+      case 3:
+        this.timestamp = resized(this.timestamp, size);
+        break;
+      case 4:
+        this.exitStamp = resized(this.exitStamp, size);
+        break;
+      case 5:
+        this.parent = resized(this.parent, size);
+        break;
+      case 6:
+        this.subtreeEnd = resized(this.subtreeEnd, size);
+        break;
+      case 7:
+        this.depth = resized(this.depth, size);
+        break;
+      case 8:
+        this.lineNumber = resized(this.lineNumber, size);
+        break;
+      case 9:
+        this.namespace = resized(this.namespace, size);
+        break;
+      case 10:
+        this.flags = resized(this.flags, size);
+        break;
+      case 11:
+        this.durationSelf = resized(this.durationSelf, size);
+        break;
+      case 12:
+        this.countSlot = resized(this.countSlot, size);
+        break;
+      case 13:
+        this.heapSlot = resized(this.heapSlot, size);
+        break;
+    }
   }
 }

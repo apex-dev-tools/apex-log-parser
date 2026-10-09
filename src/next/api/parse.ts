@@ -87,8 +87,11 @@ export async function parseWith(
     await pause();
   }
   report({ phase: 'scan', bytes: total, totalBytes: total }, true);
-  // finish runs in one block, so it starts a task of its own rather than the end of a full slice.
-  await yieldToHost();
+  while (!builder.settle(deadline)) {
+    report({ phase: 'finish', bytes: total, totalBytes: total });
+    await pause();
+  }
+  // A small log can settle in the slice its last scan report ran in, with no pause to check.
   check();
 
   const log = apexLog(builder.finish());

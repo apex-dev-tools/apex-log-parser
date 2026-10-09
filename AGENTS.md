@@ -38,7 +38,8 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   share (`api/surface.ts`). `engine/node.ts` and `engine/browser.ts` hold each build's `Engine`
   (`engine/engine.ts`), which keeps one idle builder alive. `api/parse.ts` is the driver both share:
   it reads the source to bytes (`api/sources.ts`), scans in 5 ms slices with `LogBuilder.scan`,
-  and yields between them the build's own way. V8 drops a class's object layout once no instance of it is alive, and
+  runs the passes after the scan in slices with `LogBuilder.settle`, and yields between slices
+  the build's own way. V8 drops a class's object layout once no instance of it is alive, and
   throws away the code it optimised for it, so without one the parse after a GC runs about 3×
   slower. For the same reason a builder field that holds a time starts as a double (`NO_TIME`,
   -0), not 0. `benchmarks/__tests__/deopt.test.ts` fails when either breaks.
