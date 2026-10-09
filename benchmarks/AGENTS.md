@@ -35,6 +35,8 @@ applies.
 - `scripts/deopt.ts` — parses the 8 MB log until V8 has optimised the engine, then in a plain
   loop, then after each of several full GCs. `__tests__/deopt.test.ts` runs it under
   `--trace-deopt` for each build. It fails on any deopt in the loop, and on any deopt a GC causes.
+  A tier up from Maglev to TurboFan in a hot loop (`prepare for on stack replacement`) is not a
+  loss, and can land in the loop on a slower machine, so the test lets it through.
 - `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
   GC's freeing has finished. One `gc()` is not enough, because V8 frees buffer memory off the
   main thread.

@@ -5,6 +5,8 @@ import { GC_MARKER, PLAIN_MARKER } from '../scripts/deopt.js';
 
 const script = fileURLToPath(new URL('../scripts/deopt.ts', import.meta.url));
 const DEOPT = /bailout \(kind/;
+// Maglev code leaving a hot loop to enter TurboFan's: a tier up, which lands in any phase as the machine times it.
+const TIER_UP = /reason: prepare for on stack replacement/;
 // The two deopts a GC causes when the engine's object layouts die with the last parse.
 const LOST_TO_GC = /reason: (weak objects|wrong map)/;
 // Proof the trace is read at all, so a V8 that words it otherwise fails here, not passes.
@@ -40,7 +42,7 @@ describe.each(['node', 'browser'])('the %s engine', (engine) => {
   }, () => {
     const { warmUp, plain, afterGc } = run();
     expect(warmUp).toMatch(OPTIMISED);
-    expect(linesOf(plain, DEOPT)).toEqual([]);
+    expect(linesOf(plain, DEOPT).filter((line) => !TIER_UP.test(line))).toEqual([]);
     expect(linesOf(afterGc, LOST_TO_GC)).toEqual([]);
   });
 });
