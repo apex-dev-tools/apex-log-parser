@@ -26,6 +26,7 @@ import type {
   LimitMetric,
   LimitSnapshot,
   Limits,
+  LimitUnit,
   LimitUsage,
   LimitValue,
   LogAbortSignal,
@@ -64,6 +65,8 @@ const NEXT_EXPORTS = [
   'eventType',
   'fromBuffers',
   'LEVEL',
+  'LIMIT_METRICS',
+  'LIMIT_UNIT',
   'parse',
   'toBuffers',
 ];
@@ -94,6 +97,7 @@ interface PublicTypeSurface {
   limitMetric: LimitMetric;
   limits: Limits;
   limitSnapshot: LimitSnapshot;
+  limitUnit: LimitUnit;
   limitUsage: LimitUsage;
   limitValue: LimitValue;
   logAbortSignal: LogAbortSignal;

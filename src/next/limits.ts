@@ -30,6 +30,32 @@ export interface Limits {
 
 export type LimitMetric = keyof Limits;
 
+/** The units a limit metric is stated in. */
+export const LIMIT_UNIT = {
+  Count: 'count',
+  Millisecond: 'millisecond',
+  Byte: 'byte',
+} as const;
+
+export type LimitUnit = (typeof LIMIT_UNIT)[keyof typeof LIMIT_UNIT];
+
+/** Every limit metric, with the unit its `used` and `limit` are stated in. */
+export const LIMIT_METRICS: Readonly<Record<LimitMetric, LimitUnit>> = Object.freeze({
+  soqlQueries: LIMIT_UNIT.Count,
+  soslQueries: LIMIT_UNIT.Count,
+  queryRows: LIMIT_UNIT.Count,
+  dmlStatements: LIMIT_UNIT.Count,
+  publishImmediateDml: LIMIT_UNIT.Count,
+  dmlRows: LIMIT_UNIT.Count,
+  cpuTime: LIMIT_UNIT.Millisecond,
+  heapSize: LIMIT_UNIT.Byte,
+  callouts: LIMIT_UNIT.Count,
+  emailInvocations: LIMIT_UNIT.Count,
+  futureCalls: LIMIT_UNIT.Count,
+  queueableJobsAddedToQueue: LIMIT_UNIT.Count,
+  mobileApexPushCalls: LIMIT_UNIT.Count,
+});
+
 /** One `LIMIT_USAGE_FOR_NS` block: a namespace's cumulative usage at that point in the log. */
 export interface LimitSnapshot {
   /** Nanoseconds. */

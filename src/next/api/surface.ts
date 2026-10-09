@@ -25,11 +25,13 @@ export type {
   LimitMetric,
   LimitSnapshot,
   Limits,
+  LimitUnit,
   LimitUsage,
   LimitValue,
   NamespaceLimits,
   RunningUsage,
 } from '../limits.js';
+export { LIMIT_METRICS, LIMIT_UNIT } from '../limits.js';
 export type { AnyDetails, DetailsOf, EventDetails, ExplainPlan } from '../views/details.js';
 export type {
   ApexEvent,
