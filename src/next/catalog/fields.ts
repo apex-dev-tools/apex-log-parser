@@ -1808,7 +1808,7 @@ export interface EventFields {
     readonly name: string | null;
     /** The value, as text. Format: `<text>`. */
     readonly value: string | null;
-    /** The address of the value. On some lines only. Format: `<text>`. */
+    /** An object's address: on a `this.<field>` line the field's owner, not the value; else the value. On some lines only. Format: `<text>`. */
     readonly address: string | null;
   };
   /**
