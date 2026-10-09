@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Built } from '../../../src/engine/builder.js';
 import { apexLog } from '../../../src/views/log.js';
-import { nextFacts, nextProjection } from './facts.js';
+import { currentFacts, currentProjection } from './facts.js';
 import type { Projection } from './project.js';
 
 export interface Engine {
@@ -23,16 +23,16 @@ export interface Engine {
 }
 
 // The build only: bench:async times parse()'s slices. The views read it lazily, so they are untimed.
-const next: Engine = {
-  name: 'next',
+const current: Engine = {
+  name: 'current',
   entry: 'src/engine/node.ts',
   parse: (module, bytes) =>
     (module as typeof import('../../../src/engine/node.js')).nodeEngine.build(bytes),
-  project: (result) => nextProjection(apexLog(result as Built)),
-  facts: (result) => nextFacts(apexLog(result as Built)),
+  project: (result) => currentProjection(apexLog(result as Built)),
+  facts: (result) => currentFacts(apexLog(result as Built)),
 };
 
-const ENGINES: readonly Engine[] = [next];
+const ENGINES: readonly Engine[] = [current];
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 

@@ -32,7 +32,7 @@ applies.
 - `scripts/profiles.ts` — measures a local folder of real logs by size band and prints
   `fixtures/profiles.json`. Local only.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
-  parse engine, diffs their output field by field, and times them. `--engines=next,next
+  parse engine, diffs their output field by field, and times them. `--engines=current,current
   --projection=full` checks that the whole output is deterministic. A new engine, such as a
   published release, goes in `engines.ts`.
 - `scripts/micro/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's

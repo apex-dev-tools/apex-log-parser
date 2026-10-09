@@ -8,7 +8,7 @@
  */
 
 import type { ApexEvent } from '../../../src/views/events.js';
-import type { LogPlace, ApexLog as NextLog } from '../../../src/views/log.js';
+import type { ApexLog, LogPlace } from '../../../src/views/log.js';
 import type { Projection } from './project.js';
 import { LOG_KEY } from './project.js';
 
@@ -124,7 +124,7 @@ function countsOf(event: Counted): CountsFact {
 }
 
 /** The log's facts, then `nodeOf` each event, in id order: pre-order, as the projection needs. */
-function* nextRecords(log: NextLog, nodeOf: (event: ApexEvent) => unknown): Projection {
+function* currentRecords(log: ApexLog, nodeOf: (event: ApexEvent) => unknown): Projection {
   const paths = treePaths(log);
   const ref = (event: { id: number } | null): EventRef => ({
     node: (event && paths[event.id]) ?? LOG_KEY,
@@ -190,12 +190,12 @@ function* nextRecords(log: NextLog, nodeOf: (event: ApexEvent) => unknown): Proj
 }
 
 /** The log, as facts, read through its views. Ids are in pre-order, so the records come out in it too. */
-export const nextFacts = (log: NextLog): Projection => nextRecords(log, nextNode);
+export const currentFacts = (log: ApexLog): Projection => currentRecords(log, currentNode);
 
 /** Every field the views state: its facts, then each event's text figures. */
-export const nextProjection = (log: NextLog): Projection =>
-  nextRecords(log, (event) => ({
-    ...nextNode(event),
+export const currentProjection = (log: ApexLog): Projection =>
+  currentRecords(log, (event) => ({
+    ...currentNode(event),
     text: event.text,
     logLine: event.logLine,
     suffix: event.suffix,
@@ -203,7 +203,7 @@ export const nextProjection = (log: NextLog): Projection =>
     hasValidSymbols: event.hasValidSymbols,
   }));
 
-const nextNode = (event: ApexEvent): NodeFact => ({
+const currentNode = (event: ApexEvent): NodeFact => ({
   type: event.type,
   timestamp: event.timestamp,
   exitStamp: event.exitStamp,
@@ -215,7 +215,7 @@ const nextNode = (event: ApexEvent): NodeFact => ({
 });
 
 /** Each event's path of child positions; index 0 is the log. */
-function treePaths(log: NextLog): string[] {
+function treePaths(log: ApexLog): string[] {
   const paths = [LOG_KEY];
   const children = new Int32Array(log.eventCount + 1);
   for (const event of log.events) {

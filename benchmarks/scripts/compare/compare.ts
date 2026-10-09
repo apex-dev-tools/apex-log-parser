@@ -3,7 +3,7 @@
  * times them. Writes `results.jsonl` as it goes and `report.md` at the end.
  *
  * It diffs every later engine against the first, by the facts in `facts.ts`. Naming one engine
- * twice with `--projection=full` (`--engines=next,next`) checks that its whole output is
+ * twice with `--projection=full` (`--engines=current,current`) checks that its whole output is
  * deterministic. Timing runs each engine's tsdown bundle, built into `<out>/bundle`; the diff runs
  * the source. `--runs=0` skips timing. `--baseline=<results.jsonl>`
  * adds each engine's change against an earlier run, matched by log path.
@@ -34,7 +34,7 @@ import type { Failure, FileResult } from './report.js';
 import { renderReport } from './report.js';
 
 const USAGE =
-  'Usage: pnpm run compare <dir> --out=<dir> [--engines=next,next] [--projection=facts|full] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
+  'Usage: pnpm run compare <dir> --out=<dir> [--engines=current,current] [--projection=facts|full] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
 const LOG_FILE = /\.(log|txt)$/i;
 const measureScript = fileURLToPath(new URL('./measure.ts', import.meta.url));
 
@@ -99,7 +99,7 @@ runIfMain(import.meta.url, async () => {
   const out = flag(args, '--out');
   if (!dir || !out) throw new Error(USAGE);
 
-  const engines = (flag(args, '--engines') ?? 'next').split(',');
+  const engines = (flag(args, '--engines') ?? 'current').split(',');
   engines.forEach(engine);
   const kind = flag(args, '--projection') ?? 'facts';
   if (kind !== 'facts' && kind !== 'full') throw new Error(USAGE);

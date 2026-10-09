@@ -6,7 +6,7 @@ import { apexLog } from '../../src/views/log.js';
 import { findLogs } from '../scripts/compare/compare.js';
 import { compareKeys, diffProjections, same } from '../scripts/compare/diff.js';
 import type { LogFact } from '../scripts/compare/facts.js';
-import { nextFacts, nextProjection } from '../scripts/compare/facts.js';
+import { currentFacts, currentProjection } from '../scripts/compare/facts.js';
 import type { Entry, Projection } from '../scripts/compare/project.js';
 import { canonical } from '../scripts/compare/project.js';
 import type { FileResult } from '../scripts/compare/report.js';
@@ -28,7 +28,7 @@ const records = (p: Projection): Map<string, Record<string, unknown>> =>
   new Map([...p].map(([k, v]) => [k, v as Record<string, unknown>]));
 
 const built = (text: string) => apexLog(nodeEngine.build(new TextEncoder().encode(text)));
-const facts = (text: string): Entry[] => [...nextFacts(built(text))];
+const facts = (text: string): Entry[] => [...currentFacts(built(text))];
 
 describe('canonical', () => {
   it('sorts keys, so field order does not count', () => {
@@ -46,7 +46,7 @@ describe('diffProjections', () => {
   const p = (entries: [string, unknown][]): Projection => entries;
 
   it('finds no difference between two parses of one log', () => {
-    const result = diffProjections(nextProjection(built(log)), nextProjection(built(log)));
+    const result = diffProjections(currentProjection(built(log)), currentProjection(built(log)));
     expect(result).toEqual({ records: 5, differing: 0, differences: [] });
   });
 
@@ -108,7 +108,7 @@ describe('diffProjections', () => {
   });
 });
 
-describe('nextFacts', () => {
+describe('currentFacts', () => {
   it('gives one record per tree node, in pre-order, with no exit lines', () => {
     const out = records(facts(log));
     expect([...out.keys()]).toEqual(['log', '0', '0/0', '0/0/0', '0/0/0/0']);
@@ -151,11 +151,11 @@ describe('nextFacts', () => {
   });
 });
 
-describe('nextProjection', () => {
+describe('currentProjection', () => {
   it('states each facts record, and adds each event its text figures', () => {
     const parsed = built(log);
-    const stated = [...nextFacts(parsed)];
-    const full = [...nextProjection(parsed)];
+    const stated = [...currentFacts(parsed)];
+    const full = [...currentProjection(parsed)];
     const events = [...parsed.events];
 
     expect(full.map(([key]) => key)).toEqual(stated.map(([key]) => key));
