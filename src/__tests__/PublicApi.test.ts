@@ -55,9 +55,9 @@ import type {
 import * as browser from '../browser.js';
 import * as node from '../node.js';
 
-// `./next` is the surface the analyzer and the MCP server will move to, so a change to it must be
-// deliberate. Object.keys sees runtime bindings only, hence the type positions below.
-const NEXT_EXPORTS = [
+// The package root is what every consumer imports, so a change to it must be deliberate.
+// Object.keys sees runtime bindings only, hence the type positions below.
+const PUBLIC_EXPORTS = [
   'CATEGORY',
   'DEBUG_CATEGORY',
   'EVENT_TYPE_NAMES',
@@ -128,14 +128,14 @@ interface PublicTypeSurface {
 const nodeSurface: typeof browser = node;
 const browserSurface: typeof node = browser;
 
-describe('the ./next public API', () => {
+describe('the public API', () => {
   it.each([
     ['node', node],
     ['browser', browser],
   ])(
     'the %s build exports parse, the buffer pair, the catalog and the const companions only',
     (_build, entry) => {
-      expect(new Set(Object.keys(entry))).toEqual(new Set(NEXT_EXPORTS));
+      expect(new Set(Object.keys(entry))).toEqual(new Set(PUBLIC_EXPORTS));
     },
   );
 

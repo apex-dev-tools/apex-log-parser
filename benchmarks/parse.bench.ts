@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { bench, describe } from 'vitest';
-import { nodeEngine } from '../src/next/engine/node.js';
+import { nodeEngine } from '../src/engine/node.js';
 import { benchLogs, makeLog } from './fixtures/fixtures.js';
 
 describe('parse', () => {

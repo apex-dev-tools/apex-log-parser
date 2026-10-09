@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nodeEngine } from '../../src/next/engine/node.js';
-import { apexLog } from '../../src/next/views/log.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import { apexLog } from '../../src/views/log.js';
 import { findLogs } from '../scripts/compare/compare.js';
 import { compareKeys, diffProjections, same } from '../scripts/compare/diff.js';
 import type { LogFact } from '../scripts/compare/facts.js';

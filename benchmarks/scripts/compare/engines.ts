@@ -5,8 +5,8 @@
 
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { Built } from '../../../src/next/engine/builder.js';
-import { apexLog } from '../../../src/next/views/log.js';
+import type { Built } from '../../../src/engine/builder.js';
+import { apexLog } from '../../../src/views/log.js';
 import { nextFacts, nextProjection } from './facts.js';
 import type { Projection } from './project.js';
 
@@ -25,9 +25,9 @@ export interface Engine {
 // The build only: bench:async times parse()'s slices. The views read it lazily, so they are untimed.
 const next: Engine = {
   name: 'next',
-  entry: 'src/next/engine/node.ts',
+  entry: 'src/engine/node.ts',
   parse: (module, bytes) =>
-    (module as typeof import('../../../src/next/engine/node.js')).nodeEngine.build(bytes),
+    (module as typeof import('../../../src/engine/node.js')).nodeEngine.build(bytes),
   project: (result) => nextProjection(apexLog(result as Built)),
   facts: (result) => nextFacts(apexLog(result as Built)),
 };

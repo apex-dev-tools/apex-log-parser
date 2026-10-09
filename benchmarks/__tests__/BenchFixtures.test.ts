@@ -2,10 +2,10 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
-import { nodeEngine } from '../../src/next/engine/node.js';
-import type { ApexEvent } from '../../src/next/views/events.js';
-import type { ApexLog } from '../../src/next/views/log.js';
-import { apexLog as logOf } from '../../src/next/views/log.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import type { ApexEvent } from '../../src/views/events.js';
+import type { ApexLog } from '../../src/views/log.js';
+import { apexLog as logOf } from '../../src/views/log.js';
 import { benchLogs, makeLog, profileLog, profileSettings } from '../fixtures/fixtures.js';
 import type { LogShape, ProfileName } from '../fixtures/measure.js';
 import { LogTally, profileBands } from '../fixtures/measure.js';

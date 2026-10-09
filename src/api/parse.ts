@@ -17,7 +17,7 @@ export interface ParseOptions {
   /** Called at most once per time slice, and once as each phase ends. */
   readonly onProgress?: (progress: ParseProgress) => void;
   /**
-   * A worker running `./next/worker`, to scan the log off this thread; the read stays here. It
+   * A worker running `./worker`, to scan the log off this thread; the read stays here. It
    * pays for logs of a few MB and up: a small log parses faster on this thread.
    */
   readonly worker?: LogWorker;

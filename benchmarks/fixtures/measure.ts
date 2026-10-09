@@ -1,9 +1,9 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { EVENT_TYPE_NAMES } from '../../src/next/catalog/types.js';
-import { nodeEngine } from '../../src/next/engine/node.js';
-import { apexLog } from '../../src/next/views/log.js';
+import { EVENT_TYPE_NAMES } from '../../src/catalog/types.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import { apexLog } from '../../src/views/log.js';
 
 export type ProfileName = 'small' | 'developer' | 'large';
 

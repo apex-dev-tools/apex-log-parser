@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import eventDatabase from '../../../data/salesforce-debug-log-events.json' with { type: 'json' };
+import eventDatabase from '../../data/salesforce-debug-log-events.json' with { type: 'json' };
 import {
   EVENT_TYPES,
   eventText,

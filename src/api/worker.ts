@@ -11,7 +11,7 @@ import { ParseRun, readFor } from './parse.js';
 import type { LogSource, ParseProgress } from './sources.js';
 
 /**
- * A worker that runs this package's `./next/worker` file: a web `Worker`, or a Node
+ * A worker that runs this package's `./worker` file: a web `Worker`, or a Node
  * `worker_threads` `Worker`. Any object with `postMessage` and either way to listen will do, a
  * `MessagePort` included.
  */

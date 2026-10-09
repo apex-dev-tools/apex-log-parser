@@ -7,8 +7,8 @@
  * API, not facts of the log.
  */
 
-import type { ApexEvent } from '../../../src/next/views/events.js';
-import type { LogPlace, ApexLog as NextLog } from '../../../src/next/views/log.js';
+import type { ApexEvent } from '../../../src/views/events.js';
+import type { LogPlace, ApexLog as NextLog } from '../../../src/views/log.js';
 import type { Projection } from './project.js';
 import { LOG_KEY } from './project.js';
 

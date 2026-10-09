@@ -5,7 +5,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
-import { nodeEngine } from '../../src/next/engine/node.js';
+import { nodeEngine } from '../../src/engine/node.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
 import { liveBytes } from './memory.js';
 import type { Measure } from './versus.js';
