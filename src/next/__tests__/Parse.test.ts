@@ -316,7 +316,10 @@ describe('readBytes', () => {
   it('encodes a string as UTF-8, a surrogate pair kept whole across encode steps', async () => {
     // The pair straddles the first step's last character.
     const text = `${'a'.repeat((1 << 20) - 1)}😀é${'b'.repeat(10)}`;
-    expect(await readBytes(text, cx)).toEqual(encode(text));
+    const [got, want] = [await readBytes(text, cx), encode(text)];
+    // toEqual compares a megabyte one byte at a time, which takes seconds on a CI runner.
+    expect(got.length).toBe(want.length);
+    expect(got.findIndex((byte, at) => byte !== want[at])).toBe(-1);
   });
 
   it('keeps bytes and one chunk without a copy', async () => {
