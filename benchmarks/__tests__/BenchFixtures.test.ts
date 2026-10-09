@@ -11,9 +11,9 @@ import profiles from '../fixtures/profiles.json' with { type: 'json' };
 
 // A changed log changes what the benchmarks measure, so it must be deliberate.
 const pinnedHashes: Record<string, string> = {
-  'small 19 KB': 'c23e2cf8',
-  'developer 1 MB': 'd54b3e2e',
-  'uncommon paths 500 KB': '46c1356b',
+  'small 19 KB': '95cfd663',
+  'developer 1 MB': '4a867894',
+  'uncommon paths 500 KB': 'db316a77',
 };
 
 // FNV-1a, because src/ has no node:crypto.
@@ -70,6 +70,16 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
 
   it('has its pinned content', () => {
     expect(hash(log)).toBe(pinnedHashes[name]);
+  });
+
+  it('times every event after its opening slow call past 2^31 ns', () => {
+    const early = apexLog.eventsById.filter((event) => event.type && event.timestamp < 2 ** 31);
+    expect(early.map((event) => event.type)).toEqual([
+      'USER_INFO',
+      'EXECUTION_STARTED',
+      'CODE_UNIT_STARTED',
+      'METHOD_ENTRY',
+    ]);
   });
 
   it('nests its frames to maxDepth, and no deeper than a DML leaf below it', () => {

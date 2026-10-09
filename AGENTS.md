@@ -93,8 +93,8 @@ any commit.
 - `pnpm run bench` runs the benchmarks without watch mode. Locally it reports wall time; CI reports instruction
   counts, so the two do not compare. A parser change that can affect large logs also needs
   `pnpm run bench:large`, against `main`.
-- `pnpm build` needs Node `^22.18 || >=24.11` for tsdown, although the package itself supports
-  Node 20. CI builds on Node 24 only.
+- `pnpm build` needs Node `^22.18 || ^24.11 || >=26` for tsdown, although the package itself
+  supports any Node 22. CI builds on Node 24 only.
 
 ## The public API surface
 
@@ -180,8 +180,10 @@ generic classes state none, and `debugLevelTokenByKey` covers every category the
 `applyFlowDbResiduals`, in that order. The residual pass is last because it adds to every ancestor
 itself.
 
-- `aggregateTotals` sums each counter by hand, deepest depth first. A new `SelfTotal` field rolls up
-  only once it is added to that loop.
+- `aggregateTotals` walks `eventsById` backwards, so each child is totalled before its parent. That
+  holds because every event is created after its parent. It sums each counter by hand into a local,
+  then writes the parent once. A new `SelfTotal` field rolls up only once it has a local, a sum in
+  the loop and a write after it.
 - `duration.self` is a subtraction: the parent starts at its total and each child's total comes off.
 - `heapPeak` composes by max, not sum. `heapAllocated.self` and `heapGross.self` take from the
   leaf events that call `seedHeapLeaf`.

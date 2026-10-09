@@ -3,7 +3,7 @@
 // --baseline matches logs by name, so one engine's --json is the other's baseline.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { argv } from 'node:process';
+import process, { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
 import { parse } from '../../src/index.js';
 import { nodeEngine } from '../../src/next/engine/node.js';
@@ -56,6 +56,36 @@ export function median(values: number[]): number {
   return Number.isInteger(middle)
     ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
     : (sorted[Math.floor(middle)] ?? 0);
+}
+
+// Module-level, so optimised code cannot drop the tree before the second collection.
+let _held: unknown = null;
+
+/**
+ * Today's parser on `log`: the median parse time (ms) and the median heap the tree holds after a
+ * collection (bytes), over `runs` parses. `parse-heap.test.ts` pins its heap per character.
+ */
+export function measureLog(
+  log: string,
+  gc: () => void,
+  runs: number,
+): { ms: number; heapBytes: number } {
+  // A first parse compiles the parser, so the runs measure neither the compile nor its code.
+  parse(log);
+  const times: number[] = [];
+  const heaps: number[] = [];
+  for (let run = 0; run < runs; run++) {
+    _held = null;
+    gc();
+    const before = process.memoryUsage().heapUsed;
+    const start = performance.now();
+    _held = parse(log);
+    times.push(performance.now() - start);
+    gc();
+    heaps.push(process.memoryUsage().heapUsed - before);
+  }
+  _held = null;
+  return { ms: median(times), heapBytes: median(heaps) };
 }
 
 async function main(): Promise<void> {

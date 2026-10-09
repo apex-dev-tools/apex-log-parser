@@ -1,5 +1,5 @@
 ---
-'@apexdevtools/apex-log-parser': patch
+'@apexdevtools/apex-log-parser': minor
 ---
 
-Parse logs of 20 MB or more 13% faster on average, with 27% less heap
+Parse logs of 20 MB or more 28% faster on average, with 27% less heap

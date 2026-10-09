@@ -38,6 +38,9 @@ applies.
 - `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
   GC's freeing has finished. One `gc()` is not enough, because V8 frees buffer memory off the
   main thread.
+- `__tests__/parse-heap.test.ts` — the V8 heap today's parser keeps for the 8 MB log's tree, per
+  character, within 5% of a pinned value, through `measureLog` in `scripts/large.ts`. CodSpeed
+  cannot see the V8 heap. A change that moves it on purpose updates the pin.
 - `__tests__/` — `BenchFixtures.test.ts` checks the synthetic logs, and that each profile stays
   close to its real logs. The other suites test the scripts. All run in `pnpm run ci`.
 
