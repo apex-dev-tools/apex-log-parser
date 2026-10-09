@@ -4,7 +4,7 @@
 
 Add a new, experimental parser at `@apexdevtools/apex-log-parser/next`. It replaces today's parser in v1, and its API can change before then. Today's `parse` does not change.
 
-**6–8× faster and 8× less memory used vs v0.2.0**, on logs of 8 to 100 MB. A 100 MB log parse was measured at 186 ms instead of 1,477 ms, with 141 MB memory held instead of 1,100 MB.
+**6–9× faster and 8× less memory used vs v0.2.0**, on logs of 8 to 100 MB. A 100 MB log parse was measured at 182 ms instead of 1,646 ms, with 141 MB memory held instead of 1,100 MB.
 
 - `parse` is async. It reads a string, bytes, a `Blob`, a `fetch` `Response`, a `ReadableStream` or an async iterable.
 - It works in time slices of 5 ms, so the page or the event loop stays responsive. `signal` stops it, and `onProgress` reports how far it is.
