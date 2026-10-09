@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { COLON, CR, LPAREN, PIPE, SPACE, STAR } from '../bytes/ascii.js';
+import { CR, LPAREN, PIPE, SPACE, STAR, ZERO } from '../bytes/ascii.js';
 import { ByteFields, digits } from '../bytes/cursor.js';
 import {
   firstEventLine,
@@ -13,15 +13,16 @@ import {
 } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
-import { eventText, GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
+import { GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
 import type { LimitMetric, LimitSnapshot } from '../limits.js';
-import { limitsOfBlock, runningTotal } from '../limits.js';
+import { runningTotal } from '../limits.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, Store, TOTAL } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
 import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
-import type { Issue, IssueText, IssueType, Truncation } from './issues.js';
-import { ISSUE, Issues, truncationOf } from './issues.js';
+import type { Issues, Truncation } from './issues.js';
+import { ISSUE, truncationOf } from './issues.js';
+import { LogMarkers } from './markers.js';
 import { DEFAULT, Namespaces, UNSTATED } from './namespaces.js';
 import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
@@ -38,7 +39,6 @@ import {
   HEAP_FIELD,
   HEAP_SIGN,
   HOOK,
-  HOOK_ID,
   IS_EXIT,
   IS_FRAME,
   LINE_FIELD,
@@ -84,12 +84,8 @@ const PASS = { times: 0, rollUp: 1, flow: 2, trim: 3, done: 4 } as const;
 // `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
 declare const performance: { now(): number };
 
-// Looser than TRUNCATION_MARKER, as in v0: a line only reaches these tests when it is not text.
-const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
 // The platform can write the marker inside an event's line, which it then cuts.
 const CUT_BY_MAX_SIZE = /\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+ *$/;
-const SKIPPED = '*** Skipped';
-const skippedBytesPattern = /^\*\*\* Skipped ([\d,]+) bytes/;
 const invalidClasses = [
   'pagemessagescomponentcontroller',
   'pagemessagecomponentcontroller',
@@ -132,18 +128,11 @@ export class LogBuilder {
   private readonly source: Source;
   private readonly bytes: Uint8Array;
   private readonly fields: ByteFields;
-  /** The hooks' own cursor, so a hook never moves the one the next line was read with. */
-  private readonly hookFields: ByteFields;
   private readonly store: Store;
   private readonly strings: StringTable;
-  private readonly issues: Issues = new Issues();
-  private readonly parsingErrors: string[] = [];
-  private readonly unsupported = new Set<string>();
+  private readonly markers: LogMarkers;
   private readonly truncated: number[] = [];
-  /** Max-Size-reached issues the next event after their time ends. */
-  private pendingMaxSize: Issue[] = [];
   private readonly namespaces: Namespaces;
-  private readonly snapshots: LimitSnapshot[] = [];
   // The open frames, innermost last: each one's id, and its last child's id or `NONE`.
   private readonly frameIds: number[] = [];
   // Indexed by open-frame slot + 1: slot 0 is the log's own children.
@@ -202,9 +191,9 @@ export class LogBuilder {
     this.source = source;
     this.bytes = source.bytes;
     this.fields = new ByteFields(source);
-    this.hookFields = new ByteFields(source);
     this.store = new Store(source.bytes.length);
     this.strings = new StringTable(source);
+    this.markers = new LogMarkers(source, this.store, this.strings);
     this.namespaces = new Namespaces(source.bytes, this.strings);
   }
 
@@ -290,10 +279,11 @@ export class LogBuilder {
     const { executionEndTime, first } = this.logTimes!;
     // With no timestamped line, the header is the whole text.
     const debug = debugSettings(this.source.text(0, eventsStart < 0 ? len : eventsStart));
-    this.parsingErrors.push(...debug.errors);
+    const { issues, parsingErrors, snapshots } = this.markers;
+    parsingErrors.push(...debug.errors);
     const firstLine = eventsStart < 0 ? '' : lineText(this.source, eventsStart);
     const truncation = truncationOf(
-      this.issues,
+      issues,
       store,
       (id) => opensFrame(store, id),
       store.exitStamp[0] || 0,
@@ -301,11 +291,11 @@ export class LogBuilder {
     return {
       store,
       strings: this.strings,
-      issues: this.issues,
-      parsingErrors: this.parsingErrors,
+      issues,
+      parsingErrors,
       truncated: this.truncated,
       namespaces: this.namespaces.order,
-      snapshots: this.snapshots,
+      snapshots,
       executionEndTime,
       size: len,
       startTime: first === NONE ? null : wallClock(lineText(this.source, store.start[first]!)),
@@ -419,12 +409,9 @@ export class LogBuilder {
           : store.exitStamp[last]!;
     const exitStamp = Math.max(this.lastTimestamp, lastEnd);
     store.exitStamp[id] = exitStamp;
-    this.issues.add(exitStamp, id, ISSUE.unexpectedEnd);
-    if (store.flags[id]! & FLAG.truncated) {
-      const issue = this.issues.replace(exitStamp, id, ISSUE.maxSize);
-      if (issue) this.pendingMaxSize.push(issue);
-      this.maxSizeTimestamp = exitStamp;
-    }
+    const atMaxSize = (store.flags[id]! & FLAG.truncated) !== 0;
+    this.markers.unexpectedEnd(exitStamp, id, atMaxSize);
+    if (atMaxSize) this.maxSizeTimestamp = exitStamp;
     store.flags[id]! |= FLAG.truncated;
     this.truncated.push(id);
     this.pop();
@@ -442,7 +429,7 @@ export class LogBuilder {
     if (this.discontinuity) return true;
     for (const below of this.frameIds) if (this.matches(below)) return true;
     // The exit becomes a child, the next row.
-    this.issues.add(this.nextTimestamp, store.count, ISSUE.unexpectedExit);
+    this.markers.issues.add(this.nextTimestamp, store.count, ISSUE.unexpectedExit);
     return false;
   }
 
@@ -570,35 +557,20 @@ export class LogBuilder {
     this.lastId = id;
     this.lastType = this.nextType;
     this.lastAt = this.nextTimestamp;
-    if (this.pendingMaxSize.length) this.endMaxSize(this.nextTimestamp);
+    if (this.markers.waiting) this.markers.endMaxSize(this.nextTimestamp);
     if (this.nextCut) this.maxSizeReached();
     this.readNext();
   }
 
   /** The log reached its maximum size after the last event. */
   private maxSizeReached(): void {
-    const issue = this.markerIssue(ISSUE.maxSize);
-    if (issue) this.pendingMaxSize.push(issue);
+    this.markers.maxSize(this.lastAt, this.lastId, this.lastExitType());
     this.maxSizeTimestamp = this.lastAt;
   }
 
-  /** The maximum size ends at the next event after it, an exit line or a merged entry too. */
-  private endMaxSize(at: number): void {
-    this.pendingMaxSize = this.pendingMaxSize.filter((issue) => {
-      if (at <= issue.startTime) return true;
-      issue.endTime = at;
-      return false;
-    });
-  }
-
-  /** An issue on the last event, from a line after it: the search for its end starts after it. */
-  private markerIssue(text: IssueText): Issue | null {
-    const issue = this.issues.add(this.lastAt, this.lastId, text);
-    if (issue) {
-      issue.exitType = this.lastFolded ? this.lastType : null;
-      issue.after = this.store.count;
-    }
-    return issue;
+  /** The type of the exit line folded into the last event, or null. */
+  private lastExitType(): number | null {
+    return this.lastFolded ? this.lastType : null;
   }
 
   /** The line reader, one event at a time: reads lines up to and including the next event. */
@@ -626,12 +598,13 @@ export class LogBuilder {
         this.lastId !== NONE &&
         this.opensNextLog(start, end)
       ) {
-        this.multipleLogs(start);
+        this.markers.multipleLogs(start, this.lastAt, this.lastId, this.lastExitType());
         this.pos = len;
         break;
       }
       if (read === READ.notEvent) this.notAnEvent(start, end);
-      else if (read === READ.unknownType) this.unsupportedType();
+      else if (read === READ.unknownType)
+        this.markers.unsupportedType(this.unknownStart, this.unknownEnd);
     }
     // Nothing follows the last event, so its text is complete.
     this.runHook();
@@ -666,7 +639,7 @@ export class LogBuilder {
     const timestamp = timestampIn(bytes, start, p1);
     if (Number.isNaN(timestamp)) {
       // v0 threw here and ended the parse.
-      this.parsingErrors.push(`Invalid log line: ${this.source.text(start, end)}`);
+      this.markers.lineError('Invalid log line', start, end);
       return READ.error;
     }
 
@@ -681,7 +654,7 @@ export class LogBuilder {
       if (stated === 'EXTERNAL') line = EXTERNAL_LINE;
       else if (stated === null) line = NO_LINE;
       else if (Number.isNaN(stated)) {
-        this.parsingErrors.push(`Invalid line number: ${this.source.text(start, end)}`);
+        this.markers.lineError('Invalid line number', start, end);
       } else line = stated;
     }
     if (type === VF_APEX_CALL_START && this.vfCallIsLeaf()) flags |= FLAG.notEntry;
@@ -694,7 +667,7 @@ export class LogBuilder {
     if (ROWS_AT[type]! >= 0) {
       const stated = fields.int(ROWS_FIELD[type]!, ROWS_PREFIX);
       if (stated !== null && Number.isNaN(stated)) {
-        this.parsingErrors.push(`Invalid row count: ${this.source.text(start, end)}`);
+        this.markers.lineError('Invalid row count', start, end);
       } else if (stated !== null) rows = stated;
     }
     let heap = 0;
@@ -746,32 +719,7 @@ export class LogBuilder {
   private runHook(): void {
     const type = this.lastType;
     const hook = type < 0 || this.lastFolded ? 0 : HOOK[type];
-    if (!hook) return;
-    const store = this.store;
-    const id = this.lastId;
-    const fields = this.hookFields;
-    // id was placed, so every column holds it
-    fields.resetRow(store.start[id]!, store.end[id]!);
-    const text = eventText(type, fields) ?? '';
-    const timestamp = store.timestamp[id]!;
-    if (hook === HOOK_ID.limitSnapshot) {
-      const ns = store.namespace[id]!;
-      // The limits rule always states one, so NONE is its 'default'.
-      const namespace = ns === NONE ? 'default' : this.strings.text(ns);
-      this.snapshots.push({ timestamp, namespace, limits: limitsOfBlock(text) });
-    } else if (hook === HOOK_ID.fatal) {
-      this.textIssue(timestamp, id, text, 'fatal');
-    } else if (text.includes('System.LimitException')) {
-      this.textIssue(timestamp, id, text, 'error');
-    }
-  }
-
-  /** An issue from an event's text: its first line is the summary. */
-  private textIssue(timestamp: number, id: number, text: string, type: IssueType): void {
-    const lf = text.indexOf('\n');
-    const summary = (lf < 0 ? text : text.slice(0, lf)).trim();
-    const description = lf < 0 ? '' : text.slice(lf + 1).trim();
-    this.issues.add(timestamp, id, { summary, description, type });
+    if (hook) this.markers.hook(hook, type, this.lastId);
   }
 
   /** A VF call with no method, on a class with no space or a page-messages class, is a leaf. */
@@ -787,38 +735,14 @@ export class LogBuilder {
 
   /** A line that starts no event: text of the last event, a marker, or an error. */
   private notAnEvent(start: number, end: number): void {
-    const store = this.store;
     const last = this.lastId;
     if (last !== NONE && ACCEPTS_TEXT[this.lastType] && !this.isTruncationMarker(start, end)) {
-      store.end[last] = end;
+      this.store.end[last] = end;
       return;
     }
-    const text = this.source.text(start, end);
-    if (last === NONE) {
-      if (!SETTINGS_LINE.test(text)) this.parsingErrors.push(`Invalid log line: ${text}`);
-      return;
+    if (this.markers.otherLine(start, end, this.lastAt, last, this.lastExitType())) {
+      this.maxSizeTimestamp = this.lastAt;
     }
-    if (text.startsWith(SKIPPED)) {
-      const issue = this.markerIssue({
-        summary: 'Skipped-Lines',
-        description: `${text}. A section of the log has been skipped and the log has been truncated. Full details of this section of log can not be provided.`,
-        type: 'skip',
-      });
-      const skipped = text.match(skippedBytesPattern)?.[1];
-      if (issue && skipped) issue.skippedBytes = Number.parseInt(skipped.replaceAll(',', ''), 10);
-    } else if (text.includes(MAX_SIZE)) {
-      this.maxSizeReached();
-    } else if (!SETTINGS_LINE.test(text)) {
-      this.parsingErrors.push(`Invalid log line: ${text}`);
-    }
-  }
-
-  /** A line whose field 1 names a type the catalog does not hold: one error per name. */
-  private unsupportedType(): void {
-    const message = `Unsupported log event name: ${this.source.text(this.unknownStart, this.unknownEnd)}`;
-    if (this.unsupported.has(message)) return;
-    this.unsupported.add(message);
-    this.parsingErrors.push(message);
   }
 
   private isTruncationMarker(start: number, end: number): boolean {
@@ -833,7 +757,7 @@ export class LogBuilder {
   private opensNextLog(start: number, end: number): boolean {
     const bytes = this.bytes;
     // Byte tests before any decode: this runs on every line that is not an event.
-    const first = bytes[start]! - 0x30;
+    const first = bytes[start]! - ZERO;
     if (first < 0 || first > 9) return false;
     const close = timestampClose(bytes, this.pos);
     if (close < 0) return false;
@@ -841,34 +765,5 @@ export class LogBuilder {
     while (bytes[open] !== LPAREN) open--;
     if (!(digits(bytes, open + 1, close) < this.lastAt)) return false;
     return SETTINGS_LINE.test(this.source.text(start, end));
-  }
-
-  /** The Multiple-Logs issue, with the number of logs from the one at `start` on. */
-  private multipleLogs(start: number): void {
-    let count = 1;
-    const bytes = this.bytes;
-    const len = bytes.length;
-    for (let line = start; line < len; ) {
-      const eol = this.source.lineEnd(line);
-      if (eol < 0) break;
-      // Byte tests before the decode: a settings line starts with a digit, and a timestamp's third byte is ':'.
-      // line < len, so it is a byte
-      const first = bytes[line]! - 0x30;
-      if (
-        first >= 0 &&
-        first <= 9 &&
-        bytes[line + 2] !== COLON &&
-        timestampClose(bytes, eol + 1) >= 0 &&
-        SETTINGS_LINE.test(lineText(this.source, line))
-      )
-        count++;
-      line = eol + 1;
-    }
-    this.markerIssue({
-      summary: 'Multiple-Logs',
-      // At least 2: this runs only once a second log was found.
-      description: `The text holds ${Math.max(2, count)} logs. Only the first log was parsed. Open each log on its own.`,
-      type: 'error',
-    });
   }
 }
