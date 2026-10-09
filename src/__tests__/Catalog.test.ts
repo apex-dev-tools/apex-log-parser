@@ -11,7 +11,7 @@ import {
   idOfType,
 } from '../catalog/catalog.js';
 import type { EventType } from '../catalog/types.js';
-import { DEBUG_CATEGORY } from '../catalog/types.js';
+import { DEBUG_CATEGORY, DEBUG_CATEGORY_TOKEN } from '../catalog/types.js';
 import { fieldsOf } from './helpers.js';
 
 const database = eventDatabase as {
@@ -47,10 +47,16 @@ describe('the catalog against the event database', () => {
     expect(drift).toEqual([]);
   });
 
-  it('knows every documented category token', () => {
+  it('knows every documented category token, and maps each category back to its token', () => {
     expect(Object.keys(DEBUG_CATEGORY).sort()).toEqual(
       database.categories.map((entry) => entry.name).sort(),
     );
+    const pairs = Object.entries(DEBUG_CATEGORY);
+    expect(pairs.map(([, category]) => DEBUG_CATEGORY_TOKEN[category])).toEqual(
+      pairs.map(([token]) => token),
+    );
+    expect(Object.keys(DEBUG_CATEGORY_TOKEN)).toHaveLength(pairs.length);
+    expect(Object.isFrozen(DEBUG_CATEGORY_TOKEN)).toBe(true);
   });
 });
 

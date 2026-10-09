@@ -9,6 +9,7 @@ import type {
   Columns,
   CpuType,
   DebugCategory,
+  DebugCategoryToken,
   DebugLevelSetting,
   DetailsOf,
   EventDetails,
@@ -43,6 +44,7 @@ import type {
   LogWorker,
   NamespaceLimits,
   ParseOptions,
+  ParsePhase,
   ParseProgress,
   Rollups,
   RunningUsage,
@@ -50,6 +52,7 @@ import type {
   Shape,
   StreamRead,
   TransferableLog,
+  TruncationKind,
   UserInfo,
 } from '../browser.js';
 import * as browser from '../browser.js';
@@ -59,16 +62,23 @@ import * as node from '../node.js';
 // Object.keys sees runtime bindings only, hence the type positions below.
 const PUBLIC_EXPORTS = [
   'CATEGORY',
+  'CPU_TYPE',
   'DEBUG_CATEGORY',
+  'DEBUG_CATEGORY_TOKEN',
   'EVENT_TYPE_NAMES',
   'EVENT_TYPES',
   'eventType',
   'fromBuffers',
+  'ISSUE_TYPE',
+  'KIND',
   'LEVEL',
   'LIMIT_METRICS',
   'LIMIT_UNIT',
   'parse',
+  'PARSE_PHASE',
+  'SHAPE',
   'toBuffers',
+  'TRUNCATION_KIND',
 ];
 
 // Fails the typecheck, not the test run, if a public type is removed or renamed.
@@ -80,6 +90,7 @@ interface PublicTypeSurface {
   columns: Columns;
   cpuType: CpuType;
   debugCategory: DebugCategory;
+  debugCategoryToken: DebugCategoryToken;
   debugLevelSetting: DebugLevelSetting;
   detailsOf: DetailsOf<'SOQL_EXECUTE_BEGIN'>;
   eventDetails: EventDetails;
@@ -114,6 +125,7 @@ interface PublicTypeSurface {
   logWorker: LogWorker;
   namespaceLimits: NamespaceLimits;
   parseOptions: ParseOptions;
+  parsePhase: ParsePhase;
   parseProgress: ParseProgress;
   rollups: Rollups;
   runningUsage: RunningUsage;
@@ -121,6 +133,7 @@ interface PublicTypeSurface {
   shape: Shape;
   streamRead: StreamRead;
   transferableLog: TransferableLog;
+  truncationKind: TruncationKind;
   userInfo: UserInfo;
 }
 

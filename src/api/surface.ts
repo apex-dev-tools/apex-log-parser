@@ -11,15 +11,26 @@ export type {
   Category,
   CpuType,
   DebugCategory,
+  DebugCategoryToken,
   EventType,
   EventTypeInfo,
   Kind,
   Level,
   Shape,
 } from '../catalog/types.js';
-export { CATEGORY, DEBUG_CATEGORY, EVENT_TYPE_NAMES, LEVEL } from '../catalog/types.js';
+export {
+  CATEGORY,
+  CPU_TYPE,
+  DEBUG_CATEGORY,
+  DEBUG_CATEGORY_TOKEN,
+  EVENT_TYPE_NAMES,
+  KIND,
+  LEVEL,
+  SHAPE,
+} from '../catalog/types.js';
 export type { DebugLevelSetting, LogTimezone, UserInfo } from '../engine/header.js';
-export type { IssueType } from '../engine/issues.js';
+export type { IssueType, TruncationKind } from '../engine/issues.js';
+export { ISSUE_TYPE, TRUNCATION_KIND } from '../engine/issues.js';
 export type {
   GovernorLimits,
   LimitMetric,
@@ -58,7 +69,9 @@ export type {
   LogResponse,
   LogSource,
   LogStream,
+  ParsePhase,
   ParseProgress,
   StreamRead,
 } from './sources.js';
+export { PARSE_PHASE } from './sources.js';
 export type { LogWorker } from './worker.js';

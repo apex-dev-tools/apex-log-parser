@@ -5,7 +5,7 @@ import { eventType, idOfType } from '../catalog/catalog.js';
 import type { DebugCategory, EventType, Level } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import type { DebugLevelSetting, UserInfo } from '../engine/header.js';
-import type { IssueType } from '../engine/issues.js';
+import type { IssueType, TruncationKind } from '../engine/issues.js';
 import { isFrameRow } from '../engine/tables.js';
 import type { GovernorLimits } from '../limits.js';
 import { governorLimits } from '../limits.js';
@@ -60,7 +60,7 @@ export interface LogIssue extends LogPlace {
 
 /** A part of the log the platform did not write. Times are nanoseconds. */
 export interface LogTruncationRegion extends LogPlace {
-  readonly kind: 'skipped-lines' | 'max-size';
+  readonly kind: TruncationKind;
   readonly startTime: number;
   /** Where the log can be trusted again. */
   readonly endTime: number;

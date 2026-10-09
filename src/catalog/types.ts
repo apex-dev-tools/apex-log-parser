@@ -341,6 +341,17 @@ export const DEBUG_CATEGORY = {
 /** The Salesforce debug log category an event type belongs to. */
 export type DebugCategory = (typeof DEBUG_CATEGORY)[keyof typeof DEBUG_CATEGORY];
 
+/** The token the log header uses for a debug log category, such as `APEX_CODE`. */
+export type DebugCategoryToken = keyof typeof DEBUG_CATEGORY;
+
+/** The header token of each debug log category: the inverse of `DEBUG_CATEGORY`. */
+export const DEBUG_CATEGORY_TOKEN: Readonly<Record<DebugCategory, DebugCategoryToken>> =
+  Object.freeze(
+    Object.fromEntries(
+      Object.entries(DEBUG_CATEGORY).map(([token, category]) => [category, token]),
+    ) as Record<DebugCategory, DebugCategoryToken>,
+  );
+
 /** The Salesforce debug levels, from the least to the most detailed. */
 export const LEVEL = {
   None: 'NONE',
@@ -356,35 +367,56 @@ export const LEVEL = {
 /** A Salesforce debug level. */
 export type Level = (typeof LEVEL)[keyof typeof LEVEL];
 
+/** The ways a frame's CPU time is grouped. */
+export const CPU_TYPE = {
+  Loading: 'loading',
+  Custom: 'custom',
+  Method: 'method',
+  Free: 'free',
+  System: 'system',
+  Pkg: 'pkg',
+} as const;
+
 /** How a frame's CPU time is grouped. */
-export type CpuType = 'loading' | 'custom' | 'method' | 'free' | 'system' | 'pkg';
+export type CpuType = (typeof CPU_TYPE)[keyof typeof CPU_TYPE];
+
+/** The ways an event type sits in the tree. */
+export const SHAPE = {
+  Frame: 'frame',
+  Leaf: 'leaf',
+  Exit: 'exit',
+} as const;
 
 /** How an event type sits in the tree. */
-export type Shape = 'frame' | 'leaf' | 'exit';
+export type Shape = (typeof SHAPE)[keyof typeof SHAPE];
 
-/** What an event type means for analysis. New kinds can be added; none is renamed or removed. */
-export type Kind =
-  | 'method'
-  | 'code-unit'
-  | 'execution'
-  | 'package'
-  | 'soql'
-  | 'sosl'
-  | 'dml'
-  | 'callout'
-  | 'flow'
-  | 'workflow'
-  | 'validation'
-  | 'visualforce'
-  | 'nba'
-  | 'exception'
-  | 'heap'
-  | 'limits'
-  | 'debug'
-  | 'variable'
-  | 'statement'
-  | 'cache'
-  | 'other';
+/** What event types mean for analysis. New kinds can be added; none is renamed or removed. */
+export const KIND = {
+  Method: 'method',
+  CodeUnit: 'code-unit',
+  Execution: 'execution',
+  Package: 'package',
+  SOQL: 'soql',
+  SOSL: 'sosl',
+  DML: 'dml',
+  Callout: 'callout',
+  Flow: 'flow',
+  Workflow: 'workflow',
+  Validation: 'validation',
+  Visualforce: 'visualforce',
+  NBA: 'nba',
+  Exception: 'exception',
+  Heap: 'heap',
+  Limits: 'limits',
+  Debug: 'debug',
+  Variable: 'variable',
+  Statement: 'statement',
+  Cache: 'cache',
+  Other: 'other',
+} as const;
+
+/** What an event type means for analysis. */
+export type Kind = (typeof KIND)[keyof typeof KIND];
 
 /** What is true of every event of one type. */
 export interface EventTypeInfo {

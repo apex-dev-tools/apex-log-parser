@@ -52,9 +52,19 @@ export interface LogAbortSignal {
   removeEventListener(type: 'abort', listener: () => void): void;
 }
 
+/** The phases of a parse, in order. */
+export const PARSE_PHASE = {
+  Read: 'read',
+  Scan: 'scan',
+  Finish: 'finish',
+} as const;
+
+/** A phase of a parse. */
+export type ParsePhase = (typeof PARSE_PHASE)[keyof typeof PARSE_PHASE];
+
 /** How far a parse has come. `bytes` and `totalBytes` count the log's UTF-8 bytes. */
 export interface ParseProgress {
-  readonly phase: 'read' | 'scan' | 'finish';
+  readonly phase: ParsePhase;
   readonly bytes: number;
   /**
    * Null while the read cannot know it: a string being encoded, a stream that states no length, or

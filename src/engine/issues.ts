@@ -3,7 +3,24 @@
  */
 import type { Store } from '../store/store.js';
 
-export type IssueType = 'unexpected' | 'error' | 'skip' | 'fatal';
+/** The kinds of log issue. */
+export const ISSUE_TYPE = {
+  Unexpected: 'unexpected',
+  Error: 'error',
+  Skip: 'skip',
+  Fatal: 'fatal',
+} as const;
+
+export type IssueType = (typeof ISSUE_TYPE)[keyof typeof ISSUE_TYPE];
+
+/** The ways the platform drops part of a log. */
+export const TRUNCATION_KIND = {
+  SkippedLines: 'skipped-lines',
+  MaxSize: 'max-size',
+} as const;
+
+/** How the platform dropped part of a log. */
+export type TruncationKind = (typeof TRUNCATION_KIND)[keyof typeof TRUNCATION_KIND];
 
 /** Something wrong or missing in the log that the caller should know. */
 export interface Issue {
@@ -26,7 +43,7 @@ export interface Issue {
 
 /** A part of the log the platform dropped, from its issue. */
 export interface TruncationRegion {
-  kind: 'skipped-lines' | 'max-size';
+  kind: TruncationKind;
   /** Nanoseconds. */
   startTime: number;
   /** Nanoseconds: where the log can be trusted again. */
@@ -111,7 +128,7 @@ export class Issues {
   }
 }
 
-const KIND: Readonly<Record<string, TruncationRegion['kind']>> = {
+const KIND: Readonly<Record<string, TruncationKind>> = {
   'Skipped-Lines': 'skipped-lines',
   'Max-Size-reached': 'max-size',
 };
