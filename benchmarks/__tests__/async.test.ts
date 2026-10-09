@@ -1,4 +1,5 @@
-import { abortLatency, longestTurn } from '../scripts/async.js';
+import { parse } from '../../src/next/node.js';
+import { abortLatency, longestTurn, reopenMs } from '../scripts/async.js';
 
 /** Holds the host for `ms`, as one long task does. */
 const block = (ms: number): void => {
@@ -23,6 +24,14 @@ describe('longestTurn', () => {
     // The whole work takes 50 ms or more.
     expect(worst).toBeGreaterThanOrEqual(20);
     expect(worst).toBeLessThan(40);
+  });
+});
+
+describe('reopenMs', () => {
+  it('moves the log, so the one it timed is unreadable after', async () => {
+    const log = await parse(LOG);
+    expect(reopenMs(log)).toBeGreaterThanOrEqual(0);
+    expect(log.columns.type.length).toBe(0);
   });
 });
 
