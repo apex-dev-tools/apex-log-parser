@@ -6,7 +6,11 @@ export default defineConfig({
   plugins: [codspeedPlugin()],
   test: {
     globals: true,
-    include: ['src/__tests__/**/*.test.ts', 'scripts/__tests__/**/*.test.ts'],
-    benchmark: { include: ['src/__bench__/**/*.bench.ts'] },
+    include: [
+      'src/**/__tests__/**/*.test.ts',
+      'scripts/__tests__/**/*.test.ts',
+      'benchmarks/__tests__/**/*.test.ts',
+    ],
+    benchmark: { include: ['benchmarks/**/*.bench.ts'] },
   },
 });

@@ -3,11 +3,23 @@
   "version": "0.2.0",
   "description": "Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor limits and SOQL/DML counts. No dependencies.",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": ["./dist/next/worker-node.js", "./dist/next/worker-browser.js"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./next": {
+      "node": {
+        "types": "./dist/next/node.d.ts",
+        "import": "./dist/next/node.js"
+      },
+      "types": "./dist/next/browser.d.ts",
+      "import": "./dist/next/browser.js"
+    },
+    "./next/worker": {
+      "node": "./dist/next/worker-node.js",
+      "default": "./dist/next/worker-browser.js"
     },
     "./package.json": "./package.json"
   },
@@ -21,7 +33,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "vitest bench --run",
-    "bench:large": "node --expose-gc --max-old-space-size=8192 --import tsx scripts/bench-large.ts",
+    "bench:large": "node --expose-gc --max-old-space-size=8192 --import tsx benchmarks/scripts/large.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
@@ -31,7 +43,11 @@
     "scrape": "tsx scripts/scrape.ts",
     "validate:data": "tsx scripts/validate-data.ts",
     "ci:seed": "tsx scripts/ci/seed.ts",
-    "ci:report": "tsx scripts/ci/report.ts"
+    "ci:report": "tsx scripts/ci/report.ts",
+    "compare": "node --max-old-space-size=12288 --import tsx benchmarks/scripts/compare/compare.ts",
+    "bench:views": "node --expose-gc --max-old-space-size=8192 --import tsx benchmarks/scripts/views.ts",
+    "bench:async": "node --max-old-space-size=8192 --import tsx benchmarks/scripts/async.ts",
+    "bench:micro": "node --import tsx benchmarks/scripts/micro/micro.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
