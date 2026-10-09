@@ -238,11 +238,6 @@ describe('event text', () => {
     expect(text('WF_EMAIL_SENT', 'a')).toBe('a :  : ');
   });
 
-  it('appends continuation lines on types that take them', () => {
-    expect(text('USER_DEBUG', '[3]|DEBUG|first', 'second')).toBe('DEBUG | first\nsecond');
-    expect(text('STATEMENT_EXECUTE', '[3]', 'ignored')).toBeNull();
-  });
-
   it('reads the continuation lazily, once, and only for types that take text', () => {
     const continuation = vi.fn(() => 'more');
     text('STATEMENT_EXECUTE', '[3]', continuation);
@@ -256,26 +251,15 @@ describe('event text', () => {
     expect(text('STACK_FRAME_VARIABLE_LIST', 'Frame', 'x = 1')).toBe('x = 1');
   });
 
-  it('rewrites the text after the continuation is appended', () => {
-    expect(text('WF_FORMULA', 'Formula:A|Values:B')).toBe('Formula:A : Values:B');
-    expect(text('LIMIT_USAGE_FOR_NS', '(default)', '  Number of SOQL queries: 1 out of 100')).toBe(
-      '(default)\nNumber of SOQL queries: 1/100',
-    );
-  });
-
   it('joins every listed field once, with no stray spaces', () => {
     expect(text('WF_FIELD_UPDATE', 'a|b|c|d|e')).toBe('a b c d e');
     expect(text('EVENT_SERVICE_SUB_DETAIL', 'a|b|c|d|e')).toBe('a b c d e');
     expect(text('WF_FLOW_ACTION_DETAIL', 'a|b|c|d')).toBe('a : b : c : d');
   });
 
-  it('reads method, constructor and code unit names', () => {
-    expect(text('METHOD_ENTRY', '[1]|01p000000000000|ns.MyClass.run()')).toBe('ns.MyClass.run()');
+  it('reads a constructor with its arguments, and a package by its last part', () => {
     expect(text('CONSTRUCTOR_ENTRY', '[1]|01p000000000000|<init>(Integer)|ns.MyClass')).toBe(
       'ns.MyClass(Integer)',
-    );
-    expect(text('CODE_UNIT_STARTED', '[EXTERNAL]|01p000000000000|MyClass.myTrigger')).toBe(
-      'MyClass.myTrigger',
     );
     expect(text('ENTERING_MANAGED_PKG', 'ns.sub')).toBe('sub');
   });

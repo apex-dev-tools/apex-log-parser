@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { ApexEvent } from '../views/events.js';
-import { parse } from './helpers.js';
+import { at, HEADER, logOf, outline, parse } from './helpers.js';
 
 const kids = (event: ApexEvent | undefined): readonly ApexEvent[] =>
   event?.isFrame ? event.children : [];
@@ -129,6 +129,29 @@ describe('suffixes', () => {
 });
 
 describe('issues from exceptions', () => {
+  it('reports a limit exception and a fatal error, but no other exception', () => {
+    const log = logOf(
+      `${at(1)}|LIMIT_USAGE_FOR_NS|(default)|`,
+      '  Maximum CPU time: 15 out of 10000 ******* CLOSE TO LIMIT',
+      `${at(2)}|EXCEPTION_THROWN|[1]|System.NullPointerException`,
+      `${at(3)}|EXCEPTION_THROWN|[2]|System.LimitException: Too many SOQL queries: 101`,
+      `${at(4)}|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101`,
+      '',
+      'Class.ns.MyClass.run: line 2, column 1',
+    );
+    expect(log.limits.snapshots[0]?.limits.cpuTime.used).toBe(15);
+    // The fatal error's description is its stack, after the blank line.
+    expect(log.issues.map((i) => [i.type, i.event?.id, i.summary, i.description])).toEqual([
+      ['error', 3, 'System.LimitException: Too many SOQL queries: 101', ''],
+      [
+        'fatal',
+        4,
+        'System.LimitException: Too many SOQL queries: 101',
+        'Class.ns.MyClass.run: line 2, column 1',
+      ],
+    ]);
+  });
+
   it('states no description for a fatal error with no stack lines', () => {
     const log = parse(
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
@@ -337,11 +360,6 @@ describe('the settings line', () => {
       'Unsupported debug level: DB,FINE,EXTRA',
     ]);
   });
-
-  it('states no settings when the log has no settings line', () => {
-    const log = parse('09:18:22.6 (100)|EXECUTION_STARTED\n09:18:22.6 (200)|EXECUTION_FINISHED\n');
-    expect([log.debugLevels, log.debugLevelSettings]).toEqual([{}, []]);
-  });
 });
 
 describe('the end of the log', () => {
@@ -357,5 +375,82 @@ describe('the end of the log', () => {
     expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
       ['max-size', 1000, 1000],
     ]);
+  });
+});
+
+describe('the tree', () => {
+  it('keeps an exit line no frame matches as a child, with an Unexpected-Exit issue on it', () => {
+    const log = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|CONSTRUCTOR_EXIT|[9]|01p000000000AAA|ns.Other`,
+      `${at(3)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+    );
+    expect(outline(log)).toEqual(['METHOD_ENTRY@1-3', '  CONSTRUCTOR_EXIT@2']);
+    expect(log.issues.map((i) => [i.summary, i.startTime, i.event?.id])).toEqual([
+      ['Unexpected-Exit', 2, 2],
+    ]);
+  });
+
+  it('unwinds every frame an exception passes, and an exit closes the frame it matches below', () => {
+    const log = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.outer()`,
+      `${at(2)}|METHOD_ENTRY|[2]|01p000000000AAA|ns.MyClass.inner()`,
+      `${at(3)}|EXCEPTION_THROWN|[3]|System.NullPointerException`,
+      `${at(4)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.outer()`,
+      `${at(5)}|METHOD_ENTRY|[5]|01p000000000AAA|ns.MyClass.next()`,
+      `${at(6)}|METHOD_ENTRY|[6]|01p000000000AAA|ns.MyClass.deep()`,
+      `${at(7)}|METHOD_EXIT|[5]|01p000000000AAA|ns.MyClass.next()`,
+    );
+    expect(outline(log)).toEqual([
+      'METHOD_ENTRY@1-4',
+      '  METHOD_ENTRY@2-4',
+      '    EXCEPTION_THROWN@3',
+      'METHOD_ENTRY@5-7',
+      '  METHOD_ENTRY@6-7',
+    ]);
+    expect(log.issues).toEqual([]);
+  });
+
+  it('times the log from a last package entry before it merges', () => {
+    const log = logOf(
+      `${at(1)}|ENTERING_MANAGED_PKG|ns`,
+      `${at(2)}|STATEMENT_EXECUTE|[1]`,
+      `${at(3)}|ENTERING_MANAGED_PKG|ns`,
+    );
+    expect(outline(log)).toEqual(['ENTERING_MANAGED_PKG@1-3', 'STATEMENT_EXECUTE@2']);
+    expect([log.exitStamp, log.executionEndTime]).toEqual([3, 2]);
+  });
+
+  it('reads a CRLF log as an LF log, and starts at the first timestamped line', () => {
+    const lines = [
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+    ];
+    const crlf = parse(['garbage before the log', HEADER, ...lines, ''].join('\r\n'));
+    expect(outline(crlf)).toEqual(outline(logOf(...lines)));
+    expect(crlf.parsingErrors).toEqual([]);
+  });
+});
+
+describe('parsing errors', () => {
+  it('reports each line that is no event and no text, and each unknown name once', () => {
+    const log = logOf(
+      `${at(1)}|USER_DEBUG|[1]|DEBUG|first`,
+      'second',
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      'not text',
+      'x|NOT_A_TYPE',
+      'x|NOT_A_TYPE',
+      '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO',
+      `${at(3)}|STATEMENT_EXECUTE|[]`,
+    );
+    expect(outline(log)).toEqual(['USER_DEBUG@1', 'STATEMENT_EXECUTE@2', 'STATEMENT_EXECUTE@3']);
+    // A bad line number is an error, not the end of the parse.
+    expect(log.parsingErrors).toEqual([
+      'Invalid log line: not text',
+      'Unsupported log event name: NOT_A_TYPE',
+      `Invalid line number: ${at(3)}|STATEMENT_EXECUTE|[]`,
+    ]);
+    expect(log.event(3)?.lineNumber).toBeNull();
   });
 });

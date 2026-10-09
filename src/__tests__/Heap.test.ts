@@ -78,8 +78,8 @@ describe('heap rollups', () => {
       [-5000000, -5000000, 0, 0],
       [0, 0, 5500000, 5000000],
     ]);
-    // No block states a heap size, so the peak is the one the events reach.
-    expect(log.limits.peak.heapSize.used).toBe(5000000);
+    // No block states a heap size, so the peak is the one the events reach, with no ceiling.
+    expect(log.limits.peak.heapSize).toEqual({ used: 5000000, limit: 0, percentUsed: null });
   });
 
   it.each([
@@ -155,7 +155,14 @@ describe('the heap limit', () => {
     END;
 
   it('peaks at the higher of the stated peak and the one the events reach', () => {
-    expect(parse(withBlocks(5000000, 100)).limits.peak.heapSize.used).toBe(5000000);
+    const { final, peak } = parse(withBlocks(5000000, 100)).limits;
+    // The events' peak takes the block's ceiling; final stays as the block stated it.
+    expect(peak.heapSize).toEqual({
+      used: 5000000,
+      limit: 6000000,
+      percentUsed: (5000000 / 6000000) * 100,
+    });
+    expect(final.heapSize.used).toBe(100);
     expect(parse(withBlocks(100, 5000)).limits.peak.heapSize.used).toBe(5000);
   });
 

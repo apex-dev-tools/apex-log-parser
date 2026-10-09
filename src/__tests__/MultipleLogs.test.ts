@@ -27,17 +27,23 @@ describe('a text that holds more than one log', () => {
         execution(100, 'First.unit') +
         '\n' +
         SETTINGS +
-        execution(50, 'Second.unit', 'other@example.com'),
+        execution(50, 'Second.unit', 'other@example.com') +
+        SETTINGS +
+        execution(10, 'Third.unit'),
     );
 
     expect(codeUnits(log)).toEqual(['First.unit']);
     expect(log.userInfo?.userName).toBe('user@example.com');
+    // On the first log's last line: the exit that closed its execution.
     expect(log.issues).toEqual([
       expect.objectContaining({
         summary: 'Multiple-Logs',
         type: 'error',
         startTime: 140,
-        description: expect.stringContaining('holds 2 logs'),
+        event: log.event(2),
+        exitType: 'EXECUTION_FINISHED',
+        description:
+          'The text holds 3 logs. Only the first log was parsed. Open each log on its own.',
       }),
     ]);
   });
@@ -86,10 +92,13 @@ describe('a text that holds more than one log', () => {
 
   it('keeps one log whose every execution states USER_INFO', () => {
     const log = parse(
-      SETTINGS + execution(100, 'FutureHandler - state load') + execution(200, 'Real.work'),
+      SETTINGS +
+        execution(100, 'FutureHandler - state load') +
+        execution(200, 'Real.work', 'later@example.com'),
     );
 
     expect(codeUnits(log)).toEqual(['FutureHandler - state load', 'Real.work']);
+    expect(log.userInfo?.userName).toBe('user@example.com');
     expect(log.issues).toEqual([]);
   });
 });

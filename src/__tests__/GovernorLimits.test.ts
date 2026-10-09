@@ -108,27 +108,6 @@ describe('every metric across namespaces', () => {
 });
 
 describe('derived governor limit figures', () => {
-  it('peak keeps the high-water mark when a counter falls', () => {
-    const apexLog = parse(
-      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
-        '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
-        '  Number of SOQL queries: 11 out of 100\n' +
-        '09:18:22.6 (900)|LIMIT_USAGE_FOR_NS|(default)|\n' +
-        '  Number of SOQL queries: 8 out of 100\n' +
-        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
-    );
-    expect(apexLog.limits.final.soqlQueries).toEqual({
-      used: 8,
-      limit: 100,
-      percentUsed: 8,
-    });
-    expect(apexLog.limits.peak.soqlQueries).toEqual({
-      used: 11,
-      limit: 100,
-      percentUsed: 11,
-    });
-  });
-
   it('combines namespaces by carrying each namespace last value forward', () => {
     const apexLog = parse(
       '09:18:22.6 (100)|EXECUTION_STARTED\n' +
@@ -148,23 +127,6 @@ describe('derived governor limit figures', () => {
     expect(byNamespace.get('default')?.peak.soqlQueries.used).toBe(10);
     expect(byNamespace.get('myNS')?.final.soqlQueries.used).toBe(4);
     expect(byNamespace.get('myNS')?.peak.soqlQueries.used).toBe(4);
-  });
-
-  it('takes the heap peak from HEAP_ALLOCATE, leaving final as the block stated it', () => {
-    const apexLog = parse(
-      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
-        '09:18:22.6 (200)|HEAP_ALLOCATE|[84]|Bytes:152\n' +
-        '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
-        '  Maximum heap size: 0 out of 6000000\n' +
-        '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
-    );
-    expect(apexLog.heapPeak).toBe(152);
-    expect(apexLog.limits.final.heapSize.used).toBe(0);
-    expect(apexLog.limits.peak.heapSize).toEqual({
-      used: 152,
-      limit: 6000000,
-      percentUsed: (152 / 6000000) * 100,
-    });
   });
 });
 

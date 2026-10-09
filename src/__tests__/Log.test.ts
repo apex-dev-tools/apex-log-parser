@@ -3,14 +3,9 @@
  */
 import { idOfType } from '../catalog/catalog.js';
 import { nodeEngine } from '../engine/node.js';
-import type { ApexLog } from '../views/log.js';
 import { apexLog } from '../views/log.js';
-import { encode } from './helpers.js';
+import { at, encode, HEADER, logOf } from './helpers.js';
 
-const HEADER = '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,INFO';
-const at = (ns: number): string => `09:00:00.0 (${ns})`;
-const logOf = (...lines: string[]): ApexLog =>
-  apexLog(nodeEngine.build(encode([HEADER, ...lines].join('\n'))));
 const ids = (events: Iterable<{ id: number }>): number[] => [...events].map((e) => e.id);
 
 const method = [
@@ -34,7 +29,13 @@ describe('ApexLog', () => {
     expect(log.children).toBe(log.children);
     expect(log.children[0]).toBe(log.event(1));
     expect([...log.events][1]).toBe(log.event(2));
-    expect([log.event(0), log.event(6)]).toEqual([null, null]);
+    expect([0, 6, -1, 1.5, Number.NaN].map((id) => log.event(id))).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
     expect(log.children.every((e) => e.parent === null)).toBe(true);
   });
 
@@ -46,6 +47,23 @@ describe('ApexLog', () => {
       { self: 0, total: 4 },
     ]);
     expect(log.executionEndTime).toBe(100);
+    const other = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|DML_BEGIN|[2]|Op:Insert|Type:Account|Rows:2`,
+      `${at(3)}|DML_END|[2]`,
+      `${at(4)}|SOSL_EXECUTE_BEGIN|[3]|FIND {x}`,
+      `${at(5)}|SOSL_EXECUTE_END|[3]|Rows:3`,
+      `${at(6)}|EXCEPTION_THROWN|[4]|System.NullPointerException: x`,
+      `${at(7)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+    );
+    const totals = [
+      other.dmlCount,
+      other.dmlRowCount,
+      other.soslCount,
+      other.soslRowCount,
+      other.thrownCount,
+    ].map((c) => c.total);
+    expect(totals).toEqual([1, 2, 1, 3, 1]);
   });
 
   it('lists the events of the given types in id order, once each', () => {
@@ -120,14 +138,17 @@ describe('ApexLog', () => {
       `${at(4)}|STATEMENT_EXECUTE|[3]`,
     );
     const [skipped, end] = log.issues;
-    expect([skipped?.summary, skipped?.event, skipped?.exitType, skipped?.skippedBytes]).toEqual([
-      'Skipped-Lines',
-      log.event(1),
-      'METHOD_EXIT',
-      1024,
-    ]);
-    expect([end?.summary, end?.event, end?.exitType, end?.skippedBytes]).toEqual([
+    expect([
+      skipped?.summary,
+      skipped?.startTime,
+      skipped?.event,
+      skipped?.exitType,
+      skipped?.skippedBytes,
+    ]).toEqual(['Skipped-Lines', 2, log.event(1), 'METHOD_EXIT', 1024]);
+    // An open frame ends at the latest time inside it.
+    expect([end?.summary, end?.startTime, end?.event, end?.exitType, end?.skippedBytes]).toEqual([
       'Unexpected-End',
+      4,
       log.event(2),
       null,
       null,
@@ -141,10 +162,14 @@ describe('ApexLog', () => {
     const log = logOf(
       `${at(1)}|STATEMENT_EXECUTE|[1]`,
       '*** Skipped 2,048 bytes of detailed log',
+      `${at(2)}|HEAP_ALLOCATE|[2]|Bytes:10`,
       `${at(3)}|METHOD_ENTRY|[3]|01p000000000AAA|ns.MyClass.run()`,
       `${at(4)}|METHOD_EXIT|[3]|01p000000000AAA|ns.MyClass.run()`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(9)}|STATEMENT_EXECUTE|[4]`,
     );
     expect([log.isTruncated, log.truncatedEvents]).toEqual([true, []]);
+    // A skipped block ends at the next frame; the maximum size at the next later event.
     expect(log.truncation).toEqual({
       regions: [
         {
@@ -155,13 +180,20 @@ describe('ApexLog', () => {
           exitType: null,
           skippedBytes: 2048,
         },
+        {
+          kind: 'max-size',
+          startTime: 4,
+          endTime: 9,
+          event: log.event(3),
+          exitType: 'METHOD_EXIT',
+          skippedBytes: null,
+        },
       ],
       totalSkippedBytes: 2048,
     });
-    expect(logOf(...method).isTruncated).toBe(false);
   });
 
-  it('states the limits, namespaces, exceptions and entry points', () => {
+  it('states the limits and exceptions', () => {
     const log = logOf(
       `${at(1)}|EXECUTION_STARTED`,
       `${at(2)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
@@ -175,16 +207,13 @@ describe('ApexLog', () => {
       `${at(9)}|EXECUTION_FINISHED`,
       `${at(10)}|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101`,
     );
-    expect(log.entryPoints.map((e) => e.timestamp)).toEqual([2]);
     expect(log.exceptions.map((e) => e.type)).toEqual(['EXCEPTION_THROWN', 'FATAL_ERROR']);
-    // `(default)` is no namespace.
-    expect(log.namespaces).toEqual(['ns']);
     expect(log.limits.snapshots).toHaveLength(1);
     expect(log.limits.byNamespace.get('default')?.final.soqlQueries.used).toBe(2);
     expect(log.limits).toBe(log.limits);
   });
 
-  it('states the header: size, start time, user and debug levels', () => {
+  it('states its size in bytes and its start time', () => {
     const text = [
       HEADER,
       '09:15:30.25 (1)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
@@ -193,14 +222,6 @@ describe('ApexLog', () => {
     const log = apexLog(nodeEngine.build(encode(text)));
     expect(log.size).toBe(encode(text).byteLength);
     expect(log.startTime).toBe(((9 * 60 + 15) * 60 + 30) * 1000 + 250);
-    expect(log.userInfo?.userName).toBe('user@example.com');
-    expect(log.debugLevels).toEqual({ apexCode: 'FINE', apexProfiling: 'INFO', database: 'INFO' });
-    expect(log.debugLevelSettings.map((s) => s.token)).toEqual([
-      'APEX_CODE',
-      'APEX_PROFILING',
-      'DB',
-    ]);
-    expect(log.parsingErrors).toEqual([]);
   });
 
   it("reads an event's debug level from debugLevels by its debugCategory", () => {

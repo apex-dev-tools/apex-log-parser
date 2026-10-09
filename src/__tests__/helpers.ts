@@ -15,6 +15,22 @@ export const encode = (text: string): Uint8Array => new TextEncoder().encode(tex
 /** The log `text` states, through the views. */
 export const parse = (text: string): ApexLog => apexLog(nodeEngine.build(encode(text)));
 
+/** A settings line, for a log built from event lines. */
+export const HEADER = '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,INFO';
+
+/** A line's timestamp field at `ns` nanoseconds. */
+export const at = (ns: number): string => `09:00:00.0 (${ns})`;
+
+/** The log of `HEADER` and `lines`. */
+export const logOf = (...lines: string[]): ApexLog => parse([HEADER, ...lines].join('\n'));
+
+/** Each event as `depth type@timestamp-exitStamp`, with `!` for a frame the log does not close. */
+export const outline = (log: ApexLog): string[] =>
+  [...log.events].map(
+    (e) =>
+      `${'  '.repeat(e.depth - 1)}${e.type}@${e.timestamp}${e.isFrame ? `-${e.exitStamp}` : ''}${e.isTruncated ? '!' : ''}`,
+  );
+
 const INTEGER = /^-?\d+$/;
 const LINE_NUMBER = /^\[\d+\]$/;
 

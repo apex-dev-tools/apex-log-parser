@@ -1,15 +1,9 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { nodeEngine } from '../engine/node.js';
 import type { ApexLog } from '../views/log.js';
-import { apexLog } from '../views/log.js';
-import { encode } from './helpers.js';
+import { at, HEADER, logOf, parse } from './helpers.js';
 
-const HEADER = '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,INFO';
-const at = (ns: number): string => `09:00:00.0 (${ns})`;
-const logOf = (...lines: string[]): ApexLog =>
-  apexLog(nodeEngine.build(encode([HEADER, ...lines].join('\n'))));
 const pick = (log: ApexLog, key: 'text' | 'suffix' | 'cpuType' | 'hasValidSymbols') =>
   [...log.events].map((e) => e[key]);
 
@@ -27,19 +21,14 @@ describe('event text', () => {
   });
 
   it('states the first line as the log does, without its line ending or continuation lines', () => {
-    const log = apexLog(
-      nodeEngine.build(
-        encode(
-          [
-            HEADER,
-            `${at(1)}|USER_DEBUG|[1]|DEBUG|first`,
-            'second',
-            `${at(2)}|STATEMENT_EXECUTE|[2]`,
-          ]
-            .join('\r\n')
-            .concat('\r\n'),
-        ),
-      ),
+    const log = parse(
+      [
+        HEADER,
+        `${at(1)}|USER_DEBUG|[1]|DEBUG|first`,
+        'second',
+        `${at(2)}|STATEMENT_EXECUTE|[2]`,
+        '',
+      ].join('\r\n'),
     );
     expect([...log.events].map((e) => e.logLine)).toEqual([
       `${at(1)}|USER_DEBUG|[1]|DEBUG|first`,
@@ -47,7 +36,7 @@ describe('event text', () => {
     ]);
     expect(log.event(1)?.text).toBe('DEBUG | first\nsecond');
     // With no `\n` after it, the last line keeps its `\r`, as the engine does.
-    const cut = apexLog(nodeEngine.build(encode(`${HEADER}\r\n${at(1)}|STATEMENT_EXECUTE|[2]\r`)));
+    const cut = parse(`${HEADER}\r\n${at(1)}|STATEMENT_EXECUTE|[2]\r`);
     expect(cut.event(1)?.logLine).toBe(`${at(1)}|STATEMENT_EXECUTE|[2]\r`);
   });
 

@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { ApexEvent } from '../views/events.js';
-import { parse } from './helpers.js';
+import { at, logOf, outline, parse } from './helpers.js';
 
 const firstChild = (event: ApexEvent | undefined): ApexEvent | undefined =>
   event?.isFrame ? event.children[0] : undefined;
@@ -240,5 +240,46 @@ describe('truncation', () => {
     expect(apexLog.ofType('USER_DEBUG')[0]?.text).toBe(
       'DEBUG | line one\n*** Skipped lines are logged when MAXIMUM DEBUG LOG SIZE REACHED',
     );
+  });
+
+  it('marks the frame open at the maximum size, and reports its end before the maximum size', () => {
+    const log = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(3)}|FATAL_ERROR|System.LimitException`,
+    );
+    expect(outline(log)).toEqual(['METHOD_ENTRY@1-2!', '  STATEMENT_EXECUTE@2', 'FATAL_ERROR@3']);
+    // Replaced once the frame ends, so it follows the Unexpected-End issue at the same time.
+    expect(log.issues.map((i) => [i.summary, i.startTime, i.event?.id])).toEqual([
+      ['Unexpected-End', 2, 1],
+      ['Max-Size-reached', 2, 1],
+      ['System.LimitException', 3, 3],
+    ]);
+  });
+
+  it('ends the maximum size at an exit line after it, which gets no row', () => {
+    const log = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(5)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(9)}|STATEMENT_EXECUTE|[3]`,
+    );
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+      ['max-size', 2, 5],
+    ]);
+  });
+
+  it('reads the maximum size from the end of an event line it cut', () => {
+    const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
+    const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, cut, `${at(9)}|STATEMENT_EXECUTE|[3]`);
+    expect(log.parsingErrors).toEqual([`Invalid line number: ${cut}`]);
+    expect(log.issues.map((i) => [i.summary, i.event?.id, i.startTime])).toEqual([
+      ['Max-Size-reached', 2, 2],
+    ]);
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+      ['max-size', 2, 9],
+    ]);
   });
 });

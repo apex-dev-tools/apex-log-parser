@@ -221,17 +221,4 @@ describe('userInfo', () => {
 
     expect(apexLog.userInfo).toBeNull();
   });
-
-  it('reads the first header when every execution states one', () => {
-    const apexLog = parse(
-      logWithUserInfo(
-        '09:18:22.6 (50)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time|GMT-08:00',
-      ) +
-        '09:19:13.90 (3000)|USER_INFO|[EXTERNAL]|005000000000AAB|later@example.com|Pacific Standard Time|GMT-08:00\n' +
-        '09:19:13.90 (3100)|EXECUTION_STARTED\n' +
-        '09:19:13.95 (4000)|EXECUTION_FINISHED\n',
-    );
-
-    expect(apexLog.userInfo?.userName).toBe('user@example.com');
-  });
 });
