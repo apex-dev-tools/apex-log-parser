@@ -4,28 +4,28 @@
 
 /** One governor limit: what the code used, and the ceiling the log stated. */
 export interface LimitValue {
-  used: number;
+  readonly used: number;
   /** Null when the log stated no ceiling. */
-  limit: number | null;
+  readonly limit: number | null;
   /** Null when the log stated no ceiling. */
-  percentUsed: number | null;
+  readonly percentUsed: number | null;
 }
 
 /** Governor limit usage. `cpuTime` is milliseconds, `heapSize` is bytes, every other metric a count. */
 export interface Limits {
-  soqlQueries: LimitValue;
-  soslQueries: LimitValue;
-  queryRows: LimitValue;
-  dmlStatements: LimitValue;
-  publishImmediateDml: LimitValue;
-  dmlRows: LimitValue;
-  cpuTime: LimitValue;
-  heapSize: LimitValue;
-  callouts: LimitValue;
-  emailInvocations: LimitValue;
-  futureCalls: LimitValue;
-  queueableJobsAddedToQueue: LimitValue;
-  mobileApexPushCalls: LimitValue;
+  readonly soqlQueries: LimitValue;
+  readonly soslQueries: LimitValue;
+  readonly queryRows: LimitValue;
+  readonly dmlStatements: LimitValue;
+  readonly publishImmediateDml: LimitValue;
+  readonly dmlRows: LimitValue;
+  readonly cpuTime: LimitValue;
+  readonly heapSize: LimitValue;
+  readonly callouts: LimitValue;
+  readonly emailInvocations: LimitValue;
+  readonly futureCalls: LimitValue;
+  readonly queueableJobsAddedToQueue: LimitValue;
+  readonly mobileApexPushCalls: LimitValue;
 }
 
 export type LimitMetric = keyof Limits;
@@ -59,29 +59,29 @@ export const LIMIT_METRICS: Readonly<Record<LimitMetric, LimitUnit>> = Object.fr
 /** One `LIMIT_USAGE_FOR_NS` block: a namespace's cumulative usage at that point in the log. */
 export interface LimitSnapshot {
   /** Nanoseconds. */
-  timestamp: number;
+  readonly timestamp: number;
   /** The name the block states, `'default'` included. */
-  namespace: string;
-  limits: Limits;
+  readonly namespace: string;
+  readonly limits: Limits;
 }
 
 /** One namespace's usage, from the snapshots it reported. */
 export interface NamespaceLimits {
   /** Its last snapshot. */
-  final: Limits;
+  readonly final: Limits;
   /** The highest value each metric reached in its own snapshots. */
-  peak: Limits;
+  readonly peak: Limits;
 }
 
 /** The log's governor limit usage, from its snapshots. */
 export interface GovernorLimits {
-  snapshots: LimitSnapshot[];
+  readonly snapshots: readonly LimitSnapshot[];
   /** Each namespace's last snapshot, combined. */
-  final: Limits;
+  readonly final: Limits;
   /** The highest each metric of the combined figure reached at any point. */
-  peak: Limits;
+  readonly peak: Limits;
   /** Per namespace, in the order the log first reports them. */
-  byNamespace: Map<string, NamespaceLimits>;
+  readonly byNamespace: ReadonlyMap<string, NamespaceLimits>;
 }
 
 function value(used: number, limit: number | null): LimitValue {
@@ -243,7 +243,7 @@ export function runningTotal(text: string): RunningTotal | null {
  * metric: a limit block, or a flow element's report.
  */
 export function limitsOfBlock(text: string): Limits {
-  const limits = emptyLimits();
+  const limits: Record<LimitMetric, LimitValue> = emptyLimits();
   for (const line of text.split('\n')) {
     const colon = line.indexOf(':');
     if (colon < 0) continue;
@@ -267,7 +267,7 @@ function fold(
   sources: Iterable<Limits>,
   used: (m: LimitMetric, a: number, b: number) => number,
 ): Limits {
-  const out = emptyLimits();
+  const out: Record<LimitMetric, LimitValue> = emptyLimits();
   for (const source of sources) {
     for (const m of METRICS) {
       const a = out[m];

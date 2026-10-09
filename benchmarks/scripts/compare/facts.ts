@@ -86,7 +86,7 @@ export interface LogFact {
   debugLevels: unknown;
   debugLevelSettings: unknown;
   limits: {
-    snapshots: { timestamp: number; namespace: string; limits: unknown }[];
+    snapshots: readonly { timestamp: number; namespace: string; limits: unknown }[];
     final: unknown;
     peak: unknown;
     byNamespace: [string, unknown][];

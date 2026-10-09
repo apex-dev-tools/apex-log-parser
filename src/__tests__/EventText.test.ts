@@ -57,6 +57,17 @@ describe('event text', () => {
     ]);
     expect([log.event(2)?.field('level'), log.event(2)?.field('message')]).toEqual([null, null]);
     expect(() => soql?.field('rows')).toThrow('SOQL_EXECUTE_BEGIN has no field rows');
+    // ofType narrows the names to the type's own; the frame and leaf shapes survive it.
+    const [typed] = log.ofType('SOQL_EXECUTE_BEGIN');
+    expect(typed?.field('query')).toBe('SELECT Id FROM Account');
+    // @ts-expect-error rows is a SOQL_EXECUTE_END field.
+    expect(() => typed?.field('rows')).toThrow(RangeError);
+    expect(typed?.isFrame).toBe(true);
+    if (typed?.isFrame) {
+      // Fails the typecheck if isFrame no longer narrows exitStamp to a number.
+      const exitStamp: number = typed.exitStamp;
+      expect(exitStamp).toBe(2);
+    }
   });
 
   it('states the suffix and cpuType of the type, or of the line when its events differ', () => {

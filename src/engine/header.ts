@@ -6,11 +6,11 @@ import { DEBUG_CATEGORY, LEVEL } from '../catalog/types.js';
 
 /** One `TOKEN,LEVEL` entry of the header's settings line, as the log states it. */
 export interface DebugLevelSetting {
-  token: string;
+  readonly token: string;
   /** Null when the entry states none. */
-  level: string | null;
+  readonly level: string | null;
   /** Null for a token this parser does not know. */
-  category: DebugCategory | null;
+  readonly category: DebugCategory | null;
 }
 
 /** The settings line: the level per known category, and every entry as stated. */
@@ -24,20 +24,20 @@ export interface DebugSettings {
 
 /** The time zone the `USER_INFO` line states. */
 export interface LogTimezone {
-  text: string;
-  label: string | null;
+  readonly text: string;
+  readonly label: string | null;
   /** The IANA name, as `America/Los_Angeles`. */
-  name: string | null;
+  readonly name: string | null;
   /** Minutes east of UTC. */
-  offsetMinutes: number | null;
-  offsetText: string | null;
+  readonly offsetMinutes: number | null;
+  readonly offsetText: string | null;
 }
 
 /** The user the `USER_INFO` line states. */
 export interface UserInfo {
-  id: string | null;
-  userName: string | null;
-  timezone: LogTimezone | null;
+  readonly id: string | null;
+  readonly userName: string | null;
+  readonly timezone: LogTimezone | null;
 }
 
 /** A settings line: the version, then `TOKEN,LEVEL` entries split by `;`. */

@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
+import type { EventFields } from '../catalog/fields.js';
 import type {
   Category,
   CpuType,
@@ -108,9 +109,19 @@ export interface LeafEvent extends EventBase {
 /** One event of the log: narrow on `isFrame` to tell a frame from a leaf. */
 export type ApexEvent = FrameEvent | LeafEvent;
 
-/** An event of type `T`, with that type's details; for a union, one member per type, so `type` narrows. */
+/** `E`, one shape of event, as type `T`: `field` takes only the names `T` lists. */
+type Typed<E extends ApexEvent, T extends EventType> = Omit<E, 'type' | 'details' | 'field'> & {
+  readonly type: T;
+  readonly details: DetailsOf<T>;
+  field(name: keyof EventFields[T] & string): string | null;
+};
+
+/**
+ * An event of type `T`, with that type's details and field names; for a union, one member per
+ * type, so `type` narrows. Each shape is kept apart, so `isFrame` still narrows.
+ */
 export type EventOf<T extends EventType> = T extends EventType
-  ? ApexEvent & { readonly type: T; readonly details: DetailsOf<T> }
+  ? Typed<FrameEvent, T> | Typed<LeafEvent, T>
   : never;
 
 const ZERO: SelfTotal = Object.freeze({ self: 0, total: 0 });
