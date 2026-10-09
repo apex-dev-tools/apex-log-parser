@@ -38,7 +38,7 @@ const legacy: Engine = {
   facts: (result) => legacyFacts(result as ApexLog),
 };
 
-// The build only, until the async driver exists (step 6): the views read it lazily, so they are untimed.
+// The build only: bench:async times parse()'s slices. The views read it lazily, so they are untimed.
 const next: Engine = {
   name: 'next',
   entry: 'src/next/engine/node.ts',

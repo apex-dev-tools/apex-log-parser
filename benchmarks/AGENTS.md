@@ -17,6 +17,10 @@ applies.
 - `scripts/views.ts` — `pnpm run bench:views`, what reading the next parser's views adds to its
   build on the same logs: every column of every event, and an object for every event. At
   100 MB it fails above 30 ms and 250 ms. Local only.
+- `scripts/async.ts` — `pnpm run bench:async`, the next parser's async `parse()` on the same logs:
+  the longest host turn it holds, its total against a direct build, and how soon an abort rejects.
+  At 100 MB it fails on a turn over 10 ms, a total over 10% above the build, or an abort later
+  than 10 ms. Local only.
 - `scripts/profiles.ts` — measures a local folder of real logs by size band and prints
   `fixtures/profiles.json`. Local only.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
