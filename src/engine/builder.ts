@@ -1,21 +1,16 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import {
-  COLON,
-  CR,
-  DOT,
-  LPAREN,
-  PIPE,
-  RPAREN,
-  SPACE,
-  STAR,
-  UNDERSCORE,
-  UPPER_A,
-  UPPER_Z,
-} from '../bytes/ascii.js';
+import { COLON, CR, LPAREN, PIPE, SPACE, STAR } from '../bytes/ascii.js';
 import { ByteFields, digits } from '../bytes/cursor.js';
-import { TRUNCATION_MARKER } from '../bytes/lines.js';
+import {
+  firstEventLine,
+  isTypeName,
+  lineText,
+  TRUNCATION_MARKER,
+  timestampClose,
+  timestampIn,
+} from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
 import { eventText, GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
@@ -248,7 +243,7 @@ export class LogBuilder {
 
   private begin(): void {
     this.store.add(LOG_TYPE, 0, 0, 0, NONE, 0);
-    this.eventsStart = this.firstEventLine();
+    this.eventsStart = firstEventLine(this.source);
     this.pos = Math.max(0, this.eventsStart);
     this.readNext();
   }
@@ -296,7 +291,7 @@ export class LogBuilder {
     // With no timestamped line, the header is the whole text.
     const debug = debugSettings(this.source.text(0, eventsStart < 0 ? len : eventsStart));
     this.parsingErrors.push(...debug.errors);
-    const firstLine = eventsStart < 0 ? '' : this.lineText(eventsStart);
+    const firstLine = eventsStart < 0 ? '' : lineText(this.source, eventsStart);
     const truncation = truncationOf(
       this.issues,
       store,
@@ -313,7 +308,7 @@ export class LogBuilder {
       snapshots: this.snapshots,
       executionEndTime,
       size: len,
-      startTime: first === NONE ? null : wallClock(this.lineText(store.start[first]!)),
+      startTime: first === NONE ? null : wallClock(lineText(this.source, store.start[first]!)),
       debugLevels: debug.levels,
       debugLevelSettings: debug.settings,
       userInfo: firstLine ? userInfo(firstLine) : null,
@@ -663,12 +658,12 @@ export class LogBuilder {
     while (p2 < end && bytes[p2] !== PIPE) p2++;
     const type = typeIdAt(bytes, p1 + 1, p2);
     if (type < 0) {
-      if (!this.isTypeName(p1 + 1, p2)) return READ.notEvent;
+      if (!isTypeName(bytes, p1 + 1, p2)) return READ.notEvent;
       this.unknownStart = p1 + 1;
       this.unknownEnd = p2;
       return READ.unknownType;
     }
-    const timestamp = this.timestampIn(start, p1);
+    const timestamp = timestampIn(bytes, start, p1);
     if (Number.isNaN(timestamp)) {
       // v0 threw here and ended the parse.
       this.parsingErrors.push(`Invalid log line: ${this.source.text(start, end)}`);
@@ -790,15 +785,6 @@ export class LogBuilder {
     return false;
   }
 
-  /** The nanoseconds in `(…)` of field 0, or NaN when it states none. */
-  private timestampIn(start: number, end: number): number {
-    const bytes = this.bytes;
-    let i = start;
-    while (i < end && bytes[i] !== LPAREN) i++;
-    if (i >= end || bytes[end - 1] !== RPAREN) return Number.NaN;
-    return digits(bytes, i + 1, end - 1);
-  }
-
   /** A line that starts no event: text of the last event, a marker, or an error. */
   private notAnEvent(start: number, end: number): void {
     const store = this.store;
@@ -835,41 +821,9 @@ export class LogBuilder {
     this.parsingErrors.push(message);
   }
 
-  /** Bytes `start` to `end` are a non-empty run of `A`-`Z` and `_`, as an event name is. */
-  private isTypeName(start: number, end: number): boolean {
-    if (start >= end) return false;
-    const bytes = this.bytes;
-    for (let i = start; i < end; i++) {
-      // i < end, which is inside the line
-      const c = bytes[i]!;
-      if (!((c >= UPPER_A && c <= UPPER_Z) || c === UNDERSCORE)) return false;
-    }
-    return true;
-  }
-
   private isTruncationMarker(start: number, end: number): boolean {
     // '*' first: a cheap test, because this runs on every continuation line.
     return this.bytes[start] === STAR && TRUNCATION_MARKER.test(this.source.text(start, end));
-  }
-
-  /** The start of the first timestamped line, or -1 when there is none. */
-  private firstEventLine(): number {
-    const bytes = this.bytes;
-    for (let start = 0; start < bytes.length; ) {
-      if (this.timestampClose(start) >= 0) return start;
-      const eol = this.source.lineEnd(start);
-      if (eol < 0) break;
-      start = eol + 1;
-    }
-    return -1;
-  }
-
-  /** The line at `start`, without its line ending. */
-  private lineText(start: number): string {
-    const eol = this.source.lineEnd(start);
-    let end = eol < 0 ? this.bytes.length : eol;
-    if (end > start && this.bytes[end - 1] === CR) end--;
-    return this.source.text(start, end);
   }
 
   /**
@@ -881,7 +835,7 @@ export class LogBuilder {
     // Byte tests before any decode: this runs on every line that is not an event.
     const first = bytes[start]! - 0x30;
     if (first < 0 || first > 9) return false;
-    const close = this.timestampClose(this.pos);
+    const close = timestampClose(bytes, this.pos);
     if (close < 0) return false;
     let open = close;
     while (bytes[open] !== LPAREN) open--;
@@ -904,8 +858,8 @@ export class LogBuilder {
         first >= 0 &&
         first <= 9 &&
         bytes[line + 2] !== COLON &&
-        this.timestampClose(eol + 1) >= 0 &&
-        SETTINGS_LINE.test(this.lineText(line))
+        timestampClose(bytes, eol + 1) >= 0 &&
+        SETTINGS_LINE.test(lineText(this.source, line))
       )
         count++;
       line = eol + 1;
@@ -916,20 +870,5 @@ export class LogBuilder {
       description: `The text holds ${Math.max(2, count)} logs. Only the first log was parsed. Open each log on its own.`,
       type: 'error',
     });
-  }
-
-  /** Where `)` closes the `HH:MM:SS.f+ (n+)|` that starts at `start`, or -1 without one. */
-  private timestampClose(start: number): number {
-    const bytes = this.bytes;
-    const digit = (i: number): boolean => bytes[i]! >= 0x30 && bytes[i]! <= 0x39;
-    if (!(digit(start) && digit(start + 1) && bytes[start + 2] === COLON)) return -1;
-    if (!(digit(start + 3) && digit(start + 4) && bytes[start + 5] === COLON)) return -1;
-    if (!(digit(start + 6) && digit(start + 7) && bytes[start + 8] === DOT)) return -1;
-    let i = start + 9;
-    if (!digit(i)) return -1;
-    while (digit(i)) i++;
-    if (bytes[i++] !== SPACE || bytes[i++] !== LPAREN || !digit(i)) return -1;
-    while (digit(i)) i++;
-    return bytes[i] === RPAREN && bytes[i + 1] === PIPE ? i : -1;
   }
 }
