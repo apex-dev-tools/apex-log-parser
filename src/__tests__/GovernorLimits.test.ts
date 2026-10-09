@@ -44,17 +44,19 @@ describe('the cumulative limit block', () => {
     expect(snapshot?.limits.mobileApexPushCalls).toEqual({ used: 0, limit: 10, percentUsed: 0 });
   });
 
-  it('percentUsed is null for a metric the block never stated', () => {
-    // A block that states only SOQL: every other metric has no ceiling, so it has no percentage.
+  it('limit and percentUsed are null for a metric the block never stated', () => {
+    // Every metric but SOQL and callouts has no ceiling; a stated 0 ceiling stays 0.
     const partial = parse(
       '09:18:22.6 (100)|EXECUTION_STARTED\n' +
         '09:18:22.6 (500)|LIMIT_USAGE_FOR_NS|(default)|\n' +
         '  Number of SOQL queries: 25 out of 100\n' +
+        '  Number of callouts: 0 out of 0\n' +
         '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
     );
     const limits = partial.limits.byNamespace.get('default')?.final;
     expect(limits?.soqlQueries).toEqual({ used: 25, limit: 100, percentUsed: 25 });
-    expect(limits?.cpuTime).toEqual({ used: 0, limit: 0, percentUsed: null });
+    expect(limits?.cpuTime).toEqual({ used: 0, limit: null, percentUsed: null });
+    expect(limits?.callouts).toEqual({ used: 0, limit: 0, percentUsed: null });
   });
 });
 

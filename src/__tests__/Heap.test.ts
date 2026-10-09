@@ -79,7 +79,7 @@ describe('heap rollups', () => {
       [0, 0, 5500000, 5000000],
     ]);
     // No block states a heap size, so the peak is the one the events reach, with no ceiling.
-    expect(log.limits.peak.heapSize).toEqual({ used: 5000000, limit: 0, percentUsed: null });
+    expect(log.limits.peak.heapSize).toEqual({ used: 5000000, limit: null, percentUsed: null });
   });
 
   it.each([

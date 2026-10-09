@@ -237,7 +237,7 @@ the most common surprise:
 | Flow and Process Builder limit lines | `WORKFLOW` at `FINER` |
 
 **All-zero limits mean "not reported".** Without a `LIMIT_USAGE_FOR_NS` block, every
-`limits.final` and `limits.peak` metric stays at `{ used: 0, limit: 0, percentUsed: null }`. That
+`limits.final` and `limits.peak` metric stays at `{ used: 0, limit: null, percentUsed: null }`. That
 is not a transaction that used nothing.
 
 **Read totals from the log.** It already sums the tree, so you do not need to walk it to count

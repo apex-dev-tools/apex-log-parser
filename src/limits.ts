@@ -5,8 +5,8 @@
 /** One governor limit: what the code used, and the ceiling the log stated. */
 export interface LimitValue {
   used: number;
-  /** 0 when the log stated no ceiling. */
-  limit: number;
+  /** Null when the log stated no ceiling. */
+  limit: number | null;
   /** Null when the log stated no ceiling. */
   percentUsed: number | null;
 }
@@ -84,13 +84,13 @@ export interface GovernorLimits {
   byNamespace: Map<string, NamespaceLimits>;
 }
 
-function value(used: number, limit: number): LimitValue {
-  return { used, limit, percentUsed: limit > 0 ? (used / limit) * 100 : null };
+function value(used: number, limit: number | null): LimitValue {
+  return { used, limit, percentUsed: limit !== null && limit > 0 ? (used / limit) * 100 : null };
 }
 
 /** Every metric at zero, with no ceiling. */
 export function emptyLimits(): Limits {
-  const zero = (): LimitValue => value(0, 0);
+  const zero = (): LimitValue => value(0, null);
   return {
     soqlQueries: zero(),
     soslQueries: zero(),
@@ -257,7 +257,12 @@ export function limitsOfBlock(text: string): Limits {
   return limits;
 }
 
-/** `limit` takes the highest stated ceiling: 0 means none, and no log states two for one metric. */
+/** The highest stated ceiling, or null when neither states one. */
+function ceiling(a: number | null, b: number | null): number | null {
+  return a === null ? b : b === null ? a : Math.max(a, b);
+}
+
+/** `limit` takes the highest stated ceiling: no log states two for one metric. */
 function fold(
   sources: Iterable<Limits>,
   used: (m: LimitMetric, a: number, b: number) => number,
@@ -267,7 +272,7 @@ function fold(
     for (const m of METRICS) {
       const a = out[m];
       const b = source[m];
-      out[m] = value(used(m, a.used, b.used), Math.max(a.limit, b.limit));
+      out[m] = value(used(m, a.used, b.used), ceiling(a.limit, b.limit));
     }
   }
   return out;
@@ -296,6 +301,6 @@ export function governorLimits(snapshots: LimitSnapshot[], heapPeak: number): Go
     final = combined(Array.from(byNamespace.values(), (ns) => ns.final));
     peak = highest([peak, final]);
   }
-  const heap = { ...emptyLimits(), heapSize: value(heapPeak, 0) };
+  const heap = { ...emptyLimits(), heapSize: value(heapPeak, null) };
   return { snapshots, final, peak: highest([peak, heap]), byNamespace };
 }
