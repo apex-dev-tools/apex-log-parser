@@ -189,10 +189,10 @@ function* nextRecords(log: NextLog, nodeOf: (event: ApexEvent) => unknown): Proj
   }
 }
 
-/** The next engine's log, as facts, read through its views. Ids are in pre-order, so the records come out in it too. */
+/** The log, as facts, read through its views. Ids are in pre-order, so the records come out in it too. */
 export const nextFacts = (log: NextLog): Projection => nextRecords(log, nextNode);
 
-/** Every field the next engine's views state: its facts, then each event's text figures. */
+/** Every field the views state: its facts, then each event's text figures. */
 export const nextProjection = (log: NextLog): Projection =>
   nextRecords(log, (event) => ({
     ...nextNode(event),

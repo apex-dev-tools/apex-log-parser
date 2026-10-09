@@ -282,7 +282,7 @@ describe('package entries', () => {
     expect([log.children.length, log.exitStamp, log.executionEndTime]).toEqual([1, 1100, 1100]);
     const top = kids(log.children[0]);
     expect(top.map((e) => [e.type, e.timestamp, e.exitStamp, e.namespace])).toEqual([
-      // A three-part name states a namespace only once the log has stated it, as today.
+      // A three-part name states a namespace only once the log has stated it.
       ['METHOD_ENTRY', 200, 300, null],
       ['ENTERING_MANAGED_PKG', 400, 700, 'ns'],
       ['ENTERING_MANAGED_PKG', 700, 725, 'ns2'],

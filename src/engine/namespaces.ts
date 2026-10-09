@@ -7,7 +7,7 @@ import type { StringTable } from '../store/strings.js';
 
 /** The line states no namespace, so the event takes its frame's. */
 export const UNSTATED = -1;
-/** Today's `'default'`: the line states no namespace, and the event takes none from its frame. */
+/** v0's `'default'`: the line states no namespace, and the event takes none from its frame. */
 export const DEFAULT = -2;
 
 /** A rule's id in `RULE`, so the engine switches on a number. */
@@ -41,8 +41,8 @@ const UNIT_TYPES = [
 ];
 
 /**
- * Each event's own namespace, by today's rules, read from the line's bytes. A rule that looks a
- * namespace up asks whether the log stated it before this line, as today.
+ * Each event's own namespace, by v0's rules, read from the line's bytes. A rule that looks a
+ * namespace up asks whether the log stated it before this line.
  */
 export class Namespaces {
   /** Every namespace stated so far, in the order the log first states them; never `'default'`. */
@@ -163,7 +163,7 @@ export class Namespaces {
     if (s < 0) return UNSTATED;
     const e = fields.endOf(className);
     const dot = this.indexOf(DOT, s, e);
-    // Today's slice(0, indexOf('.')): with no dot, every byte but the last.
+    // v0's slice(0, indexOf('.')): with no dot, every byte but the last.
     const possible = dot < 0 ? e - 1 : dot;
     const known = this.stated(s, possible);
     if (known !== UNSTATED) return known;
@@ -172,7 +172,7 @@ export class Namespaces {
   }
 
   private codeUnit(fields: ByteFields, unit: number, name: number, typeRef: number): number {
-    // Today's `a || b || c`: the first of them that is not empty.
+    // v0's `a || b || c`: the first of them that is not empty.
     const typeField = this.firstStated(fields, typeRef, name, unit);
     const ts = typeField < 0 ? 0 : fields.startOf(typeField);
     const te = typeField < 0 ? 0 : fields.endOf(typeField);
@@ -206,7 +206,7 @@ export class Namespaces {
         const dot = this.indexOf(DOT, ns, ne);
         if (dot < 0) break;
         const scheme = this.find(APEX_SCHEME, ns, ne);
-        // Today's indexOf('apex://') + 7 is 6 when the name has no scheme.
+        // v0's indexOf('apex://') + 7 is 6 when the name has no scheme.
         const from = scheme < 0 ? ns + 6 : scheme + APEX_SCHEME.length;
         found = from < dot ? this.id(from, dot) : UNSTATED;
         break;
@@ -222,7 +222,7 @@ export class Namespaces {
       }
       default: {
         const bracket = this.lastIndexOf(OPEN, ns, ne);
-        // Today splits the name up to and including its last '(' on '.'.
+        // v0 split the name up to and including its last '(' on '.'.
         const end = bracket < 0 ? ne : bracket + 1;
         const parts = this.count(DOT, ns, end) + 1;
         // With two parts, the second ends at `end`; a dot there leaves it empty, never '('.
@@ -236,14 +236,14 @@ export class Namespaces {
     return found === UNSTATED ? DEFAULT : found;
   }
 
-  /** Today's parseObjectNamespace: the prefix before `__`, or `'default'` without one. */
+  /** An object's namespace: the prefix before `__`, or `'default'` without one. */
   private objectNamespace(start: number, end: number): number {
     if (start >= end) return UNSTATED;
     const sep = this.find('__', start, end);
     return sep < 0 ? DEFAULT : this.id(start, sep);
   }
 
-  /** Today's parseVfNamespace: between the second `/` and the first `__`. */
+  /** A VF page's namespace: between the second `/` and the first `__`. */
   private vfNamespace(start: number, end: number): number {
     const sep = this.find('__', start, end);
     if (sep < 0) return DEFAULT;
@@ -251,7 +251,7 @@ export class Namespaces {
     if (first < 0) return DEFAULT;
     const second = this.indexOf(SLASH, first + 1, end);
     if (second < 0) return DEFAULT;
-    // Today's substring() swaps its bounds when the first is the larger.
+    // v0's substring() swapped its bounds when the first is the larger.
     const from = second + 1;
     return this.id(Math.min(from, sep), Math.max(from, sep));
   }

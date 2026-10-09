@@ -166,7 +166,7 @@ describe('field layouts', () => {
 });
 
 describe('fact rules', () => {
-  // Names, not positions, so the table reads as the inventory of today's rules it was ported from.
+  // Names, not positions, so the table reads as an inventory of the rules.
   it('states these counts, rows, heap, namespace rules and hooks', () => {
     const name = (info: (typeof EVENT_TYPES)[number], position: number): string =>
       info.fields[position - FIRST_FIELD] ?? `<${position}>`;

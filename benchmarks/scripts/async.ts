@@ -1,4 +1,4 @@
-// What the next parser's async parse() costs against a direct build, and how long it holds the
+// What the parser's async parse() costs against a direct build, and how long it holds the
 // host, on the synthetic logs. Local only.
 //   pnpm run bench:async [--runs=5] [--log=<name>]
 // Gates (100 MB): no host turn over 10 ms; the total within 10% of a direct build; an abort

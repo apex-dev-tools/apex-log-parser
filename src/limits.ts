@@ -201,7 +201,7 @@ export function labelledUsage(text: string): LimitUsage | null {
 export function runningUsage(text: string): RunningUsage | null {
   const comma = text.indexOf(',');
   if (comma < 0) return null;
-  // A head with no leading count still reports a total, so today keeps it with a zero delta.
+  // A head with no leading count still reports a total, so it is kept with a zero delta.
   const head = text.slice(0, comma).trim();
   const [, count = '0', label = head] = COUNT_LABEL.exec(head) ?? [];
   const found = usage(label, text.slice(comma + 1));
@@ -223,7 +223,7 @@ export interface RunningTotal {
 export function runningTotal(text: string): RunningTotal | null {
   const comma = text.indexOf(',');
   if (comma < 0) return null;
-  // A head with no leading count still reports a total, so today keeps it with a zero delta.
+  // A head with no leading count still reports a total, so it is kept with a zero delta.
   const head = text.slice(0, comma).trim();
   const [, count = '0', label = head] = COUNT_LABEL.exec(head) ?? [];
   const metric = LABELS.get(label);
@@ -240,7 +240,7 @@ export function runningTotal(text: string): RunningTotal | null {
 
 /**
  * The usage a limit text states, one `Label: used/limit` or `Label: used out of limit` line per
- * metric, as today: a limit block, or a flow element's report.
+ * metric: a limit block, or a flow element's report.
  */
 export function limitsOfBlock(text: string): Limits {
   const limits = emptyLimits();
@@ -278,7 +278,7 @@ const combined = (sources: Iterable<Limits>): Limits =>
 const highest = (sources: Iterable<Limits>): Limits => fold(sources, (_m, a, b) => Math.max(a, b));
 
 /**
- * The whole-log and per-namespace figures from snapshots in log order, as today. Each snapshot is
+ * The whole-log and per-namespace figures from snapshots in log order. Each snapshot is
  * cumulative, so a namespace's last is its final figure. `heapPeak` (bytes) comes from the heap
  * events, because a block states heap as 0.
  */

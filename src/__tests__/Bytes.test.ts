@@ -83,7 +83,7 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
   it.each([
     ['a CRLF log', 'line\r\none\r\n\r\n  \r\ntwo\r\n', 6, 'one\n  \ntwo'],
     ['a leading empty line', 'line\n\nmore', 5, 'more'],
-    // The log's last line keeps its CR, as today, so it is text, not a marker.
+    // The log's last line keeps its CR, so it is text, not a marker.
     [
       'a CRLF log with no final LF',
       'line\r\none\r\n*** Skipped 10 bytes of detailed log\r',

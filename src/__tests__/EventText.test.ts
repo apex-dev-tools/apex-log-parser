@@ -46,7 +46,7 @@ describe('event text', () => {
       `${at(2)}|STATEMENT_EXECUTE|[2]`,
     ]);
     expect(log.event(1)?.text).toBe('DEBUG | first\nsecond');
-    // With no `\n` after it, the last line keeps its `\r`, as the engine and today's parser do.
+    // With no `\n` after it, the last line keeps its `\r`, as the engine does.
     const cut = apexLog(nodeEngine.build(encode(`${HEADER}\r\n${at(1)}|STATEMENT_EXECUTE|[2]\r`)));
     expect(cut.event(1)?.logLine).toBe(`${at(1)}|STATEMENT_EXECUTE|[2]\r`);
   });

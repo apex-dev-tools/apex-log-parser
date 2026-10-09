@@ -78,7 +78,7 @@ const LINE_FIELD = new Int8Array(TYPES);
 /** A `RULE` id, or 0 when the type states no namespace and takes its frame's. */
 const NAMESPACE_RULE = new Uint8Array(TYPES);
 const NAMESPACE_POSITIONS: (readonly number[])[] = [];
-/** A frame that takes the namespace its exit line states, as today's method entry. */
+/** A frame that takes the namespace its exit line states, as a method entry does. */
 const TAKES_EXIT_NAMESPACE = new Uint8Array(TYPES);
 /** A `HOOK_ID`, or 0. */
 const HOOK = new Uint8Array(TYPES);
@@ -86,7 +86,7 @@ const HOOK = new Uint8Array(TYPES);
 const COUNT_AT = new Int8Array(TYPES).fill(-1);
 const ROWS_AT = new Int8Array(TYPES).fill(-1);
 const ROWS_FIELD = new Int8Array(TYPES);
-/** The row counter a frame takes from its exit line, as today's SOQL and SOSL; -1 for none. */
+/** The row counter a frame takes from its exit line, as SOQL and SOSL do; -1 for none. */
 const ROWS_FROM_EXIT = new Int8Array(TYPES).fill(-1);
 const HEAP_FIELD = new Int8Array(TYPES);
 const HEAP_SIGN = new Int8Array(TYPES);
@@ -99,7 +99,7 @@ for (const info of EVENT_TYPES) {
   // t is a type id, so it indexes GRAMMAR
   const g = GRAMMAR[t]!;
   IS_FRAME[t] = info.shape === 'frame' ? 1 : 0;
-  // A frame that the next line closes is also an exit line for the frame before it, as today.
+  // A frame that the next line closes is also an exit line for the frame before it.
   IS_EXIT[t] = info.shape === 'exit' || g.closes === 'next-line' ? 1 : 0;
   EXIT_LINE[t] = info.shape === 'exit' ? 1 : 0;
   NEXT_LINE_EXITS[t] = g.closes === 'next-line' ? 1 : 0;
@@ -126,7 +126,7 @@ for (const info of EVENT_TYPES) {
 const EXECUTION_STARTED = idOfType('EXECUTION_STARTED');
 const ENTERING_MANAGED_PKG = idOfType('ENTERING_MANAGED_PKG');
 const VF_APEX_CALL_START = idOfType('VF_APEX_CALL_START');
-/** The flow elements the residual pass credits, as today's list of them. */
+/** The flow elements the residual pass credits. */
 const FLOW_ELEMENT = new Uint8Array(TYPES);
 FLOW_ELEMENT[idOfType('FLOW_ELEMENT_BEGIN')] = 1;
 FLOW_ELEMENT[idOfType('FLOW_BULK_ELEMENT_BEGIN')] = 1;
@@ -155,13 +155,13 @@ const STAR = 0x2a;
 const NO_TIME = -0;
 /** `eventsStart` before `scan` reads the header; -1 means a log with no timestamped line. */
 const UNREAD = -2;
-/** Today's passes after the scan, in today's order, as `settle` runs them. */
+/** The passes after the scan, in the order `settle` runs them. */
 const PASS = { times: 0, rollUp: 1, flow: 2, trim: 3, done: 4 } as const;
 
 // `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
 declare const performance: { now(): number };
 
-// Looser than TRUNCATION_MARKER, as today: a line only reaches these tests when it is not text.
+// Looser than TRUNCATION_MARKER, as in v0: a line only reaches these tests when it is not text.
 const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
 // The platform can write the marker inside an event's line, which it then cuts.
 const CUT_BY_MAX_SIZE = /\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+ *$/;
@@ -200,7 +200,7 @@ export interface Built {
 }
 
 /**
- * Builds the event tree in one pass, with today's rules and today's order of side effects. Lines
+ * Builds the event tree in one pass, with v0's rules and v0's order of side effects. Lines
  * are read one event ahead: taking an event reads every line up to the next one, so the work that
  * follows an event (its text, then the next event's own) runs before the tree places that next
  * event.
@@ -230,7 +230,7 @@ export class LogBuilder {
   /** Set while the log's last child is a package entry that merged. */
   private mergedTail: MergedTail | null = null;
   private readonly flowTotals = new Map<number, FlowTotal>();
-  /** Bytes; today's running live heap, clamped at 0. */
+  /** Bytes; the running live heap, clamped at 0. */
   private runningHeap = 0;
 
   /** Where the first timestamped line starts, -1 when none does; `UNREAD` until `scan` starts. */
@@ -242,7 +242,7 @@ export class LogBuilder {
   /** Where the next unread line starts. */
   private pos = 0;
   private discontinuity = false;
-  /** Today's `lastTimestamp`: the last row's time, which a folded exit does not move. */
+  /** The last row's time, which a folded exit does not move. */
   private lastTimestamp = NO_TIME;
   /** Nanoseconds; `NO_TIME` until the log states it reached the maximum size. */
   private maxSizeTimestamp = NO_TIME;
@@ -326,7 +326,7 @@ export class LogBuilder {
   }
 
   /**
-   * Today's passes over the scanned tree, until `deadline`, a `performance.now()` time, passes. The
+   * The passes over the scanned tree, until `deadline`, a `performance.now()` time, passes. The
    * package merge ran during the scan. True once they end; call again to go on, then `finish`.
    * Only once `scan` returns true.
    */
@@ -365,7 +365,7 @@ export class LogBuilder {
     const eventsStart = this.eventsStart;
     // settle set them
     const { executionEndTime, first } = this.logTimes!;
-    // With no timestamped line, the header is the whole text, as today.
+    // With no timestamped line, the header is the whole text.
     const debug = debugSettings(this.source.text(0, eventsStart < 0 ? len : eventsStart));
     this.parsingErrors.push(...debug.errors);
     const firstLine = eventsStart < 0 ? '' : this.lineText(eventsStart);
@@ -395,7 +395,7 @@ export class LogBuilder {
   }
 
   /**
-   * Today's `parseTree`, for the frames open now. Iterative, so a deep log cannot overflow the call
+   * The tree walk, for the frames open now. Iterative, so a deep log cannot overflow the call
    * stack. Counts on from the slice's `steps` and returns the count once no frame is open, or a
    * value below 0 once `deadline` passes; the open frames are fields, so the next call goes on from
    * there. The count is returned, not stored: a field write after the loop made it deopt.
@@ -420,7 +420,7 @@ export class LogBuilder {
       const exitNamespace = this.nextNamespace;
       const exitRows = this.nextRows;
       if (!onNextLine && EXIT_LINE[next] && this.endMethod(frame)) {
-        // As today, also when the line unwinds this frame to close one below it.
+        // Also when the line unwinds this frame to close one below it.
         this.endedBy(frame, next, exitNamespace, exitRows);
         this.pop();
       } else if (onNextLine && (IS_EXIT[next] || nextHasExits)) {
@@ -447,7 +447,7 @@ export class LogBuilder {
     return steps;
   }
 
-  /** Today's entry: a row whose type has exits, unless its line made it a leaf. */
+  /** An entry: a row whose type has exits, unless its line made it a leaf. */
   private opensFrame(id: number): boolean {
     const store = this.store;
     // id was added by take, so every column holds it
@@ -469,7 +469,7 @@ export class LogBuilder {
     this.framePackage.pop();
   }
 
-  /** Today's `onEnd`: what a frame takes from the line that closes or unwinds it. */
+  /** What a frame takes from the line that closes or unwinds it. */
   private endedBy(frame: number, exitType: number, exitNamespace: number, exitRows: number): void {
     const store = this.store;
     // frame was added by take, so it has a type
@@ -514,7 +514,7 @@ export class LogBuilder {
     this.pop();
   }
 
-  /** Today's `endMethod`: true when the next line closes this frame, or one below it. */
+  /** True when the next line closes this frame, or one below it. */
   private endMethod(frame: number): boolean {
     const store = this.store;
     store.exitStamp[frame] = this.nextTimestamp;
@@ -537,7 +537,7 @@ export class LogBuilder {
     if (!CLOSES[store.type[frame]! * TYPES + this.nextType]) return false;
     const line = store.lineNumber[frame]!;
     const exitLine = this.nextLine;
-    // Today a missing or zero line number matches any.
+    // A missing or zero line number matches any.
     return (
       exitLine === line || exitLine === NO_LINE || exitLine === 0 || line === NO_LINE || line === 0
     );
@@ -545,7 +545,7 @@ export class LogBuilder {
 
   /**
    * Places the next event under `parent`, whose open-frame slot is `top`, or -1 for the log. A
-   * package entry in the namespace of the run before it merges into that run, as today's merge,
+   * package entry in the namespace of the run before it merges into that run, as v0's merge did,
    * and gets no row: the result is then `NONE`.
    */
   private takeChild(parent: number, depth: number, top: number): number {
@@ -590,7 +590,7 @@ export class LogBuilder {
 
   /** The next package entry extends `into` instead of getting a row. */
   private mergePackage(into: number): void {
-    // Today's `exitStamp || timestamp`: the event after it moves this on, when there is one.
+    // `exitStamp || timestamp`, as in v0: the event after it moves this on, when there is one.
     this.store.exitStamp[into] = this.nextTimestamp;
     this.lastTimestamp = this.nextTimestamp;
     this.lastFolded = false;
@@ -666,7 +666,7 @@ export class LogBuilder {
     this.maxSizeTimestamp = this.lastAt;
   }
 
-  /** Today ends the maximum size at the next event after it, an exit line or a merged entry too. */
+  /** The maximum size ends at the next event after it, an exit line or a merged entry too. */
   private endMaxSize(at: number): void {
     this.pendingMaxSize = this.pendingMaxSize.filter((issue) => {
       if (at <= issue.startTime) return true;
@@ -685,7 +685,7 @@ export class LogBuilder {
     return issue;
   }
 
-  /** Today's line generator, one event at a time: reads lines up to and including the next event. */
+  /** The line reader, one event at a time: reads lines up to and including the next event. */
   private readNext(): void {
     const bytes = this.bytes;
     const len = bytes.length;
@@ -696,7 +696,7 @@ export class LogBuilder {
       const last = eol < 0;
       if (last) eol = len;
       this.pos = eol + 1;
-      // A CR before the line's LF is part of its line end; the last line keeps one, as today.
+      // A CR before the line's LF is part of its line end; the last line keeps one, as in v0.
       const end = !last && eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
       if (end === start) continue;
       const read = this.readEvent(start, end);
@@ -749,7 +749,7 @@ export class LogBuilder {
     }
     const timestamp = this.timestampIn(start, p1);
     if (Number.isNaN(timestamp)) {
-      // Today the whole parse throws here.
+      // v0 threw here and ended the parse.
       this.parsingErrors.push(`Invalid log line: ${this.source.text(start, end)}`);
       return READ.error;
     }
@@ -784,7 +784,7 @@ export class LogBuilder {
     let heap = 0;
     const sign = HEAP_SIGN[type]!;
     if (sign) {
-      // Today reads anything but `Bytes:` and a number as no bytes.
+      // Anything but `Bytes:` and a number reads as no bytes, as in v0.
       const stated = fields.int(HEAP_FIELD[type]!, HEAP_PREFIX);
       heap = stated === null || Number.isNaN(stated) ? 0 : sign * stated;
       // Clamped, so a free the log kept without its allocation cannot swallow later ones.
@@ -818,7 +818,7 @@ export class LogBuilder {
     return READ.event;
   }
 
-  /** Today's `onAfter` of the last event, now that the next one is read. */
+  /** The last event's work that needs the next one, now that it is read. */
   private afterEvent(): void {
     this.runHook();
     // A package entry ends where the next event starts; `endLastPackage` ends the log's last one.
@@ -826,7 +826,7 @@ export class LogBuilder {
       this.store.exitStamp[this.lastId] = this.nextTimestamp;
   }
 
-  /** Today's `onAfter` hooks of the last event, which read its whole text. */
+  /** The last event's hooks that read its whole text. */
   private runHook(): void {
     const type = this.lastType;
     const hook = type < 0 || this.lastFolded ? 0 : HOOK[type];
@@ -850,7 +850,7 @@ export class LogBuilder {
     }
   }
 
-  /** An issue from an event's text: its first line is the summary, as today. */
+  /** An issue from an event's text: its first line is the summary. */
   private textIssue(timestamp: number, id: number, text: string, type: IssueType): void {
     const lf = text.indexOf('\n');
     const summary = (lf < 0 ? text : text.slice(0, lf)).trim();
@@ -858,7 +858,7 @@ export class LogBuilder {
     this.issues.add(timestamp, id, { summary, description, type });
   }
 
-  /** Today's rule: a VF call with no method, on a class with no space or a page-messages class, is a leaf. */
+  /** A VF call with no method, on a class with no space or a page-messages class, is a leaf. */
   private vfCallIsLeaf(): boolean {
     const fields = this.fields;
     if (fields.at(VF_METHOD)) return false;
@@ -878,7 +878,7 @@ export class LogBuilder {
     return digits(bytes, i + 1, end - 1);
   }
 
-  /** A line that starts no event: text of the last event, a marker, or an error, as today. */
+  /** A line that starts no event: text of the last event, a marker, or an error. */
   private notAnEvent(start: number, end: number): void {
     const store = this.store;
     const last = this.lastId;
@@ -906,7 +906,7 @@ export class LogBuilder {
     }
   }
 
-  /** A line whose field 1 names a type the catalog does not hold: one error per name, as today. */
+  /** A line whose field 1 names a type the catalog does not hold: one error per name. */
   private unsupportedType(): void {
     const message = `Unsupported log event name: ${this.source.text(this.unknownStart, this.unknownEnd)}`;
     if (this.unsupported.has(message)) return;
@@ -952,7 +952,7 @@ export class LogBuilder {
   }
 
   /**
-   * Today's test for a second log: a settings line whose next line restarts the nanosecond
+   * The test for a second log: a settings line whose next line restarts the nanosecond
    * counter. A settings line alone is not enough, as a debug message can quote one.
    */
   private opensNextLog(start: number, end: number): boolean {
@@ -968,7 +968,7 @@ export class LogBuilder {
     return SETTINGS_LINE.test(this.source.text(start, end));
   }
 
-  /** Today's Multiple-Logs issue, with the number of logs from the one at `start` on. */
+  /** The Multiple-Logs issue, with the number of logs from the one at `start` on. */
   private multipleLogs(start: number): void {
     let count = 1;
     const bytes = this.bytes;

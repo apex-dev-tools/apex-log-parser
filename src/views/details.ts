@@ -128,7 +128,7 @@ function reader<T extends keyof EventDetails>(
   READERS[typeId] = make(typeId);
 }
 
-// One field, as its text rule and today read it, though it is the line's last.
+// One field, as its text rule reads it, though it is the line's last.
 const PLAN = position(idOfType('SOQL_EXECUTE_EXPLAIN'), 'plan').at;
 const planOf = (f: Fields): ExplainPlan | null => explainPlan(f.at(PLAN) || null);
 

@@ -21,10 +21,10 @@ applies.
   heap work, so it does not give these figures. The release notes compare as a consumer parses
   instead: from a file's bytes, with the decode the legacy parser needs and the bytes the log
   keeps, so their figures differ from this file's.
-- `scripts/views.ts` — `pnpm run bench:views`, what reading the next parser's views adds to its
+- `scripts/views.ts` — `pnpm run bench:views`, what reading the parser's views adds to its
   build on the same logs: every column of every event, and an object for every event. At
   100 MB it fails above 30 ms and 250 ms. Local only.
-- `scripts/async.ts` — `pnpm run bench:async`, the next parser's async `parse()` on the same logs:
+- `scripts/async.ts` — `pnpm run bench:async`, the parser's async `parse()` on the same logs:
   the longest host turn it holds, its total against a direct build, how soon an abort rejects,
   the same parse in a worker thread, and the reopen of a log moved to another thread. At 100 MB
   it fails on a turn over 10 ms, a total or a worker parse over 10% above the build, an abort

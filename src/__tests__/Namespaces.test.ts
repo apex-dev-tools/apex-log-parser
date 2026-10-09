@@ -4,7 +4,7 @@
 import type { ApexLog } from '../views/log.js';
 import { parse } from './helpers.js';
 
-/** Each event as `text [namespace]`, indented by depth. No namespace, today's `default`, is null. */
+/** Each event as `text [namespace]`, indented by depth. No namespace, v0's `default`, is null. */
 const outline = (log: ApexLog): string[] =>
   [...log.events].map((e) => `${'  '.repeat(e.depth - 1)}${e.text} [${e.namespace}]`);
 

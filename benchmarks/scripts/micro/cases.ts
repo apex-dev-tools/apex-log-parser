@@ -1,5 +1,5 @@
 /**
- * Micro-benchmark cases that settle the new engine's low-level choices. Each case is a pure
+ * Micro-benchmark cases that settle the engine's low-level choices. Each case is a pure
  * function of the log's bytes or text and returns a checksum, so the work cannot be optimised away
  * and cases that should agree can be checked against each other.
  *

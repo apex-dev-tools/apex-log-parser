@@ -117,7 +117,7 @@ const KIND: Readonly<Record<string, TruncationRegion['kind']>> = {
 };
 
 /**
- * Today's `resolveIssueEndTimes`, then its regions. A skipped block ends at the next row that
+ * The issues' end times, then their regions. A skipped block ends at the next row that
  * opens a frame, because a whole subtree starts there. The engine ends the maximum size at the
  * next event after its time, as it places events, since exit lines get no row. Either ends at
  * `logEnd` (nanoseconds) when nothing does.

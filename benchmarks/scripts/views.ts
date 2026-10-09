@@ -1,4 +1,4 @@
-// What reading the next parser's views adds to its build, on the synthetic logs. Local only.
+// What reading the parser's views adds to its build, on the synthetic logs. Local only.
 //   pnpm run bench:views [--runs=5] [--log=<name>]
 // Gates (100 MB): reading every column adds < 30 ms; an object for every event < 250 ms.
 

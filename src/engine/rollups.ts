@@ -18,7 +18,7 @@ export interface FlowTotal {
 }
 
 /**
- * The last top-level package entry, when it merged into the run before it. Today sets the log's
+ * The last top-level package entry, when it merged into the run before it. v0 set the log's
  * times before the merge, so they still see it, and the kept entry's exit before the merge.
  */
 export interface MergedTail {
@@ -37,7 +37,7 @@ export interface LogTimes {
   first: number;
 }
 
-/** Today's `setTimes` for row 0: from the first top-level event to the last one's end. */
+/** The times of row 0: from the first top-level event to the last one's end. */
 export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
   let first = NONE;
   let last = NONE;
@@ -59,7 +59,7 @@ export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
 }
 
 /**
- * Today's `aggregateTotals`: each row's counts, heap and duration into its parent. Rows are in
+ * Each row's counts, heap and duration into its parent. Rows are in
  * prefix order, so going down from the last id adds every subtree before its root moves up.
  * Counts and heap sum, the heap peak takes the highest, and heap self comes from leaves only.
  * Goes down from id `from` until `deadline`, a `performance.now()` time, passes; returns the id
@@ -103,7 +103,7 @@ export function rollUp(store: Store, isFrame: Uint8Array, from: number, deadline
 }
 
 /**
- * Today's `applyFlowDbResiduals`, after `rollUp`: a flow element gets the part of the database
+ * After `rollUp`: a flow element gets the part of the database
  * work its limit lines report that no statement under it accounts for. Elements go innermost
  * first, so a nested one's residual is in its parent's total before the parent is measured.
  * Goes down from id `from` until `deadline` passes, and returns where to go on, as `rollUp`.

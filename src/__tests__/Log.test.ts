@@ -177,7 +177,7 @@ describe('ApexLog', () => {
     );
     expect(log.entryPoints.map((e) => e.timestamp)).toEqual([2]);
     expect(log.exceptions.map((e) => e.type)).toEqual(['EXCEPTION_THROWN', 'FATAL_ERROR']);
-    // `(default)` is no namespace, by today's rule.
+    // `(default)` is no namespace.
     expect(log.namespaces).toEqual(['ns']);
     expect(log.limits.snapshots).toHaveLength(1);
     expect(log.limits.byNamespace.get('default')?.final.soqlQueries.used).toBe(2);

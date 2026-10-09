@@ -72,7 +72,7 @@ export const codeUnitCpu: CpuSpec<'unit' | 'name' | 'typeRef'> = (position) => {
   return (f) => (CUSTOM_UNITS.has(typeOf(f) ?? '') ? 'custom' : 'method');
 };
 
-// Class loading, which today's parser assumes costs the org no CPU.
+// Class loading, which v0 assumed costs the org no CPU.
 export const methodEntryCpu: CpuSpec<'signature'> = rule(
   ['signature'],
   (signature): CpuRule =>

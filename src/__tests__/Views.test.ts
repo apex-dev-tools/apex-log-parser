@@ -77,7 +77,7 @@ describe('LogEvents', () => {
       { self: 0, total: 4 },
       { self: 0, total: 0 },
     ]);
-    // Today's rules give `ns.MyClass.run()` no namespace of its own, nor the code unit one.
+    // The namespace rules give `ns.MyClass.run()` no namespace of its own, nor the code unit one.
     expect([run.lineNumber, run.namespace, run.isTruncated]).toEqual([1, null, false]);
     expect([run.kind, run.category, run.debugCategory, run.debugLevel]).toEqual([
       'method',
@@ -151,7 +151,7 @@ describe('LogEvents', () => {
     expect([run.isTruncated, run.exitStamp]).toEqual([true, 5]);
   });
 
-  it('states the heap figures a leaf allocates, which its frame takes as self, as today', () => {
+  it('states the heap figures a leaf allocates, which its frame takes as self', () => {
     const events = eventsOf(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(2)}|HEAP_ALLOCATE|[2]|Bytes:100`,

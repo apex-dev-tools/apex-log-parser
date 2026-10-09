@@ -44,7 +44,7 @@ export type RowsOf = 'soql' | 'sosl' | 'dml';
 
 /**
  * How the engine finds an event's namespace. Each rule reads the fields `NAMESPACE_FIELDS` names.
- * - `none`: no namespace, and none taken from the frame. Today's parser states `'default'` here.
+ * - `none`: no namespace, and none taken from the frame. v0 stated `'default'` here.
  * - `method`: from the signature; a `System.Type.forName(` signature states none.
  * - `methodExit`: from an exit whose text has no `)`; the frame it closes takes it.
  */

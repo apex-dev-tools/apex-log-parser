@@ -38,7 +38,7 @@ export class EventLines {
   /** The row's text, as its type's rule reads it; null when it states none. */
   text(id: number): string | null {
     const type = this.typeOf(id);
-    // A flow interviews frame is named by its first interview, as today.
+    // A flow interviews frame is named by its first interview.
     if (type === INTERVIEWS) {
       const interview = this.firstChildOf(id, INTERVIEW);
       return interview < 0 ? null : this.text(interview);
@@ -109,7 +109,7 @@ export class EventLines {
     return -1;
   }
 
-  /** What started the interviews: the nearest code unit or interviews frame above it, as today. */
+  /** What started the interviews: the nearest code unit or interviews frame above it. */
   private flowSuffix(id: number): string | null {
     const { parent } = this.store;
     // Every parent is a row; row 0, the log, ends the walk.

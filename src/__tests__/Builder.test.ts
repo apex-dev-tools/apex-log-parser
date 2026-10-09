@@ -132,7 +132,7 @@ describe('LogBuilder', () => {
     ]);
   });
 
-  it('times the log as today, which sees a last package entry before it merges', () => {
+  it('times the log from a last package entry before it merges', () => {
     const built = build(
       `${at(1)}|ENTERING_MANAGED_PKG|ns`,
       `${at(2)}|STATEMENT_EXECUTE|[1]`,
@@ -142,7 +142,7 @@ describe('LogBuilder', () => {
     expect([built.store.exitStamp[0], built.executionEndTime]).toEqual([3, 2]);
   });
 
-  it('rolls counts, rows, heap and time up to every frame above, as today', () => {
+  it('rolls counts, rows, heap and time up to every frame above', () => {
     const built = build(
       `${at(10)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(20)}|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Account`,
@@ -218,7 +218,7 @@ describe('LogBuilder', () => {
     expect(built.parsingErrors).toEqual([
       'Invalid log line: not text',
       'Unsupported log event name: NOT_A_TYPE',
-      // Today the whole parse throws here.
+      // v0 threw here and ended the parse.
       `Invalid line number: ${at(3)}|STATEMENT_EXECUTE|[]`,
     ]);
     expect(store.lineNumber[3]).toBe(NO_LINE);
@@ -243,7 +243,7 @@ describe('LogBuilder', () => {
       `${at(3)}|FATAL_ERROR|System.LimitException`,
     );
     expect(tree(built)).toEqual(['METHOD_ENTRY@1-2!', '  STATEMENT_EXECUTE@2', 'FATAL_ERROR@3']);
-    // Replaced once the frame ends, so it follows the Unexpected-End issue at the same time, as today.
+    // Replaced once the frame ends, so it follows the Unexpected-End issue at the same time.
     expect(issues(built)).toEqual([
       'Unexpected-End@2 #1',
       'Max-Size-reached@2 #1',

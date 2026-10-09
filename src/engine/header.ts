@@ -40,7 +40,7 @@ export interface UserInfo {
   timezone: LogTimezone | null;
 }
 
-/** A settings line, as today: the version, then `TOKEN,LEVEL` entries split by `;`. */
+/** A settings line: the version, then `TOKEN,LEVEL` entries split by `;`. */
 export const SETTINGS_LINE: RegExp = /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+$/;
 
 const LEVELS: ReadonlySet<string> = new Set<string>(Object.values(LEVEL));
@@ -50,7 +50,7 @@ const CATEGORY_BY_TOKEN: ReadonlyMap<string, DebugCategory> = new Map(
 const GMT_OFFSET = /^GMT([+-])(\d{2}):(\d{2})$/;
 const WALL_CLOCK = /^(\d{1,2}):(\d{2}):(\d{2})\.(\d+)\s/;
 
-/** Today's settings read: the first settings line of the header text. */
+/** The debug levels: the first settings line of the header text. */
 export function debugSettings(header: string): DebugSettings {
   const levels: Partial<Record<DebugCategory, Level>> = {};
   const settings: DebugLevelSetting[] = [];

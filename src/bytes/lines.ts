@@ -17,7 +17,7 @@ export function statesType(line: string): boolean {
 }
 
 /**
- * The continuation lines in `text`, as today's parser joins them: without CRs, empty lines,
+ * The continuation lines in `text`, joined: without CRs, empty lines,
  * truncation markers, or lines that look like an event. The engine's byte range spans them all.
  */
 export function continuationText(text: string): string {
@@ -31,7 +31,7 @@ export function continuationText(text: string): string {
     text.at(-1) !== '\n';
   if (clean) return text;
   const lines = text.split('\n');
-  // Only a CR before an LF ends a line; the log's last line keeps its CR, as today.
+  // Only a CR before an LF ends a line; the log's last line keeps its CR, as in v0.
   return lines
     .map((line, i) => (i < lines.length - 1 && line.endsWith('\r') ? line.slice(0, -1) : line))
     .filter((line) => line !== '' && !TRUNCATION_MARKER.test(line) && !statesType(line))
