@@ -162,6 +162,26 @@ describe('parse with a worker that fails', () => {
     expect([...listeners.values()].flat()).toHaveLength(0);
   });
 
+  it('listens once per worker, however many parses run on it, and stops after the last', async () => {
+    const ids: number[] = [];
+    let peak = 0;
+    const { worker, listeners } = fake((id, emit) => {
+      ids.push(id);
+      if (ids.length < 3) return;
+      // Node warns past 10 listeners per event, so each parse adding its own fails at 3 parses.
+      peak = [...listeners.values()].flat().length;
+      for (const each of ids)
+        emit('message', { kind: 'error', id: each, name: 'Error', message: `${each}` });
+    });
+    const results = await Promise.allSettled([1, 2, 3].map(() => nodeParse(LOG, { worker })));
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected', 'rejected']);
+    expect(results.map((r) => (r as PromiseRejectedResult).reason.message)).toEqual(
+      ids.map(String),
+    );
+    expect(peak).toBe(4);
+    expect([...listeners.values()].flat()).toHaveLength(0);
+  });
+
   it('ignores a reply for another parse', async () => {
     const { worker } = fake((id, emit) => {
       emit('message', { kind: 'error', id: id + 1000, name: 'Error', message: 'not mine' });

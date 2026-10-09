@@ -65,6 +65,59 @@ export function listen(
   throw new TypeError('A worker needs addEventListener or on');
 }
 
+/** One parse's way to take its replies, and to fail when the worker does. */
+interface Pending {
+  reply(reply: Reply): void;
+  fail(cause: unknown): void;
+}
+
+/** A worker's listeners, which every parse on it shares, and those parses by id. */
+interface Channel {
+  readonly pending: Map<number, Pending>;
+  readonly stop: () => void;
+}
+
+// Node warns past 10 listeners per event, so a set of listeners per parse warns at 3 parses.
+const CHANNELS = new WeakMap<LogWorker, Channel>();
+
+function open(worker: LogWorker): Channel {
+  const pending = new Map<number, Pending>();
+  // A copy: each parse that fails leaves the map.
+  const failAll = (cause: unknown): void => {
+    for (const each of [...pending.values()]) each.fail(cause);
+  };
+  const stops = [
+    listen(worker, 'message', (value) => {
+      const reply = value as Reply;
+      pending.get(reply?.id)?.reply(reply);
+    }),
+    listen(worker, 'error', failAll),
+    // A reply that cannot be read back arrives as this alone.
+    listen(worker, 'messageerror', failAll),
+  ];
+  // Node's worker ends with an exit; a web worker has no such event.
+  if (!worker.addEventListener) stops.push(listen(worker, 'exit', failAll));
+  const channel = {
+    pending,
+    stop: (): void => {
+      for (const stop of stops) stop();
+    },
+  };
+  CHANNELS.set(worker, channel);
+  return channel;
+}
+
+/** Sends `worker`'s replies for `id` to `pending`, and returns the call that stops it. */
+function attach(worker: LogWorker, id: number, pending: Pending): () => void {
+  const channel = CHANNELS.get(worker) ?? open(worker);
+  channel.pending.set(id, pending);
+  return () => {
+    if (!channel.pending.delete(id) || channel.pending.size > 0) return;
+    channel.stop();
+    CHANNELS.delete(worker);
+  };
+}
+
 // Bytes copied between pauses: well under a slice at memory speed.
 const COPY_BYTES = 4 << 20;
 
@@ -105,28 +158,23 @@ export async function parseInWorker(
       for (const stop of stops) stop();
     };
     stops.push(
-      listen(worker, 'message', (value) => {
-        const reply = value as Reply;
-        if (reply?.id !== id) return;
-        if (reply.kind === 'progress') run.report(reply.progress, true);
-        else if (reply.kind === 'done') {
+      attach(worker, id, {
+        reply: (reply) => {
+          if (reply.kind === 'progress') run.report(reply.progress, true);
+          else if (reply.kind === 'done') {
+            settle();
+            resolve(reply.buffers);
+          } else if (reply.kind === 'error') {
+            settle();
+            reject(Object.assign(new Error(reply.message), { name: reply.name }));
+          }
+        },
+        fail: (cause) => {
           settle();
-          resolve(reply.buffers);
-        } else if (reply.kind === 'error') {
-          settle();
-          reject(Object.assign(new Error(reply.message), { name: reply.name }));
-        }
+          reject(new Error('The parse worker failed', { cause }));
+        },
       }),
     );
-    const failed = (cause: unknown): void => {
-      settle();
-      reject(new Error('The parse worker failed', { cause }));
-    };
-    stops.push(listen(worker, 'error', failed));
-    // A reply that cannot be read back arrives as this alone.
-    stops.push(listen(worker, 'messageerror', failed));
-    // Node's worker ends with an exit; a web worker has no such event.
-    if (!worker.addEventListener) stops.push(listen(worker, 'exit', failed));
     const signal = options.signal;
     if (signal) {
       const onAbort = (): void => {
