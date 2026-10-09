@@ -5,16 +5,7 @@ import { ByteFields, digits } from '../bytes/cursor.js';
 import { TRUNCATION_MARKER } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
-import type { Hook, RowsOf } from '../catalog/catalog.js';
-import {
-  EVENT_TYPES,
-  eventText,
-  GRAMMAR,
-  HEAP_PREFIX,
-  idOfType,
-  ROWS_PREFIX,
-} from '../catalog/catalog.js';
-import { EVENT_TYPE_NAMES } from '../catalog/types.js';
+import { eventText, GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
 import type { LimitMetric, LimitSnapshot } from '../limits.js';
 import { limitsOfBlock, runningTotal } from '../limits.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, Store, TOTAL } from '../store/store.js';
@@ -23,32 +14,37 @@ import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
 import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
 import type { Issue, IssueText, IssueType, Truncation } from './issues.js';
 import { ISSUE, Issues, truncationOf } from './issues.js';
-import { DEFAULT, Namespaces, RULE, UNSTATED } from './namespaces.js';
+import { DEFAULT, Namespaces, UNSTATED } from './namespaces.js';
 import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
-
-/** Per-event bits in `Store.flags`. */
-export const FLAG = {
-  /** The log does not close this frame. */
-  truncated: 1,
-  /** A frame type that this event's line made a leaf, as a VF call with no method. */
-  notEntry: 2,
-} as const;
-
-/** The type id of the log itself, row 0. One past the event types. */
-export const LOG_TYPE: number = EVENT_TYPE_NAMES.length;
-const TYPES = EVENT_TYPE_NAMES.length;
-
-/** The hooks the engine runs when the next event is read. 0: the hook runs elsewhere. */
-const HOOK_ID: { readonly [H in Hook]: number } = {
-  limitSnapshot: 1,
-  limitException: 2,
-  fatal: 3,
-  // The flow residual pass reads these.
-  flowTotal: 0,
-  // readEvent decides the leaf.
-  vfApexCall: 0,
-};
+import {
+  ACCEPTS_TEXT,
+  CLOSES,
+  COUNT_AT,
+  DISCONTINUITY,
+  EXIT_LINE,
+  FLAG,
+  FLOW_ELEMENT,
+  FLOW_TOTAL_FIELD,
+  HAS_EXITS,
+  HEAP_FIELD,
+  HEAP_SIGN,
+  HOOK,
+  HOOK_ID,
+  IS_EXIT,
+  IS_FRAME,
+  LINE_FIELD,
+  LOG_TYPE,
+  NAMESPACE_POSITIONS,
+  NAMESPACE_RULE,
+  NEXT_LINE_EXITS,
+  opensFrame,
+  ROWS_AT,
+  ROWS_FIELD,
+  ROWS_FROM_EXIT,
+  TAKES_EXIT_NAMESPACE,
+  TYPES,
+} from './tables.js';
 
 /** The governor metrics a flow report states that are counters. CPU and heap are measures. */
 const FLOW_COUNTERS: ReadonlyMap<LimitMetric, number> = new Map<LimitMetric, number>([
@@ -58,78 +54,9 @@ const FLOW_COUNTERS: ReadonlyMap<LimitMetric, number> = new Map<LimitMetric, num
   ['dmlStatements', COUNTER.dml],
   ['dmlRows', COUNTER.dmlRows],
 ]);
-const ROWS_OF: { readonly [R in RowsOf]: number } = {
-  soql: COUNTER.soqlRows,
-  sosl: COUNTER.soslRows,
-  dml: COUNTER.dmlRows,
-};
-
-// Per-type tables, so the loop reads one byte, not an object.
-/** 1 for a frame-shaped type, by type id. A row of one is a leaf when its flags hold `notEntry`. */
-export const IS_FRAME: Uint8Array = new Uint8Array(TYPES);
-const IS_EXIT = new Uint8Array(TYPES);
-/** An exit-shaped line. No such type closes anything, so it never opens a frame. */
-const EXIT_LINE = new Uint8Array(TYPES);
-const NEXT_LINE_EXITS = new Uint8Array(TYPES);
-const HAS_EXITS = new Uint8Array(TYPES);
-const ACCEPTS_TEXT = new Uint8Array(TYPES);
-const DISCONTINUITY = new Uint8Array(TYPES);
-const LINE_FIELD = new Int8Array(TYPES);
-/** A `RULE` id, or 0 when the type states no namespace and takes its frame's. */
-const NAMESPACE_RULE = new Uint8Array(TYPES);
-const NAMESPACE_POSITIONS: (readonly number[])[] = [];
-/** A frame that takes the namespace its exit line states, as a method entry does. */
-const TAKES_EXIT_NAMESPACE = new Uint8Array(TYPES);
-/** A `HOOK_ID`, or 0. */
-const HOOK = new Uint8Array(TYPES);
-// The `COUNTER` an event adds one to, and the one its rows add to; -1 for none.
-const COUNT_AT = new Int8Array(TYPES).fill(-1);
-const ROWS_AT = new Int8Array(TYPES).fill(-1);
-const ROWS_FIELD = new Int8Array(TYPES);
-/** The row counter a frame takes from its exit line, as SOQL and SOSL do; -1 for none. */
-const ROWS_FROM_EXIT = new Int8Array(TYPES).fill(-1);
-const HEAP_FIELD = new Int8Array(TYPES);
-const HEAP_SIGN = new Int8Array(TYPES);
-/** The position of a flow running total's field, or -1. */
-const FLOW_TOTAL_FIELD = new Int8Array(TYPES).fill(-1);
-/** `CLOSES[frame * TYPES + exit]` is 1 when an `exit` line closes a `frame`. */
-const CLOSES = new Uint8Array(TYPES * TYPES);
-for (const info of EVENT_TYPES) {
-  const t = info.typeId;
-  // t is a type id, so it indexes GRAMMAR
-  const g = GRAMMAR[t]!;
-  IS_FRAME[t] = info.shape === 'frame' ? 1 : 0;
-  // A frame that the next line closes is also an exit line for the frame before it.
-  IS_EXIT[t] = info.shape === 'exit' || g.closes === 'next-line' ? 1 : 0;
-  EXIT_LINE[t] = info.shape === 'exit' ? 1 : 0;
-  NEXT_LINE_EXITS[t] = g.closes === 'next-line' ? 1 : 0;
-  HAS_EXITS[t] = g.closes === 'exit' || g.closes === 'next-line' ? 1 : 0;
-  ACCEPTS_TEXT[t] = g.acceptsText ? 1 : 0;
-  DISCONTINUITY[t] = g.discontinuity ? 1 : 0;
-  LINE_FIELD[t] = g.lineField;
-  NAMESPACE_RULE[t] = g.namespace ? RULE[g.namespace] : 0;
-  NAMESPACE_POSITIONS[t] = g.namespaceFields;
-  TAKES_EXIT_NAMESPACE[t] = g.namespace === 'method' ? 1 : 0;
-  HOOK[t] = g.hook ? HOOK_ID[g.hook] : 0;
-  if (g.count) COUNT_AT[t] = COUNTER[g.count];
-  if (g.rowsOf) ROWS_AT[t] = ROWS_OF[g.rowsOf];
-  ROWS_FIELD[t] = g.rowsField;
-  if (info.shape === 'frame' && !g.rowsOf && (g.count === 'soql' || g.count === 'sosl')) {
-    ROWS_FROM_EXIT[t] = ROWS_OF[g.count];
-  }
-  HEAP_FIELD[t] = g.heapField;
-  HEAP_SIGN[t] = g.heapSign;
-  if (g.hook === 'flowTotal') FLOW_TOTAL_FIELD[t] = g.hookFields[0] ?? -1;
-  for (const exit of info.exitTypes) CLOSES[t * TYPES + idOfType(exit)] = 1;
-  if (g.closes === 'next-line') CLOSES[t * TYPES + t] = 1;
-}
 const EXECUTION_STARTED = idOfType('EXECUTION_STARTED');
 const ENTERING_MANAGED_PKG = idOfType('ENTERING_MANAGED_PKG');
 const VF_APEX_CALL_START = idOfType('VF_APEX_CALL_START');
-/** The flow elements the residual pass credits. */
-const FLOW_ELEMENT = new Uint8Array(TYPES);
-FLOW_ELEMENT[idOfType('FLOW_ELEMENT_BEGIN')] = 1;
-FLOW_ELEMENT[idOfType('FLOW_BULK_ELEMENT_BEGIN')] = 1;
 const [VF_ELEMENT = -1, VF_METHOD = -1, VF_CONTROLLER = -1] =
   GRAMMAR[VF_APEX_CALL_START]?.hookFields ?? [];
 
@@ -372,7 +299,7 @@ export class LogBuilder {
     const truncation = truncationOf(
       this.issues,
       store,
-      (id) => this.opensFrame(id),
+      (id) => opensFrame(store, id),
       store.exitStamp[0] || 0,
     );
     return {
@@ -447,15 +374,8 @@ export class LogBuilder {
     return steps;
   }
 
-  /** An entry: a row whose type has exits, unless its line made it a leaf. */
-  private opensFrame(id: number): boolean {
-    const store = this.store;
-    // id was added by take, so every column holds it
-    return HAS_EXITS[store.type[id]!] === 1 && !(store.flags[id]! & FLAG.notEntry);
-  }
-
   private open(id: number): void {
-    if (!this.opensFrame(id)) return;
+    if (!opensFrame(this.store, id)) return;
     this.frameIds.push(id);
     this.frameLastChild.push(NONE);
     this.framePackage.push(NONE);

@@ -3,7 +3,7 @@
  */
 import type { Source } from '../bytes/source.js';
 import type { BuiltData } from './buffers.js';
-import { builtOf } from './buffers.js';
+import { restoreBuilt } from './buffers.js';
 import type { Built } from './builder.js';
 import { LogBuilder } from './builder.js';
 
@@ -42,6 +42,6 @@ export class SourceEngine implements LogEngine {
   }
 
   restore(data: BuiltData): Built {
-    return builtOf(data, this.sourceOf);
+    return restoreBuilt(data, this.sourceOf);
   }
 }

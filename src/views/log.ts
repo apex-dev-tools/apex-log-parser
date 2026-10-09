@@ -6,10 +6,11 @@ import type { DebugCategory, EventType, Level } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import type { DebugLevelSetting, UserInfo } from '../engine/header.js';
 import type { IssueType } from '../engine/issues.js';
+import { isFrameRow } from '../engine/tables.js';
 import type { GovernorLimits } from '../limits.js';
 import { governorLimits } from '../limits.js';
 import type { ApexEvent, EventOf, FrameEvent, Rollups } from './events.js';
-import { isFrameRow, LogEvents, RollupView } from './events.js';
+import { LogEvents, RollupView } from './events.js';
 
 // WHATWG and Node 17+; declared here so `lib` stays ES2022.
 declare function structuredClone<T>(value: T): T;
@@ -132,9 +133,9 @@ export function apexLog(built: Built): ApexLog {
 }
 
 /** The build under `log`; a TypeError for an object `parse` did not make. */
-export function builtOf(log: ApexLog): Built {
+export function buildOfLog(log: ApexLog): Built {
   if (!(log instanceof LogView)) throw new TypeError('Not a log that parse made');
-  return LogView.builtOf(log);
+  return LogView.buildOf(log);
 }
 
 const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
@@ -180,8 +181,8 @@ class LogView extends RollupView implements ApexLog {
     this.all = new LogEvents(built);
   }
 
-  /** `builtOf`'s way past `private`, so the field stays out of the public type. */
-  static builtOf(log: LogView): Built {
+  /** `buildOfLog`'s way past `private`, so the field stays out of the public type. */
+  static buildOf(log: LogView): Built {
     return log.built;
   }
 

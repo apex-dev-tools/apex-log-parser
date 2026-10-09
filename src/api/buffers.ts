@@ -6,7 +6,7 @@ import type { BuiltData } from '../engine/buffers.js';
 import { dataOf, transferOf } from '../engine/buffers.js';
 import type { LogEngine } from '../engine/engine.js';
 import type { ApexLog } from '../views/log.js';
-import { apexLog, builtOf } from '../views/log.js';
+import { apexLog, buildOfLog } from '../views/log.js';
 
 const FORMAT = 'apex-log-buffers';
 /** Goes up on any change to `BuiltData`'s layout. */
@@ -35,7 +35,7 @@ export interface TransferableLog {
 
 /** `log` as buffers, which share its memory: making them copies nothing. */
 export function toBuffers(log: ApexLog): TransferableLog {
-  const data = dataOf(builtOf(log));
+  const data = dataOf(buildOfLog(log));
   return { buffers: { format: FORMAT, version: VERSION, data }, transfer: transferOf(data) };
 }
 

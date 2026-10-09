@@ -12,7 +12,7 @@ import type {
   Level,
 } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
-import { FLAG, IS_FRAME } from '../engine/builder.js';
+import { FLAG, isFrameRow } from '../engine/tables.js';
 import type { Store } from '../store/store.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
@@ -112,12 +112,6 @@ export type ApexEvent = FrameEvent | LeafEvent;
 export type EventOf<T extends EventType> = T extends EventType
   ? ApexEvent & { readonly type: T; readonly details: DetailsOf<T> }
   : never;
-
-/** The row's type is a frame, and its line did not make it a leaf, as a VF call with no method. */
-export function isFrameRow(store: Store, id: number): boolean {
-  // id is a row, so every column holds it
-  return IS_FRAME[store.type[id]!] === 1 && !(store.flags[id]! & FLAG.notEntry);
-}
 
 const ZERO: SelfTotal = Object.freeze({ self: 0, total: 0 });
 const NO_CHILDREN: readonly ApexEvent[] = Object.freeze([]);

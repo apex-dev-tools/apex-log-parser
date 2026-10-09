@@ -63,7 +63,7 @@ export function dataOf(built: Built): BuiltData {
  * The build `data` states, over a source of `sourceOf`'s class. A TypeError for data of the wrong
  * shape; the values themselves are trusted, as `toBuffers` in this same version made them.
  */
-export function builtOf(data: BuiltData, sourceOf: (bytes: Uint8Array) => Source): Built {
+export function restoreBuilt(data: BuiltData, sourceOf: (bytes: Uint8Array) => Source): Built {
   if (tagOf(data?.bytes) !== '[object Uint8Array]')
     throw new TypeError('The buffers hold no log bytes');
   if (!data.store || !data.strings || !Array.isArray(data.issues))
