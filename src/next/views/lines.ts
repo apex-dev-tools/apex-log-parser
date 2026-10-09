@@ -20,6 +20,7 @@ import { eventDetails } from './details.js';
 const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
 const INTERVIEWS = idOfType('FLOW_START_INTERVIEWS_BEGIN');
 const INTERVIEW = idOfType('FLOW_START_INTERVIEW_BEGIN');
+const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
 
 /**
  * Reads each row's line from the source, on demand: its text, raw line, fields, suffix and
@@ -76,7 +77,15 @@ export class EventLines {
 
   /** The values the row's line states beyond its text; null for a type with none. */
   details(id: number): AnyDetails | null {
-    return eventDetails(this.typeOf(id), () => this.at(id));
+    return eventDetails(
+      this.typeOf(id),
+      () => this.at(id),
+      () => {
+        // The platform writes a query's plan as a child line of the query.
+        const plan = this.firstChildOf(id, EXPLAIN);
+        return plan < 0 ? null : this.at(plan);
+      },
+    );
   }
 
   private typeOf(id: number): number {

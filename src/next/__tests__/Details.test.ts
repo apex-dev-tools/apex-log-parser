@@ -18,8 +18,26 @@ describe('SOQL details', () => {
     ),
   );
 
-  it('reads the aggregations of a query', () => {
-    expect(log.ofType('SOQL_EXECUTE_BEGIN')[0]?.details).toEqual({ aggregations: 2 });
+  it('reads the aggregations of a query, and its plan from its explain child', () => {
+    const [query] = log.ofType('SOQL_EXECUTE_BEGIN');
+    expect(query?.details).toEqual({
+      aggregations: 2,
+      explain: log.ofType('SOQL_EXECUTE_EXPLAIN')[0]?.details,
+    });
+    expect(query?.details.explain?.relativeCost).toBe(1.3);
+  });
+
+  it('states a null plan for a query with no explain child', () => {
+    const bare = parse(
+      inExecution(
+        '06:22:49.429 (200)|SOQL_EXECUTE_BEGIN|[1]|Aggregations:0|SELECT Id FROM Account',
+        '06:22:49.429 (400)|SOQL_EXECUTE_END|[1]|Rows:1',
+      ),
+    );
+    expect(bare.ofType('SOQL_EXECUTE_BEGIN')[0]?.details).toEqual({
+      aggregations: 0,
+      explain: null,
+    });
   });
 
   it('reads every value of an explain plan', () => {
@@ -69,7 +87,10 @@ describe('SOQL details', () => {
     const query = parse(
       `06:22:49.429 (200)|SOQL_EXECUTE_BEGIN|[1]|${field}|SELECT Id FROM Account`,
     );
-    expect(query.ofType('SOQL_EXECUTE_BEGIN')[0]?.details).toEqual({ aggregations: expected });
+    expect(query.ofType('SOQL_EXECUTE_BEGIN')[0]?.details).toEqual({
+      aggregations: expected,
+      explain: null,
+    });
   });
 });
 

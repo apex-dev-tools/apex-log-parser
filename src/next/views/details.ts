@@ -27,7 +27,11 @@ export interface ExplainPlan {
  * not state it, or states it malformed; `field()` still gives the raw text.
  */
 export interface EventDetails {
-  readonly SOQL_EXECUTE_BEGIN: { readonly aggregations: number | null };
+  readonly SOQL_EXECUTE_BEGIN: {
+    readonly aggregations: number | null;
+    /** The plan from the query's `SOQL_EXECUTE_EXPLAIN` child; null when the log states none. */
+    readonly explain: ExplainPlan | null;
+  };
   /** Null when the line states no plan, as `No explain plan is available`. */
   readonly SOQL_EXECUTE_EXPLAIN: ExplainPlan | null;
   readonly DML_BEGIN: { readonly operation: string | null; readonly sObjectType: string | null };
@@ -51,6 +55,8 @@ export type DetailsOf<T extends EventType> = T extends keyof EventDetails ? Even
 export type AnyDetails = EventDetails[keyof EventDetails];
 
 type Read<T> = (f: Fields) => T;
+/** Reads a line's details; `explain` gives a query's explain line, or null when it has none. */
+type Reader<T> = (f: Fields, explain: () => Fields | null) => T;
 
 /** Field `name`'s position in `typeId`'s line; throws at load for a name the entry does not list. */
 function position(typeId: number, name: string): { at: number; last: boolean } {
@@ -111,26 +117,31 @@ export function explainPlan(plan: string | null): ExplainPlan | null {
   };
 }
 
-const READERS: (Read<AnyDetails> | undefined)[] = [];
+const READERS: (Reader<AnyDetails> | undefined)[] = [];
 
 /** Registers `type`'s reader, built from its own type id so each field resolves at load. */
 function reader<T extends keyof EventDetails>(
   type: T,
-  make: (typeId: number) => Read<EventDetails[T]>,
+  make: (typeId: number) => Reader<EventDetails[T]>,
 ): void {
   const typeId = idOfType(type);
   READERS[typeId] = make(typeId);
 }
 
+// One field, as its text rule and today read it, though it is the line's last.
+const PLAN = position(idOfType('SOQL_EXECUTE_EXPLAIN'), 'plan').at;
+const planOf = (f: Fields): ExplainPlan | null => explainPlan(f.at(PLAN) || null);
+
 reader('SOQL_EXECUTE_BEGIN', (t) => {
   const aggregations = int(t, 'aggregations', 'Aggregations:');
-  return (f) => ({ aggregations: aggregations(f) });
+  return (f, explain) => {
+    // Read before explain(), which can move a shared cursor to the child's line.
+    const stated = aggregations(f);
+    const line = explain();
+    return { aggregations: stated, explain: line && planOf(line) };
+  };
 });
-reader('SOQL_EXECUTE_EXPLAIN', (t) => {
-  // One field, as its text rule and today read it, though it is the line's last.
-  const { at } = position(t, 'plan');
-  return (f) => explainPlan(f.at(at) || null);
-});
+reader('SOQL_EXECUTE_EXPLAIN', () => planOf);
 reader('DML_BEGIN', (t) => {
   const operation = after(t, 'operation', 'Op:');
   const sObjectType = after(t, 'objectType', 'Type:');
@@ -164,8 +175,12 @@ for (const [type, parse] of FLOW_USAGE) {
 }
 
 /** The details `typeId`'s line states, or null for a type that has none. Frozen: views share them. */
-export function eventDetails(typeId: number, f: () => Fields): AnyDetails | null {
+export function eventDetails(
+  typeId: number,
+  f: () => Fields,
+  explain: () => Fields | null,
+): AnyDetails | null {
   const read = READERS[typeId];
-  const details = read ? read(f()) : null;
+  const details = read ? read(f(), explain) : null;
   return details && Object.freeze(details);
 }
