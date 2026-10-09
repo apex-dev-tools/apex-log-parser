@@ -117,7 +117,7 @@ export interface ApexLog extends Rollups {
   /** Every `EXCEPTION_THROWN` and `FATAL_ERROR`, in id order. */
   readonly exceptions: readonly ApexEvent[];
   /** The code units at the top of the log or of an execution: where work starts. */
-  readonly entryPoints: readonly ApexEvent[];
+  readonly entryPoints: readonly EventOf<'CODE_UNIT_STARTED'>[];
   /** The user the `USER_INFO` line states; null when the log has none. */
   readonly userInfo: UserInfo | null;
   /** The level per debug category the header states. */
@@ -168,7 +168,7 @@ class LogView extends RollupView implements ApexLog {
     limits?: GovernorLimits;
     namespaces?: readonly string[];
     exceptions?: readonly ApexEvent[];
-    entryPoints?: readonly ApexEvent[];
+    entryPoints?: readonly EventOf<'CODE_UNIT_STARTED'>[];
     userInfo?: UserInfo | null;
     debugLevels?: Partial<Record<DebugCategory, Level>>;
     debugLevelSettings?: readonly DebugLevelSetting[];
@@ -326,7 +326,7 @@ class LogView extends RollupView implements ApexLog {
     return (this.memo.exceptions ??= this.ofType('EXCEPTION_THROWN', 'FATAL_ERROR'));
   }
 
-  get entryPoints(): readonly ApexEvent[] {
+  get entryPoints(): readonly EventOf<'CODE_UNIT_STARTED'>[] {
     return (this.memo.entryPoints ??= this.makeEntryPoints());
   }
 
@@ -378,12 +378,14 @@ class LogView extends RollupView implements ApexLog {
     });
   }
 
-  private makeEntryPoints(): readonly ApexEvent[] {
+  private makeEntryPoints(): readonly EventOf<'CODE_UNIT_STARTED'>[] {
     const { type, parent } = this.store;
     const units = this.store.rowsOfType(CODE_UNIT_STARTED);
     // Each unit is a row, and its parent is a row: the log, or a frame.
     const ids = units.filter((id) => parent[id] === 0 || type[parent[id]!] === EXECUTION_STARTED);
-    return Object.freeze(Array.from(ids, (id) => this.all.event(id)!));
+    return Object.freeze(
+      Array.from(ids, (id) => this.all.event(id) as EventOf<'CODE_UNIT_STARTED'>),
+    );
   }
 
   private frameRows(): Int32Array {

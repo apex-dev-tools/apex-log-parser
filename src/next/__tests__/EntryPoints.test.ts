@@ -31,6 +31,8 @@ describe('ApexLog.entryPoints', () => {
         '09:18:22.6 (820)|CODE_UNIT_FINISHED|Second.unit\n' +
         '09:18:22.6 (900)|EXECUTION_FINISHED\n',
     );
+    // Typed as code units, so their details need no narrowing.
+    expect(log.entryPoints.map((unit) => unit.details.codeUnitType)).toEqual([null, null, null]);
     expect(log.entryPoints.map((unit) => [unit.text, unit.duration.total])).toEqual([
       ['FutureHandler - state load', 40],
       ['MyClass.myTrigger', 600],
