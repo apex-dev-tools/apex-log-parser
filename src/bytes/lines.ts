@@ -25,7 +25,7 @@ export const TRUNCATION_MARKER: RegExp =
 const TYPE_LIKE = /^[A-Z_]+$/;
 
 /** Field 1 of `line` looks like an event name, so the line is never another event's text. */
-export function statesType(line: string): boolean {
+function statesType(line: string): boolean {
   const first = line.indexOf('|');
   if (first < 0) return false;
   const second = line.indexOf('|', first + 1);
