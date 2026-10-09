@@ -14,6 +14,12 @@ applies.
   are too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
   `--baseline=<path>` on the other to compare them. `--engine=next` times the new parser; its
   `--baseline` can be a legacy run's JSON.
+- `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run, before v1 removed it:
+  the 8 to 100 MB synthetic logs. Pass it as `--baseline`. To measure the legacy parser again, use
+  a 0.x release from npm, as `npm:@apexdevtools/apex-log-parser@0.3.0`; 0.2.0 is before v0.3's
+  heap work, so it does not give these figures. The release notes compare as a consumer parses
+  instead: from a file's bytes, with the decode the legacy parser needs and the bytes the log
+  keeps, so their figures differ from this file's.
 - `scripts/views.ts` — `pnpm run bench:views`, what reading the next parser's views adds to its
   build on the same logs: every column of every event, and an object for every event. At
   100 MB it fails above 30 ms and 250 ms. Local only.
