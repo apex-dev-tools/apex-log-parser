@@ -4,6 +4,8 @@
 import { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
 import { EVENT_TYPES, eventText, fieldPosition, idOfType } from '../catalog/catalog.js';
+import type { Issues } from '../engine/issues.js';
+import { throwOutcomes } from '../engine/throws.js';
 import type { Store } from '../store/store.js';
 import type { AnyDetails } from './details.js';
 import { eventDetails } from './details.js';
@@ -18,10 +20,14 @@ const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
  */
 export class EventLines {
   private readonly store: Store;
+  private readonly issues: Issues;
   private readonly fields: ByteFields;
+  /** Whether each decided throw was caught, by row; made on the first read of one. */
+  private outcomes: Map<number, boolean> | null = null;
 
-  constructor(store: Store, source: Source) {
+  constructor(store: Store, source: Source, issues: Issues) {
     this.store = store;
+    this.issues = issues;
     this.fields = new ByteFields(source);
   }
 
@@ -54,7 +60,7 @@ export class EventLines {
     return (last ? f.from(at, '|') : f.at(at)) || null;
   }
 
-  /** The values the row's line states beyond its text; null for a type with none. */
+  /** The values the row's line states beyond its text, or the rows after it give; null for none. */
   details(id: number): AnyDetails | null {
     return eventDetails(
       this.typeOf(id),
@@ -64,6 +70,7 @@ export class EventLines {
         const plan = this.firstChildOf(id, EXPLAIN);
         return plan < 0 ? null : this.at(plan);
       },
+      () => (this.outcomes ??= throwOutcomes(this.store, this.issues)).get(id) ?? null,
     );
   }
 
