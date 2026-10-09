@@ -35,13 +35,19 @@ describe('Store', () => {
   it('gives a pool slot only to a row that asks, once', () => {
     const store = new Store(0);
     for (let i = 0; i < 200; i++) store.add(0, 0, 0, 0, NONE, 0);
+    // A read gives no slot.
+    expect([store.countIndex(150), store.heapIndex(3), store.countSlots, store.heapSlots]).toEqual([
+      -1, -1, 0, 0,
+    ]);
     const at = store.countsOf(150);
+    expect(store.countIndex(150)).toBe(at);
     expect(store.countsOf(150)).toBe(at);
     store.counts[at + COUNTER.soql * 2] = 1;
     for (let i = 0; i < 100; i++) store.countsOf(i);
     expect(store.counts[store.countsOf(150) + COUNTER.soql * 2]).toBe(1);
     expect(store.countSlots).toBe(101);
     const heap = store.heapOf(3);
+    expect(store.heapIndex(3)).toBe(heap);
     store.heap[heap + HEAP.peak] = 64;
     expect([store.heapSlots, store.heapSlot[2], store.heap[store.heapOf(3) + HEAP.peak]]).toEqual([
       1,

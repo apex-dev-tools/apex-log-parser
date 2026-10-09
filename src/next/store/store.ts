@@ -168,6 +168,20 @@ export class Store {
     return slot * HEAP_STRIDE;
   }
 
+  /** The index in `counts` of the row's first counter, or -1 while every count is 0. Only reads. */
+  countIndex(id: number): number {
+    // id is a row the engine added
+    const slot = this.countSlot[id]!;
+    return slot === NONE ? -1 : slot * COUNT_STRIDE;
+  }
+
+  /** The index in `heap` of the row's first heap figure, or -1 while every one is 0. Only reads. */
+  heapIndex(id: number): number {
+    // id is a row the engine added
+    const slot = this.heapSlot[id]!;
+    return slot === NONE ? -1 : slot * HEAP_STRIDE;
+  }
+
   /** Nanoseconds from the row's line to its exit; 0 without an exit, or with one at 0, as today. */
   durationTotal(id: number): number {
     // id is a row the engine added
