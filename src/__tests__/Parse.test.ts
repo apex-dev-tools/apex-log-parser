@@ -326,4 +326,23 @@ describe('readBytes', () => {
     expect(await readBytes(BYTES, cx)).toBe(BYTES);
     expect(await readBytes(streamOf([BYTES]), cx)).toBe(BYTES);
   });
+
+  it('keeps no spare room when a body is shorter than the length it states', async () => {
+    const stated = response(streamOf([BYTES, BYTES]), {
+      'content-length': String(BYTES.length * 100),
+    });
+    const bytes = await readBytes(stated, cx);
+    expect(bytes.length).toBe(BYTES.length * 2);
+    // The log keeps this buffer, so 98 unread copies of the log would live as long as it.
+    expect(bytes.buffer.byteLength).toBe(bytes.length);
+  });
+
+  it('reads a body whose stated length is too large to allocate', async () => {
+    // V8 refuses a buffer this large, so allocating the stated length up front would throw.
+    const stated = response(streamOf([BYTES, BYTES]), { 'content-length': String(2 ** 52) });
+    const bytes = await readBytes(stated, cx);
+    expect(bytes.length).toBe(BYTES.length * 2);
+    expect(bytes.buffer.byteLength).toBe(bytes.length);
+    expect(bytes.subarray(BYTES.length)).toEqual(BYTES);
+  });
 });

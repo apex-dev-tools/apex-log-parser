@@ -79,6 +79,8 @@ export interface ReadContext {
 
 // Characters per encode step: about 1 ms in Chromium, so a slice ends close to its deadline.
 const ENCODE_CHARS = 1 << 20;
+/** The largest stated length read into one buffer made up front: 256 MiB. */
+const MAX_STATED = 1 << 28;
 
 /** The type tag, which holds across realms, as a view from an iframe, where `instanceof` fails. */
 const tagOf = (value: unknown): string => Object.prototype.toString.call(value);
@@ -132,10 +134,12 @@ async function encode(text: string, cx: ReadContext): Promise<Uint8Array> {
     cx.progress(written, null);
     await cx.pause();
   }
-  // The log keeps its buffer, so a grown one's spare room would live as long as it.
-  return ownBytes(
-    out.length - written > written >> 3 ? out.slice(0, written) : out.subarray(0, written),
-  );
+  return fitted(out, written);
+}
+
+/** The first `used` bytes, ours. The log keeps their buffer, so spare room would live as long as it. */
+function fitted(bytes: Uint8Array, used: number): Uint8Array {
+  return ownBytes(bytes.length - used > used >> 3 ? bytes.slice(0, used) : bytes.subarray(0, used));
 }
 
 const isHighSurrogate = (unit: number): boolean => unit >= 0xd800 && unit <= 0xdbff;
@@ -218,26 +222,27 @@ class Chunks {
 
   constructor(total: number | null) {
     this.total = total;
-    this.buffer = total === null ? null : new Uint8Array(total);
+    // A stated length is the server's claim: past the cap, the bytes that come decide.
+    this.buffer = total === null || total > MAX_STATED ? null : new Uint8Array(total);
   }
 
   add(chunk: Uint8Array): void {
-    const buffer = this.buffer;
-    if (buffer && this.length + chunk.length <= buffer.length) buffer.set(chunk, this.length);
-    else {
-      // The stream ran past the length it stated, so keep what came so far as one chunk.
-      if (buffer) {
-        this.list.push(buffer.subarray(0, this.length));
-        this.buffer = null;
-        this.total = null;
-      }
-      this.list.push(chunk);
-    }
-    this.length += chunk.length;
+    const length = this.length + chunk.length;
+    if (this.total !== null && length > this.total) this.overrun();
+    if (this.buffer) this.buffer.set(chunk, this.length);
+    else this.list.push(chunk);
+    this.length = length;
+  }
+
+  /** The stream ran past the length it stated, so what came so far becomes one chunk. */
+  private overrun(): void {
+    if (this.buffer) this.list.push(this.buffer.subarray(0, this.length));
+    this.buffer = null;
+    this.total = null;
   }
 
   bytes(): Uint8Array {
-    if (this.buffer) return ownBytes(this.buffer.subarray(0, this.length));
+    if (this.buffer) return fitted(this.buffer, this.length);
     // One chunk needs no copy; the stream's source may still hold it, so it is not ours.
     if (this.list.length === 1) return this.list[0] ?? new Uint8Array(0);
     const out = new Uint8Array(this.length);
