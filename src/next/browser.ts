@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import type { LogBuffers } from './api/buffers.js';
+import { logFromBuffers } from './api/buffers.js';
 import type { ParseOptions } from './api/parse.js';
 import { parseWith } from './api/parse.js';
 import type { LogSource } from './api/sources.js';
@@ -40,4 +42,13 @@ function yieldToHost(): Promise<void> {
  */
 export function parse(source: LogSource, options?: ParseOptions): Promise<ApexLog> {
   return parseWith(browserEngine, yieldToHost, source, options);
+}
+
+/**
+ * The log `buffers` hold, from `toBuffers` in the same version of this package, as on another
+ * thread. It copies nothing. Throws a TypeError for buffers of the wrong shape; it trusts the
+ * values, as `toBuffers` made them.
+ */
+export function fromBuffers(buffers: LogBuffers): ApexLog {
+  return logFromBuffers(browserEngine, buffers);
 }

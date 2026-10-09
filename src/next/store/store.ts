@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import type { Column } from './columns.js';
 import { resized } from './columns.js';
 
 /** The rollup counters, each with a self and a total slot in the count pool. */
@@ -45,6 +46,17 @@ const MIN_ROWS = 64;
 const COLUMNS = 14;
 
 declare const performance: { now(): number };
+
+/** A finished store's columns and pools, as `Store.state` gives them and `Store.restore` takes them. */
+export interface StoreState {
+  readonly count: number;
+  readonly typeCount: number;
+  readonly countSlots: number;
+  readonly heapSlots: number;
+  readonly columns: readonly Column[];
+  readonly counts: Int32Array;
+  readonly heap: Float64Array;
+}
 
 /**
  * The events of one parse as parallel columns indexed by id, in log order. Row 0 is the log
@@ -180,6 +192,47 @@ export class Store {
     return true;
   }
 
+  /** The columns and pools, which share memory with this store. Only after `finish`. */
+  state(): StoreState {
+    const columns: Column[] = [];
+    for (let c = 0; c < COLUMNS; c++) columns.push(this.column(c));
+    const { count, typeCount, countSlots, heapSlots, counts, heap } = this;
+    return { count, typeCount, countSlots, heapSlots, columns, counts, heap };
+  }
+
+  /** A finished store over `state`'s arrays, as `state` gave them. */
+  static restore(state: StoreState): Store {
+    // Row 0 is the log, so every store holds it.
+    if (!Number.isInteger(state.count) || state.count < 1)
+      throw new TypeError('The store state holds no rows');
+    // Made as every store is, so it has the same object layout as one the engine built.
+    const store = new Store(0);
+    for (let c = 0; c < COLUMNS; c++) {
+      const column = state.columns[c];
+      if (!column || column.length !== state.count)
+        throw new TypeError(`The store state's column ${c} does not hold its ${state.count} rows`);
+      // A column of another kind would read wrong values, not fail.
+      if (tagOf(column) !== tagOf(store.column(c)))
+        throw new TypeError(`The store state's column ${c} is ${tagOf(column)}`);
+      store.setColumn(c, column);
+    }
+    if (tagOf(state.counts) !== tagOf(store.counts) || tagOf(state.heap) !== tagOf(store.heap))
+      throw new TypeError('The store state has pools of the wrong kind');
+    if (
+      state.counts.length < state.countSlots * COUNT_STRIDE ||
+      state.heap.length < state.heapSlots * HEAP_STRIDE
+    )
+      throw new TypeError('The store state has pools shorter than their slots');
+    store.count = state.count;
+    store.typeCount = state.typeCount;
+    store.countSlots = state.countSlots;
+    store.heapSlots = state.heapSlots;
+    store.counts = state.counts;
+    store.heap = state.heap;
+    store.trimmed = COLUMNS;
+    return store;
+  }
+
   /**
    * The ids of every row of `type`, ascending. Only after `finish`: the first call indexes every
    * type, and a row added after it is not in the index. A parse that never asks does not pay.
@@ -215,51 +268,94 @@ export class Store {
     for (let c = 0; c < COLUMNS; c++) this.resizeColumn(c, size);
   }
 
-  /** Per-row column `c` at `size` rows: the one list of them. */
+  /** Per-row column `c` at `size` rows. */
   private resizeColumn(c: number, size: number): void {
+    this.setColumn(c, resized(this.column(c), size));
+  }
+
+  /** Per-row column `c`: the one list of them, which `setColumn` mirrors. */
+  private column(c: number): Column {
     switch (c) {
       case 0:
-        this.type = resized(this.type, size);
+        return this.type;
+      case 1:
+        return this.start;
+      case 2:
+        return this.end;
+      case 3:
+        return this.timestamp;
+      case 4:
+        return this.exitStamp;
+      case 5:
+        return this.parent;
+      case 6:
+        return this.subtreeEnd;
+      case 7:
+        return this.depth;
+      case 8:
+        return this.lineNumber;
+      case 9:
+        return this.namespace;
+      case 10:
+        return this.flags;
+      case 11:
+        return this.durationSelf;
+      case 12:
+        return this.countSlot;
+      case 13:
+        return this.heapSlot;
+    }
+    throw new RangeError(`No column ${c}`);
+  }
+
+  /** Sets per-row column `c`, which must be of the kind `column(c)` gives. */
+  private setColumn(c: number, value: Column): void {
+    switch (c) {
+      case 0:
+        this.type = value as Uint16Array;
         break;
       case 1:
-        this.start = resized(this.start, size);
+        this.start = value as Int32Array;
         break;
       case 2:
-        this.end = resized(this.end, size);
+        this.end = value as Int32Array;
         break;
       case 3:
-        this.timestamp = resized(this.timestamp, size);
+        this.timestamp = value as Float64Array;
         break;
       case 4:
-        this.exitStamp = resized(this.exitStamp, size);
+        this.exitStamp = value as Float64Array;
         break;
       case 5:
-        this.parent = resized(this.parent, size);
+        this.parent = value as Int32Array;
         break;
       case 6:
-        this.subtreeEnd = resized(this.subtreeEnd, size);
+        this.subtreeEnd = value as Int32Array;
         break;
       case 7:
-        this.depth = resized(this.depth, size);
+        this.depth = value as Uint16Array;
         break;
       case 8:
-        this.lineNumber = resized(this.lineNumber, size);
+        this.lineNumber = value as Int32Array;
         break;
       case 9:
-        this.namespace = resized(this.namespace, size);
+        this.namespace = value as Int32Array;
         break;
       case 10:
-        this.flags = resized(this.flags, size);
+        this.flags = value as Uint8Array;
         break;
       case 11:
-        this.durationSelf = resized(this.durationSelf, size);
+        this.durationSelf = value as Float64Array;
         break;
       case 12:
-        this.countSlot = resized(this.countSlot, size);
+        this.countSlot = value as Int32Array;
         break;
       case 13:
-        this.heapSlot = resized(this.heapSlot, size);
+        this.heapSlot = value as Int32Array;
         break;
     }
   }
 }
+
+/** The type tag, which holds across realms, as for an array from a worker. */
+const tagOf = (value: unknown): string => Object.prototype.toString.call(value);

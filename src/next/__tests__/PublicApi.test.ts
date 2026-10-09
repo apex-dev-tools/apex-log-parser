@@ -30,6 +30,7 @@ import type {
   LimitValue,
   LogAbortSignal,
   LogBlob,
+  LogBuffers,
   LogIssue,
   LogPlace,
   LogResponse,
@@ -46,6 +47,7 @@ import type {
   SelfTotal,
   Shape,
   StreamRead,
+  TransferableLog,
   UserInfo,
 } from '../browser.js';
 import * as browser from '../browser.js';
@@ -59,8 +61,10 @@ const NEXT_EXPORTS = [
   'EVENT_TYPE_NAMES',
   'EVENT_TYPES',
   'eventType',
+  'fromBuffers',
   'LEVEL',
   'parse',
+  'toBuffers',
 ];
 
 // Fails the typecheck, not the test run, if a public type is removed or renamed.
@@ -93,6 +97,7 @@ interface PublicTypeSurface {
   limitValue: LimitValue;
   logAbortSignal: LogAbortSignal;
   logBlob: LogBlob;
+  logBuffers: LogBuffers;
   logIssue: LogIssue;
   logPlace: LogPlace;
   logResponse: LogResponse;
@@ -109,6 +114,7 @@ interface PublicTypeSurface {
   selfTotal: SelfTotal;
   shape: Shape;
   streamRead: StreamRead;
+  transferableLog: TransferableLog;
   userInfo: UserInfo;
 }
 
@@ -120,9 +126,12 @@ describe('the ./next public API', () => {
   it.each([
     ['node', node],
     ['browser', browser],
-  ])('the %s build exports parse, the catalog and the const companions only', (_build, entry) => {
-    expect(new Set(Object.keys(entry))).toEqual(new Set(NEXT_EXPORTS));
-  });
+  ])(
+    'the %s build exports parse, the buffer pair, the catalog and the const companions only',
+    (_build, entry) => {
+      expect(new Set(Object.keys(entry))).toEqual(new Set(NEXT_EXPORTS));
+    },
+  );
 
   it('both builds share one catalog', () => {
     expect(nodeSurface.EVENT_TYPES).toBe(browserSurface.EVENT_TYPES);

@@ -44,7 +44,10 @@ export type {
   LogTruncation,
   LogTruncationRegion,
 } from '../views/log.js';
-// What both builds export beside their own `parse`. `__tests__/PublicApi.test.ts` pins it.
+// What both builds export beside their own `parse` and `fromBuffers`. `__tests__/PublicApi.test.ts`
+// pins it.
+export type { LogBuffers, TransferableLog } from './buffers.js';
+export { toBuffers } from './buffers.js';
 export type { ParseOptions } from './parse.js';
 export type {
   LogAbortSignal,

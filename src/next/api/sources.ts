@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import { ownBytes } from '../engine/buffers.js';
 
 // `tsconfig.json` keeps ambient DOM types out, so the WHATWG shapes parse reads are stated here, as
 // far as it reads them. The platform's own objects match them.
@@ -97,7 +98,7 @@ export async function readBytes(source: LogSource, cx: ReadContext): Promise<Uin
   // A Response is also a Blob-like with arrayBuffer, and a stream is also async iterable.
   if (isResponse(source)) return readResponse(source, cx);
   if (isStream(source)) return readStream(source, null, cx);
-  if (isBlob(source)) return new Uint8Array(await cx.race(source.arrayBuffer()));
+  if (isBlob(source)) return ownBytes(new Uint8Array(await cx.race(source.arrayBuffer())));
   if (isIterable(source)) return readIterable(source, cx);
   throw new TypeError('parse takes a string, bytes, a Blob, a Response or a stream');
 }
@@ -132,7 +133,9 @@ async function encode(text: string, cx: ReadContext): Promise<Uint8Array> {
     await cx.pause();
   }
   // The log keeps its buffer, so a grown one's spare room would live as long as it.
-  return out.length - written > written >> 3 ? out.slice(0, written) : out.subarray(0, written);
+  return ownBytes(
+    out.length - written > written >> 3 ? out.slice(0, written) : out.subarray(0, written),
+  );
 }
 
 const isHighSurrogate = (unit: number): boolean => unit >= 0xd800 && unit <= 0xdbff;
@@ -234,8 +237,8 @@ class Chunks {
   }
 
   bytes(): Uint8Array {
-    if (this.buffer) return this.buffer.subarray(0, this.length);
-    // One chunk needs no copy.
+    if (this.buffer) return ownBytes(this.buffer.subarray(0, this.length));
+    // One chunk needs no copy; the stream's source may still hold it, so it is not ours.
     if (this.list.length === 1) return this.list[0] ?? new Uint8Array(0);
     const out = new Uint8Array(this.length);
     let at = 0;
@@ -243,6 +246,6 @@ class Chunks {
       out.set(chunk, at);
       at += chunk.length;
     }
-    return out;
+    return ownBytes(out);
   }
 }

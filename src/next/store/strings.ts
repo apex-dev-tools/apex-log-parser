@@ -8,6 +8,13 @@ import { resized } from './columns.js';
 const EMPTY = -1;
 const MIN_SLOTS = 256;
 
+/** What `StringTable.text` reads: each id's byte range in the source. */
+export interface StringState {
+  readonly size: number;
+  readonly starts: Int32Array;
+  readonly ends: Int32Array;
+}
+
 /**
  * Interned byte ranges of one source: the same bytes anywhere in the log get the same id, so a
  * column holds a number, not a string. Each value is decoded once, when it is first read.
@@ -70,6 +77,31 @@ export class StringTable {
       while (k < len && bytes[at + k] === bytes[start + k]) k++;
       if (k === len) return slot;
     }
+  }
+
+  /** Each id's byte range, which share memory with this table: all `text` needs. */
+  state(): StringState {
+    return { size: this.size, starts: this.starts, ends: this.ends };
+  }
+
+  /** A table over `source` that answers `text` from `state`. Its hash index is empty: never intern into it. */
+  static restore(source: Source, state: StringState): StringTable {
+    const kind = '[object Int32Array]';
+    const tag = (value: unknown): string => Object.prototype.toString.call(value);
+    if (
+      !Number.isInteger(state.size) ||
+      tag(state.starts) !== kind ||
+      tag(state.ends) !== kind ||
+      state.starts.length < state.size ||
+      state.ends.length < state.size
+    )
+      throw new TypeError(`The string state does not hold its ${state.size} ranges`);
+    const table = new StringTable(source);
+    table.starts = state.starts;
+    table.ends = state.ends;
+    table.size = state.size;
+    for (let id = 0; id < state.size; id++) table.decoded.push(undefined);
+    return table;
   }
 
   /** The value of `id`. */

@@ -131,6 +131,12 @@ export function apexLog(built: Built): ApexLog {
   return new LogView(built);
 }
 
+/** The build under `log`; a TypeError for an object `parse` did not make. */
+export function builtOf(log: ApexLog): Built {
+  if (!(log instanceof LogView)) throw new TypeError('Not a log that parse made');
+  return LogView.builtOf(log);
+}
+
 const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
 const EXECUTION_STARTED = idOfType('EXECUTION_STARTED');
 
@@ -172,6 +178,11 @@ class LogView extends RollupView implements ApexLog {
     super(built.store, 0);
     this.built = built;
     this.all = new LogEvents(built);
+  }
+
+  /** `builtOf`'s way past `private`, so the field stays out of the public type. */
+  static builtOf(log: LogView): Built {
+    return log.built;
   }
 
   get exitStamp(): number {

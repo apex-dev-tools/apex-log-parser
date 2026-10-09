@@ -39,7 +39,11 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   (`engine/engine.ts`), which keeps one idle builder alive. `api/parse.ts` is the driver both share:
   it reads the source to bytes (`api/sources.ts`), scans in 5 ms slices with `LogBuilder.scan`,
   runs the passes after the scan in slices with `LogBuilder.settle`, and yields between slices
-  the build's own way. V8 drops a class's object layout once no instance of it is alive, and
+  the build's own way. `api/buffers.ts` holds `toBuffers` and each build's `fromBuffers`, which
+  move a log between threads: `engine/buffers.ts` turns a build into typed arrays and plain
+  values that structured clone carries whole, and back. `Store.restore` and
+  `StringTable.restore` make their objects as the engine does, so a restored log has the same
+  object layout. The format is internal to one version of the package; it is not for storage. V8 drops a class's object layout once no instance of it is alive, and
   throws away the code it optimised for it, so without one the parse after a GC runs about 3×
   slower. For the same reason a builder field that holds a time starts as a double (`NO_TIME`,
   -0), not 0. `benchmarks/__tests__/deopt.test.ts` fails when either breaks.

@@ -2,6 +2,8 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { Source } from '../bytes/source.js';
+import type { BuiltData } from './buffers.js';
+import { builtOf } from './buffers.js';
 import type { Built } from './builder.js';
 import { LogBuilder } from './builder.js';
 
@@ -11,6 +13,8 @@ export interface LogEngine {
   build(bytes: Uint8Array): Built;
   /** A builder over one log's bytes, for a caller that scans it in slices. */
   builder(bytes: Uint8Array): LogBuilder;
+  /** The build `data` states, over this engine's source, as from another thread. */
+  restore(data: BuiltData): Built;
 }
 
 /** The engine over one `Source` class. */
@@ -35,5 +39,9 @@ export class SourceEngine implements LogEngine {
 
   builder(bytes: Uint8Array): LogBuilder {
     return new LogBuilder(this.sourceOf(bytes));
+  }
+
+  restore(data: BuiltData): Built {
+    return builtOf(data, this.sourceOf);
   }
 }
