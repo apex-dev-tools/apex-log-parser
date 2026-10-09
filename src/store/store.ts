@@ -107,7 +107,7 @@ export class Store {
   constructor(sourceBytes: number) {
     const rows = Math.max(MIN_ROWS, Math.ceil(sourceBytes / BYTES_PER_ROW));
     this.resize(rows);
-    // A heap figure is on about a third of frames in the brief's logs.
+    // A heap figure is on about a third of frames in the logs measured.
     this.heap = new Float64Array(Math.max(MIN_ROWS, rows >>> 2) * HEAP_STRIDE);
   }
 

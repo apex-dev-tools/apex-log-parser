@@ -20,8 +20,7 @@ const SHORT = 128;
 
 /**
  * The browser build's source. `Uint8Array.indexOf` is a scalar loop in V8, so line ends are found
- * four bytes at a time (SWAR). Text is decoded per field; ADR 0005's switch to one whole-log decode
- * comes with the views, in step 5.
+ * four bytes at a time (SWAR). Text is decoded per field.
  */
 export class BrowserSource implements Source {
   readonly bytes: Uint8Array;

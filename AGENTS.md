@@ -15,12 +15,18 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   `catalog/fields.ts` is type only: TSDoc for each type and field, so editors show it and no bundle
   carries it. `__tests__/Catalog.test.ts` and `scripts/__tests__/CatalogDocs.test.ts` fail when
   either drifts from the event database. `bytes/` reads the log's bytes: a `Source` per build
-  (`node.ts`, `browser.ts`), the `ByteFields` cursor and the type id lookup. Every `Fields`
+  (`node.ts`, `browser.ts`), the `ByteFields` cursor and the type id lookup. `bytes/ascii.ts`
+  holds the byte constants and byte searches every reader shares, and `bytes/lines.ts` the line
+  tests: a timestamp, a type name, the first event line. Every `Fields`
   adapter passes `__tests__/fieldsContract.ts`. `store/` holds the events as typed-array columns
   (ADR 0002), with sparse count and heap pools and the string table of interned byte ranges.
+  `tags.ts` reads a value's type tag, which holds across realms where `instanceof` fails.
   `engine/builder.ts` builds the tree in one pass with v0's rules and v0's order of side
   effects. A matched exit line gets no row: it folds into the frame it closes. A package entry
-  that v0's merge removed gets none either. `engine/rollups.ts` runs the passes after the
+  that v0's merge removed gets none either. `engine/tables.ts` holds the per-type tables the
+  builder and the views read, and the two frame tests on a row. `engine/markers.ts` holds the
+  work off the hot path: the issues, the parsing errors, the limit blocks and the hooks.
+  `engine/rollups.ts` runs the passes after the
   build: the log's times, the rollups and the flow residuals. `engine/header.ts` reads the debug
   levels, `USER_INFO` and the start time. `engine/issues.ts` holds the log issues and turns them
   into truncation regions. The builder stops at a second log and reports it as an issue.
