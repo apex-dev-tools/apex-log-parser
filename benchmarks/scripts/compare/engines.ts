@@ -5,14 +5,10 @@
 
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { ApexLog } from '../../../src/index.js';
 import type { Built } from '../../../src/next/engine/builder.js';
 import { apexLog } from '../../../src/next/views/log.js';
-import { legacyFacts, nextFacts, nextProjection } from './facts.js';
-import type { KnownDifference } from './known.js';
-import { KNOWN } from './known.js';
+import { nextFacts, nextProjection } from './facts.js';
 import type { Projection } from './project.js';
-import { projectLegacy } from './project.js';
 
 export interface Engine {
   readonly name: string;
@@ -24,19 +20,7 @@ export interface Engine {
   project(result: unknown): Projection;
   /** The facts in `facts.ts`. Compares two engines. */
   facts(result: unknown): Projection;
-  /** The facts it states differently from legacy on purpose. */
-  readonly known?: readonly KnownDifference[];
 }
-
-const legacy: Engine = {
-  name: 'legacy',
-  entry: 'src/index.ts',
-  // Every consumer decodes the whole file to a string before it calls parse().
-  parse: (module, bytes) =>
-    (module as typeof import('../../../src/index.js')).parse(new TextDecoder().decode(bytes)),
-  project: (result) => projectLegacy(result as ApexLog),
-  facts: (result) => legacyFacts(result as ApexLog),
-};
 
 // The build only: bench:async times parse()'s slices. The views read it lazily, so they are untimed.
 const next: Engine = {
@@ -46,10 +30,9 @@ const next: Engine = {
     (module as typeof import('../../../src/next/engine/node.js')).nodeEngine.build(bytes),
   project: (result) => nextProjection(apexLog(result as Built)),
   facts: (result) => nextFacts(apexLog(result as Built)),
-  known: KNOWN,
 };
 
-const ENGINES: readonly Engine[] = [legacy, next];
+const ENGINES: readonly Engine[] = [next];
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 

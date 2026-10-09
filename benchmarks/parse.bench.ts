@@ -2,15 +2,15 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { bench, describe } from 'vitest';
-import { parse } from '../src/index.js';
+import { nodeEngine } from '../src/next/engine/node.js';
 import { benchLogs, makeLog } from './fixtures/fixtures.js';
 
 describe('parse', () => {
   for (const [name, options] of Object.entries(benchLogs)) {
-    // Built outside the bench, so it measures the parse alone.
-    const log = makeLog(options);
+    // Built outside the bench, so it measures the build alone; bench:async times parse()'s slices.
+    const bytes = new TextEncoder().encode(makeLog(options));
     bench(name, () => {
-      parse(log);
+      nodeEngine.build(bytes);
     });
   }
 });

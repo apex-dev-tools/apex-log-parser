@@ -203,6 +203,18 @@ describe('ApexLog', () => {
     expect(log.parsingErrors).toEqual([]);
   });
 
+  it("reads an event's debug level from debugLevels by its debugCategory", () => {
+    const log = logOf(...method);
+    const levels = [2, 3].map((id) => {
+      const event = log.event(id);
+      return event && [event.debugCategory, log.debugLevels[event.debugCategory]];
+    });
+    expect(levels).toEqual([
+      ['apexCode', 'FINE'],
+      ['database', 'INFO'],
+    ]);
+  });
+
   it('gives frozen copies, so no caller reaches the build or the next caller through them', () => {
     const built = nodeEngine.build(
       encode(

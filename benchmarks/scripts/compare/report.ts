@@ -90,7 +90,6 @@ function renderParity(results: readonly FileResult[]): string[] {
     out.push(
       `**${pair}:** ${compared.length - differing.length - failed.length} of ${compared.length} identical, ${differing.length} differ, ${failed.length} failed to compare.`,
       '',
-      ...renderExplained(compared.map((c) => c.d)),
     );
     for (const { file, d } of differing.slice(0, 20)) {
       out.push(`- \`${file}\`: ${d.differing} of ${d.records} records differ`);
@@ -102,25 +101,6 @@ function renderParity(results: readonly FileResult[]): string[] {
     out.push('');
   }
   return out;
-}
-
-/** The known differences, by rule: the fields each one explains and the logs it was in. */
-function renderExplained(diffs: readonly (DiffResult | Failure)[]): string[] {
-  const rules = new Map<string, { fields: number; logs: number }>();
-  for (const d of diffs) {
-    if (isFailure(d)) continue;
-    for (const [rule, fields] of Object.entries(d.explained)) {
-      const seen = rules.get(rule) ?? { fields: 0, logs: 0 };
-      rules.set(rule, { fields: seen.fields + fields, logs: seen.logs + 1 });
-    }
-  }
-  if (!rules.size) return [];
-  return [
-    'Known differences, counted as identical:',
-    '',
-    ...[...rules].map(([rule, n]) => `- \`${rule}\`: ${n.fields} fields in ${n.logs} logs`),
-    '',
-  ];
 }
 
 function renderPerformance(results: readonly FileResult[], engines: readonly string[]): string[] {

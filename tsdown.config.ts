@@ -12,7 +12,6 @@ export default defineConfig([
     ...shared,
     // package.json's `node` condition picks the next parser's node build; every other host the browser one.
     entry: {
-      index: 'src/index.ts',
       'next/node': 'src/next/node.ts',
       'next/browser': 'src/next/browser.ts',
     },

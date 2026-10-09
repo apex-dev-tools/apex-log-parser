@@ -5,15 +5,16 @@ applies.
 
 ## Layout
 
-- `parse.bench.ts` — the `pnpm run bench` suite, which CodSpeed runs on every pull request.
+- `parse.bench.ts` — the `pnpm run bench` suite, which CodSpeed runs on every pull request. It
+  times the build from bytes; `bench:async` times `parse()`.
 - `fixtures/` — the synthetic logs. `fixtures.ts` generates them from a seed, with placeholder
   content only. Its profiles (small, developer and large) take their event mix, depth and wrapped
   lines from `profiles.json`, which holds only numbers measured from real logs. A new hot path in
   the parser needs a shape there. `largeLogs` are the logs for `bench:large`.
 - `scripts/large.ts` — `pnpm run bench:large`, the 8, 20, 50, 75 and 100 MB synthetic logs, which
   are too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
-  `--baseline=<path>` on the other to compare them. `--engine=next` times the new parser; its
-  `--baseline` can be a legacy run's JSON.
+  `--baseline=<path>` on the other to compare them. Its heap figure leaves out the log's bytes,
+  which the caller made.
 - `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run, before v1 removed it:
   the 8 to 100 MB synthetic logs. Pass it as `--baseline`. To measure the legacy parser again, use
   a 0.x release from npm, as `npm:@apexdevtools/apex-log-parser@0.3.0`; 0.2.0 is before v0.3's
@@ -31,10 +32,9 @@ applies.
 - `scripts/profiles.ts` — measures a local folder of real logs by size band and prints
   `fixtures/profiles.json`. Local only.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
-  parse engine, diffs their output field by field, and times them. `known.ts` holds one rule per
-  known difference between `next` and `legacy`. A rule undoes its own difference on one field, and
-  the field counts as explained only when it then equals legacy. A new deliberate difference needs
-  a rule there.
+  parse engine, diffs their output field by field, and times them. `--engines=next,next
+  --projection=full` checks that the whole output is deterministic. A new engine, such as a
+  published release, goes in `engines.ts`.
 - `scripts/micro/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's
   low-level choices (`docs/adr/0004`), in Node and headless Chromium.
 - `scripts/versus.ts` — the one wording for a comparison: `4.4× faster (-77.6%)`.
@@ -46,9 +46,9 @@ applies.
 - `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
   GC's freeing has finished. One `gc()` is not enough, because V8 frees buffer memory off the
   main thread.
-- `__tests__/parse-heap.test.ts` — the V8 heap today's parser keeps for the 8 MB log's tree, per
-  character, within 5% of a pinned value, through `measureLog` in `scripts/large.ts`. CodSpeed
-  cannot see the V8 heap. A change that moves it on purpose updates the pin.
+- `__tests__/parse-heap.test.ts` — the heap and array buffers the parser keeps for the 8 MB log,
+  per character, within 5% of a pinned value, through `measureLog` in `scripts/large.ts`. CodSpeed
+  cannot see memory. A change that moves it on purpose updates the pin.
 - `__tests__/` — `BenchFixtures.test.ts` checks the synthetic logs, and that each profile stays
   close to its real logs. The other suites test the scripts. All run in `pnpm run ci`.
 

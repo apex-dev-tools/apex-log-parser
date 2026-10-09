@@ -5,10 +5,6 @@
   "type": "module",
   "sideEffects": ["./dist/next/worker-node.js", "./dist/next/worker-browser.js"],
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
     "./next": {
       "node": {
         "types": "./dist/next/node.d.ts",
@@ -23,8 +19,6 @@
     },
     "./package.json": "./package.json"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "files": ["dist"],
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
