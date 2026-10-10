@@ -21,13 +21,8 @@ env:
 jobs:
   benchmarks:
     if: github.repository == 'apex-dev-tools/apex-log-parser'
-    # 24.04, not latest: memory mode needs kernel 6.8 for peak RSS.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [simulation, memory]
     permissions:
       contents: read
       id-token: write
@@ -43,7 +38,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: CodSpeedHQ/action@c4fd08a3a159bd0cc208da1e0edf32b8c47d75e5 # v5.4.0
         with:
-          mode: ${{ matrix.mode }}
+          mode: simulation
           # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
           run: node --run bench
 

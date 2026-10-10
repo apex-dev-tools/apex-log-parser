@@ -41,9 +41,9 @@ pnpm run ci           # Full check: lint + typecheck + test
 5. **Add a changeset** (`pnpm changeset`) if your change affects the published package. Changesets
    writes `CHANGELOG.md` at release time; do not edit that file by hand.
 6. **Open a PR** against `main`.
-   CodSpeed then comments on your PR with the change in parse performance and memory. Its check
-   fails on a regression. Local `pnpm run bench` numbers are wall time, so they do not compare with
-   CI's instruction counts.
+   CodSpeed then comments on your PR with the change in parse performance. Its check fails on a
+   regression. Local `pnpm run bench` numbers are wall time, so they do not compare with CI's
+   instruction counts.
 
 ## Commit Conventions
 
