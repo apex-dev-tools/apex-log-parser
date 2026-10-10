@@ -13,8 +13,8 @@ setFlagsFromString('--expose-gc');
 
 describe('parse heap', () => {
   it('keeps the result of an 8 MB log within 5% of its pinned bytes per character', async () => {
-    const options = largeLogs['medium 8 MB'];
-    if (!options) throw new Error('largeLogs has no medium 8 MB log');
+    const options = largeLogs.parse_8mb;
+    if (!options) throw new Error('largeLogs has no parse_8mb log');
     const log = makeLog(options);
     const bytesPerChar = (await measureLog(log, 3)).heapBytes / log.length;
     expect(bytesPerChar).toBeGreaterThan(pinnedBytesPerChar * 0.95);

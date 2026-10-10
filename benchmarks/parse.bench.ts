@@ -1,16 +1,14 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { bench, describe } from 'vitest';
+import { bench } from 'vitest';
 import { nodeEngine } from '../src/engine/node.js';
 import { benchLogs, makeLog } from './fixtures/fixtures.js';
 
-describe('parse', () => {
-  for (const [name, options] of Object.entries(benchLogs)) {
-    // Built outside the bench, so it measures the build alone; bench:async times parse()'s slices.
-    const bytes = new TextEncoder().encode(makeLog(options));
-    bench(name, () => {
-      nodeEngine.build(bytes);
-    });
-  }
-});
+for (const [name, options] of Object.entries(benchLogs)) {
+  // Built outside the bench, so it measures the build alone; bench:async times parse()'s slices.
+  const bytes = new TextEncoder().encode(makeLog(options));
+  bench(name, () => {
+    nodeEngine.build(bytes);
+  });
+}

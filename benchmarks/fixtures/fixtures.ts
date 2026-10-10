@@ -715,14 +715,14 @@ const developerCovers = ['METHOD_ENTRY', 'CONSTRUCTOR_ENTRY', 'STATEMENT_EXECUTE
 /** The logs CodSpeed parses on every pull request, by bench name. */
 export const benchLogs: Readonly<Record<string, BenchLog>> = {
   // The median real small log, 19 KB in 2026-10, with the header. Seed 5 reaches maxDepth at this size.
-  'small 19 KB': {
+  parse_19kb: {
     ...profileLog('small', 5, 17_500),
     covers: ['METHOD_ENTRY', 'SYSTEM_MODE_ENTER', 'SYSTEM_METHOD_ENTRY', 'LIMIT_USAGE_FOR_NS'],
   },
-  // The developer band's floor: its 8 MB median takes over 2 min under simulation.
-  'developer 1 MB': { ...profileLog('developer', 2, 1_000_000), covers: developerCovers },
+  // Low in the developer band, which starts at 1 MB: its 8 MB median takes over 2 min under simulation.
+  parse_2mb: { ...profileLog('developer', 2, 2_000_000), covers: developerCovers },
   // The paths an average log seldom reaches, in one bench so the job stays short.
-  'uncommon paths 500 KB': {
+  parse_500kb_uncommon: {
     ...profileLog('developer', 3, 500_000),
     maxDepth: 60,
     executions: 3,
@@ -763,10 +763,10 @@ export const benchLogs: Readonly<Record<string, BenchLog>> = {
 /** Logs too large for a short CodSpeed job, for `pnpm run bench:large` to parse locally. */
 export const largeLogs: Readonly<Record<string, LogOptions>> = {
   // The median developer log.
-  'medium 8 MB': profileLog('developer', 6, 8_000_000),
+  parse_8mb: profileLog('developer', 6, 8_000_000),
   // A log cut at the 20 MB default limit is a developer log.
-  'large 20 MB': profileLog('developer', 7, 20_000_000),
-  'XL 50 MB': profileLog('large', 13, 50_000_000),
-  'XL 75 MB': profileLog('large', 14, 75_000_000),
-  'XL 100 MB': profileLog('large', 12, 100_000_000),
+  parse_20mb: profileLog('developer', 7, 20_000_000),
+  parse_50mb: profileLog('large', 13, 50_000_000),
+  parse_75mb: profileLog('large', 14, 75_000_000),
+  parse_100mb: profileLog('large', 12, 100_000_000),
 };
