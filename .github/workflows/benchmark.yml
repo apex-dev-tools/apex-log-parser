@@ -41,3 +41,26 @@ jobs:
           mode: simulation
           # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
           run: node --run bench
+
+  # Manual only: macro runner minutes are billed, and a pull request would run fork code on them.
+  walltime:
+    if: github.repository == 'apex-dev-tools/apex-log-parser' && github.event_name == 'workflow_dispatch'
+    runs-on: codspeed-macro-x64-ryzen-9950x-ubuntu-24-04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: CodSpeedHQ/action@c4fd08a3a159bd0cc208da1e0edf32b8c47d75e5 # v5.4.0
+        with:
+          mode: walltime
+          run: node --run bench
