@@ -13,8 +13,8 @@ const gc = runInNewContext('gc') as () => void;
 describe('parse heap', () => {
   // Its log time passes 2^31 ns, so V8 boxes the times, as in a real log of this size.
   it('keeps the tree of an 8 MB log within 5% of its pinned bytes per character', () => {
-    const options = largeLogs['medium 8 MB'];
-    if (!options) throw new Error('largeLogs has no medium 8 MB log');
+    const options = largeLogs['parse_8mb'];
+    if (!options) throw new Error('largeLogs has no parse_8mb log');
     const log = makeLog(options);
     const bytesPerChar = measureLog(log, gc, 3).heapBytes / log.length;
     expect(bytesPerChar).toBeGreaterThan(pinnedBytesPerChar * 0.95);
