@@ -1,7 +1,14 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { codeUnitType, EVENT_TYPES, fieldPosition, idOfType } from '../catalog/catalog.js';
+import {
+  codeUnitType,
+  EVENT_TYPES,
+  eventBody,
+  fieldPosition,
+  idOfType,
+} from '../catalog/catalog.js';
+import { splitTrailingFields } from '../catalog/text.js';
 import type { EventType, Fields } from '../catalog/types.js';
 import type { LimitUsage, RunningUsage } from '../limits.js';
 import { codedUsage, labelledUsage, runningUsage } from '../limits.js';
@@ -46,6 +53,11 @@ export interface EventDetails {
   readonly FLOW_INTERVIEW_FINISHED_LIMIT_USAGE: LimitUsage | null;
   readonly FLOW_ELEMENT_LIMIT_USAGE: RunningUsage | null;
   readonly FLOW_BULK_ELEMENT_LIMIT_USAGE: RunningUsage | null;
+  /** The element that failed. Its text holds the message only. */
+  readonly FLOW_ELEMENT_ERROR: {
+    readonly elementType: string | null;
+    readonly elementName: string | null;
+  };
 }
 
 /** The details of an event of type `T`: null for a type that states none. */
@@ -173,6 +185,13 @@ for (const [type, parse] of FLOW_USAGE) {
     };
   });
 }
+
+reader('FLOW_ELEMENT_ERROR', (t) => (f) => {
+  // A message can span lines; then the element follows it on the last line.
+  const body = eventBody(t, f);
+  const split = body === null ? null : splitTrailingFields(body, 2);
+  return { elementType: split?.[1] || null, elementName: split?.[2] || null };
+});
 
 /** The details `typeId`'s line states, or null for a type that has none. Frozen: views share them. */
 export function eventDetails(

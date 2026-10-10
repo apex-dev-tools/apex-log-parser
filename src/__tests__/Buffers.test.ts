@@ -20,8 +20,8 @@ const LIMITS = [
   '09:00:00.0 (900)|CUMULATIVE_LIMIT_USAGE_END',
 ];
 
-// Every part of a build: the header, namespaces, counts, heap, details, a flow running total,
-// limits, a skipped block, a frame left open and a line the parser cannot read.
+// Every part of a build: the header, namespaces, counts, heap, details, a flow running total, a
+// flow error, limits, a skipped block, a frame left open and a line the parser cannot read.
 const LOG = [
   '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;CALLOUT,INFO;DB,INFO;SYSTEM,DEBUG;WORKFLOW,INFO',
   '09:15:30.25 (1)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
@@ -39,6 +39,7 @@ const LOG = [
   '09:00:00.0 (100)|FLOW_ELEMENT_BEGIN|abc-1|FlowRecordUpdate|Update_Account',
   '09:00:00.0 (110)|FLOW_ELEMENT_LIMIT_USAGE|1 DML statements, total 1 out of 150',
   '09:00:00.0 (120)|FLOW_ELEMENT_END|abc-1|FlowRecordUpdate|Update_Account',
+  '09:00:00.0 (130)|FLOW_ELEMENT_ERROR|Required fields are missing.|FlowRecordUpdate|Update_Account',
   ...LIMITS,
   '*** Skipped 1,024 bytes of detailed log',
   '09:00:00.0 (1000)|NOT_A_REAL_EVENT|x',
@@ -83,6 +84,7 @@ function summary(log: ApexLog): unknown {
     limits: log.limits,
     namespaces: log.namespaces,
     exceptions: ids(log.exceptions),
+    flowErrors: ids(log.flowErrors),
     entryPoints: ids(log.entryPoints),
     userInfo: log.userInfo,
     debugLevels: log.debugLevels,
@@ -116,6 +118,7 @@ it('the fixture states every part of a build', async () => {
   expect(log.heapPeak).toBeGreaterThan(0);
   expect(log.ofType('FLOW_ELEMENT_BEGIN')[0]?.dmlCount.self).toBe(1);
   expect(log.ofType('SOQL_EXECUTE_EXPLAIN')[0]?.details).not.toBeNull();
+  expect(log.flowErrors[0]?.details?.elementName).toBe('Update_Account');
 });
 
 describe.each([

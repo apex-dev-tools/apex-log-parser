@@ -141,6 +141,38 @@ describe('CODE_UNIT_STARTED details', () => {
   });
 });
 
+describe('FLOW_ELEMENT_ERROR details', () => {
+  it.each([
+    [
+      'a one-line message',
+      [
+        '09:18:22.6 (200)|FLOW_ELEMENT_ERROR|Required fields are missing.|FlowRecordCreate|Create_Account',
+      ],
+      { elementType: 'FlowRecordCreate', elementName: 'Create_Account' },
+    ],
+    [
+      'a message over lines',
+      [
+        '09:18:22.6 (200)|FLOW_ELEMENT_ERROR|You have reached the limit.',
+        'Try again later.|FlowActionCall|myRule_1_A1',
+      ],
+      { elementType: 'FlowActionCall', elementName: 'myRule_1_A1' },
+    ],
+    [
+      'a message that holds a |',
+      ['09:18:22.6 (200)|FLOW_ELEMENT_ERROR|Bad value: a|b|FlowDecision|Check_Status'],
+      { elementType: 'FlowDecision', elementName: 'Check_Status' },
+    ],
+    [
+      'no element',
+      ['09:18:22.6 (200)|FLOW_ELEMENT_ERROR|An error occurred.'],
+      { elementType: null, elementName: null },
+    ],
+  ])('reads the element after %s', (_name, lines, expected) => {
+    expect(parse(inExecution(...lines)).ofType('FLOW_ELEMENT_ERROR')[0]?.details).toEqual(expected);
+  });
+});
+
 describe('limit and heap details', () => {
   const log = parse(
     inExecution(
