@@ -219,7 +219,7 @@ import { eventType, parse, type ApexLog } from '@apexdevtools/apex-log-parser';
 
 `ApexLog` is the log. Besides its rollups and `children`, it has `event(id)`, `ofType()`, `at(ns)`,
 `columns`, `limits`, `namespaces`, `debugLevels`, `debugLevelSettings`, `userInfo`, `entryPoints`,
-`exceptions`, `truncation`, `truncatedEvents`, `issues` and `parsingErrors`.
+`exceptions`, `flowErrors`, `truncation`, `truncatedEvents`, `issues` and `parsingErrors`.
 
 The type declarations in the package document every field, event type and type, so your editor
 shows them.

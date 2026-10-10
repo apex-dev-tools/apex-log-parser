@@ -134,6 +134,11 @@ _Avoid_: log issue, warning
 **Parsing error**:
 A line the parser could not read.
 
+**Flow error**:
+A flow failure the log states: `FLOW_ELEMENT_ERROR`, `FLOW_CREATE_INTERVIEW_ERROR` or
+`FLOW_START_INTERVIEWS_ERROR`. A flow can fail with no exception. Not `WF_FLOW_ACTION_ERROR`, which
+states the same failure again.
+
 **Truncation**:
 Content the platform did not write: a skipped block (`*** Skipped N bytes`) or the end of a log that
 hit the maximum size. Not an unterminated frame.
