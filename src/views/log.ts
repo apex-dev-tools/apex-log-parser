@@ -117,6 +117,12 @@ export interface ApexLog extends Rollups {
   readonly namespaces: readonly string[];
   /** Every `EXCEPTION_THROWN` and `FATAL_ERROR`, in id order. */
   readonly exceptions: readonly ApexEvent[];
+  /**
+   * Every `FLOW_ELEMENT_ERROR`, `FLOW_CREATE_INTERVIEW_ERROR` and `FLOW_START_INTERVIEWS_ERROR`, in
+   * id order. A flow can fail with no exception and no fatal error. Not `WF_FLOW_ACTION_ERROR`:
+   * the log also states a `FLOW_ELEMENT_ERROR` for that failure.
+   */
+  readonly flowErrors: readonly EventOf<FlowErrorType>[];
   /** The code units at the top of the log or of an execution: where work starts. */
   readonly entryPoints: readonly EventOf<'CODE_UNIT_STARTED'>[];
   /** The user the `USER_INFO` line states; null when the log has none. */
@@ -126,6 +132,13 @@ export interface ApexLog extends Rollups {
   /** Every entry of the header's settings line, as stated. */
   readonly debugLevelSettings: readonly DebugLevelSetting[];
 }
+
+const FLOW_ERRORS = [
+  'FLOW_ELEMENT_ERROR',
+  'FLOW_CREATE_INTERVIEW_ERROR',
+  'FLOW_START_INTERVIEWS_ERROR',
+] as const;
+type FlowErrorType = (typeof FLOW_ERRORS)[number];
 
 /** The root view over one build. */
 export function apexLog(built: Built): ApexLog {
@@ -169,6 +182,7 @@ class LogView extends RollupView implements ApexLog {
     limits?: GovernorLimits;
     namespaces?: readonly string[];
     exceptions?: readonly ApexEvent[];
+    flowErrors?: readonly EventOf<FlowErrorType>[];
     entryPoints?: readonly EventOf<'CODE_UNIT_STARTED'>[];
     userInfo?: UserInfo | null;
     debugLevels?: Partial<Record<DebugCategory, Level>>;
@@ -325,6 +339,10 @@ class LogView extends RollupView implements ApexLog {
 
   get exceptions(): readonly ApexEvent[] {
     return (this.memo.exceptions ??= this.ofType('EXCEPTION_THROWN', 'FATAL_ERROR'));
+  }
+
+  get flowErrors(): readonly EventOf<FlowErrorType>[] {
+    return (this.memo.flowErrors ??= this.ofType(...FLOW_ERRORS));
   }
 
   get entryPoints(): readonly EventOf<'CODE_UNIT_STARTED'>[] {

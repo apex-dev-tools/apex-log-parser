@@ -4,17 +4,15 @@
 import { parse } from './helpers.js';
 
 describe('FLOW_ELEMENT_ERROR', () => {
-  it('keeps the error message, element type and element name', () => {
+  it('keeps the error message only', () => {
     const log = parse(
       '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|Required fields are missing: [Name]|FlowRecordCreate|Create_Account\n',
     );
 
-    expect(log.children[0]?.text).toBe(
-      'Required fields are missing: [Name] FlowRecordCreate Create_Account',
-    );
+    expect(log.children[0]?.text).toBe('Required fields are missing: [Name]');
   });
 
-  it('reads the element type and name after a message that spans lines', () => {
+  it('keeps the whole message when it spans lines', () => {
     const log = parse(
       '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|You have reached the limit.\n' +
         'Actions will start again in the next hour.\n' +
@@ -23,8 +21,16 @@ describe('FLOW_ELEMENT_ERROR', () => {
     );
 
     expect(log.children[0]?.text).toBe(
-      'You have reached the limit.\nActions will start again in the next hour. FlowActionCall myRule_1_A1',
+      'You have reached the limit.\nActions will start again in the next hour.',
     );
+  });
+
+  it('keeps a | in the message', () => {
+    const log = parse(
+      '09:18:22.6 (100)|FLOW_ELEMENT_ERROR|Bad value: a|b|FlowDecision|Check_Status\n',
+    );
+
+    expect(log.children[0]?.text).toBe('Bad value: a|b');
   });
 
   it('keeps a message that states no element', () => {
@@ -35,10 +41,10 @@ describe('FLOW_ELEMENT_ERROR', () => {
     expect(log.children[0]?.text).toBe('An error occurred.\n --- An Apex error occurred');
   });
 
-  it('leaves no leading space when the message is empty', () => {
+  it('states no text when the message is empty', () => {
     const log = parse('09:18:22.6 (100)|FLOW_ELEMENT_ERROR||FlowDecision|Check_Status\n');
 
-    expect(log.children[0]?.text).toBe('FlowDecision Check_Status');
+    expect(log.children[0]?.text).toBeNull();
   });
 });
 

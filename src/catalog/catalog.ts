@@ -2209,19 +2209,24 @@ export function idOfType(name: string): number {
 }
 
 /**
- * An event's text: its type's rule, then its continuation lines if the type takes text, then its
- * type's rewrite. Null when neither gives any text.
+ * An event's text before its type's rewrite: its type's rule, then its continuation lines if the
+ * type takes text. Null when neither gives any text.
  */
-export function eventText(typeId: number, f: Fields): string | null {
+export function eventBody(typeId: number, f: Fields): string | null {
   const text = LINE_RULES[typeId];
   const grammar = GRAMMAR[typeId];
   if (!text || !grammar) return null;
   // An empty field is no text, so that a missing field and an absent rule read the same.
   const base = text.rule?.(f) || null;
   const more = grammar.acceptsText ? f.continuation() : '';
-  const joined = base === null ? more : more ? `${base}\n${more}` : base;
-  if (!joined) return null;
-  return text.after ? text.after(joined) : joined;
+  return (base === null ? more : more ? `${base}\n${more}` : base) || null;
+}
+
+/** An event's text: its body, then its type's rewrite. Null when no text is left. */
+export function eventText(typeId: number, f: Fields): string | null {
+  const body = eventBody(typeId, f);
+  const after = LINE_RULES[typeId]?.after;
+  return body !== null && after ? after(body) || null : body;
 }
 
 /**

@@ -213,6 +213,21 @@ describe('ApexLog', () => {
     expect(log.limits).toBe(log.limits);
   });
 
+  it('states the flow errors, without WF_FLOW_ACTION_ERROR', () => {
+    const log = logOf(
+      `${at(1)}|FLOW_START_INTERVIEWS_ERROR|An error occurred.|3b2a1|My_Flow`,
+      `${at(2)}|WF_FLOW_ACTION_ERROR|09L000000000AAA|300000000000AAA|Error executing flow: My_Flow`,
+      `${at(3)}|FLOW_ELEMENT_ERROR|Required fields are missing.|FlowRecordCreate|Create_Account`,
+      `${at(4)}|FLOW_CREATE_INTERVIEW_ERROR|Not found.|00D000000000AAA|300000000000AAA|301000000000AAA`,
+    );
+    expect(log.flowErrors.map((e) => e.type)).toEqual([
+      'FLOW_START_INTERVIEWS_ERROR',
+      'FLOW_ELEMENT_ERROR',
+      'FLOW_CREATE_INTERVIEW_ERROR',
+    ]);
+    expect(log.flowErrors).toBe(log.flowErrors);
+  });
+
   it('states its size in bytes and its start time', () => {
     const text = [
       HEADER,

@@ -37,7 +37,7 @@ export function lineText(field: string): string {
 }
 
 /** Splits the last `count` `|` fields off text, or null when a field spans lines. */
-function splitTrailingFields(text: string, count: number): string[] | null {
+export function splitTrailingFields(text: string, count: number): string[] | null {
   const parts = text.split('|');
   if (parts.length <= count) return null;
   const fields = parts.splice(-count);
@@ -145,8 +145,8 @@ export const flowInterviewsErrorAfter: AfterRule = (text) => {
   return split ? `${split[0]} - ${split[2]}` : text;
 };
 
-export const flowElementErrorAfter: AfterRule = (text) =>
-  splitTrailingFields(text, 2)?.filter(Boolean).join(' ') ?? text;
+// The element type and name are details, not text.
+export const flowElementErrorAfter: AfterRule = (text) => splitTrailingFields(text, 2)?.[0] ?? text;
 
 export const validationFormulaAfter: AfterRule = (text) => {
   const split = splitTrailingFields(text, 1);
