@@ -12,9 +12,11 @@ applies.
   lines from `profiles.json`, which holds only numbers measured from real logs. A new hot path in
   the parser needs a shape there. `largeLogs` are the logs for `bench:large`.
 - `scripts/large.ts` — `pnpm run bench:large`, the 8, 20, 50, 75 and 100 MB synthetic logs, which
-  are too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
+  are too slow for the CodSpeed job. Run it with `--json=<path>` on one branch and
   `--baseline=<path>` on the other to compare them. Its heap figure leaves out the log's bytes,
-  which the caller made.
+  which the caller made. `--max-heap-growth=<percent>` fails the run on heap growth. The `heap` CI
+  job runs it that way on each pull request, with the base's `--json` as the head's `--baseline`,
+  so the head must keep reading the base's JSON shape.
 - `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run, before v1 removed it:
   the 8 to 100 MB synthetic logs. Pass it as `--baseline`. To measure the legacy parser again, use
   a 0.x release from npm, as `npm:@apexdevtools/apex-log-parser@0.3.0`; 0.2.0 is before v0.3's
@@ -61,5 +63,8 @@ The scripts import `scripts/cli.ts` and `scripts/child.ts`, which the scraper sh
   `scripts/versus.ts`.
 - Real logs never go into the repository or CI. `scripts/profiles.ts` prints numbers, never log
   text. Never commit the output of `compare`; it names the logs.
-- Local `pnpm run bench` numbers are wall time; CI reports instruction counts. Do not compare the
-  two.
+- Local `pnpm run bench` numbers are wall time; CI on a pull request reports instruction counts and
+  allocations. Do not compare the two. The manual `walltime` job reports wall time, on other hardware.
+- Name each log in `benchLogs` and `largeLogs` `parse_<size>`, in lowercase, with an optional
+  `_<what>` suffix: `parse_2mb`, `parse_500kb_uncommon`. CodSpeed and the `heap` job match logs by
+  name, so a rename starts a new CodSpeed baseline and skips the heap gate for one run.

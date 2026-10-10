@@ -14,7 +14,7 @@ import { versus } from './versus.js';
 
 /** The gates, in milliseconds over the build, for the 100 MB log. */
 const GATES = { columns: 30, events: 250 } as const;
-const GATE_LOG = 'XL 100 MB';
+const GATE_LOG = 'parse_100mb';
 
 /** Reads every column of every event row once, as a caller that reads them all does. */
 export function readColumns(log: ApexLog): number {

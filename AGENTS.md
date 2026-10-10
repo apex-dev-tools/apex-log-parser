@@ -88,8 +88,9 @@ any commit.
 
 - `pnpm ci` is pnpm's own alias for `clean-install`: it deletes `node_modules` and reinstalls.
   Always write `run`.
-- `pnpm run bench` runs the benchmarks without watch mode. Locally it reports wall time; CI reports instruction
-  counts, so the two do not compare. A parser change that can affect large logs also needs
+- `pnpm run bench` runs the benchmarks without watch mode. Locally it reports wall time; CI on a pull request
+  reports instruction counts and allocations, so the two do not compare. The manual `walltime`
+  job reports wall time, on other hardware. A parser change that can affect large logs also needs
   `pnpm run bench:large`, against `main`.
 - `pnpm build` needs Node `^22.18 || ^24.11 || >=26` for tsdown, although the package itself
   supports any Node 22. CI builds on Node 24 only.

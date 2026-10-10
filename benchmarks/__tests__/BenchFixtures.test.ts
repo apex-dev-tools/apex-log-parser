@@ -13,9 +13,9 @@ import profiles from '../fixtures/profiles.json' with { type: 'json' };
 
 // A changed log changes what the benchmarks measure, so it must be deliberate.
 const pinnedHashes: Record<string, string> = {
-  'small 19 KB': '95cfd663',
-  'developer 1 MB': '4a867894',
-  'uncommon paths 500 KB': 'db316a77',
+  parse_19kb: '95cfd663',
+  parse_2mb: 'dd296d0a',
+  parse_500kb_uncommon: 'db316a77',
 };
 
 // FNV-1a, because src/ has no node:crypto.
