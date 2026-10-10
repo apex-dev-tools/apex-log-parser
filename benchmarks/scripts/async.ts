@@ -17,7 +17,7 @@ import { median } from './large.js';
 import { versus } from './versus.js';
 
 const GATES = { turnMs: 10, overBuild: 0.1, abortMs: 10, reopenMs: 20 } as const;
-const GATE_LOG = 'XL 100 MB';
+const GATE_LOG = 'parse_100mb';
 /** Where in a parse each abort run asks to stop, as a fraction of the parse's median time. */
 const ABORT_AT = [0.05, 0.25, 0.5, 0.75, 0.95] as const;
 

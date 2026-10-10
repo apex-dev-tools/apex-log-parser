@@ -21,10 +21,10 @@ to `main` records a baseline. On a pull request, CodSpeed posts a comment with t
 per benchmark, and its check fails when a benchmark regresses past the threshold set on
 codspeed.io.
 
-The benchmarks are in `benchmarks/parse.bench.ts`. They parse 3 synthetic logs of 19 KB to 1 MB,
+The benchmarks are in `benchmarks/parse.bench.ts`. They parse 3 synthetic logs of 19 KB to 2 MB,
 which `benchmarks/fixtures/fixtures.ts` generates, and `BenchFixtures.test.ts` checks those logs in
 normal CI. The plugin parses each log 8 times under simulation, so the logs stay small to keep
-the job near 1 minute. An instruction count changes by the same percentage at 1 MB as at 20 MB,
+the job between 1 and 2 minutes. An instruction count changes by the same percentage at 1 MB as at 20 MB,
 unless the cost grows faster than the log. Logs of 8 to 100 MB show garbage
 collection in wall time, so `pnpm run bench:large` parses them locally.
 
@@ -44,7 +44,7 @@ with pointer compression, as in Chrome and Electron, does so from 2^30 ns.
 | Simulation mode | Wall time on a shared runner varies by more than the regressions to catch. Instruction counts vary by about 1%. |
 | Walltime on dispatch only | Macro runner minutes are billed: 600 a month on the free plan. A pull request would run fork code on the runner. |
 | Macro runner for walltime | Wall time on a shared runner is too noisy. The org must allow public repositories in the runner group, or the job queues and never starts. |
-| Logs of 1.5 MB in all | Each bench parses 8 times under Valgrind, and the job holds up the merge. |
+| Logs of 2.5 MB in all | Each bench parses 8 times under Valgrind, and the job holds up the merge. |
 | Exact Node version | Instruction counts move with the V8 version. A bump shifts the baseline once; acknowledge it on codspeed.io. |
 | No `paths:` filter | A required check that does not run stays "Expected" and blocks the merge. |
 | `id-token: write` at job level | CodSpeed authenticates with OIDC, so no secret is stored. |

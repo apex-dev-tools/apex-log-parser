@@ -33,7 +33,7 @@ runIfMain(import.meta.url, async () => {
   if (!gc) throw new Error('Run with node --expose-gc');
   const engine = await engineNamed(flag(process.argv.slice(2), '--engine'));
   // largeLogs always holds this log. Its times pass 2^30 ns, as those of any log over a second do.
-  const bytes = new TextEncoder().encode(makeLog(largeLogs['medium 8 MB']!));
+  const bytes = new TextEncoder().encode(makeLog(largeLogs['parse_8mb']!));
   // The fixture writer's code loses its layouts here, before the markers: only the engine's count.
   gc();
   for (let i = 0; i < WARMUP; i++) engine.build(bytes);
