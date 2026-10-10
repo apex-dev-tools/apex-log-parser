@@ -3,11 +3,23 @@
   "version": "0.2.0",
   "description": "Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor limits and SOQL/DML counts. No dependencies.",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": ["./dist/next/worker-node.js", "./dist/next/worker-browser.js"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./next": {
+      "node": {
+        "types": "./dist/next/node.d.ts",
+        "import": "./dist/next/node.js"
+      },
+      "types": "./dist/next/browser.d.ts",
+      "import": "./dist/next/browser.js"
+    },
+    "./next/worker": {
+      "node": "./dist/next/worker-node.js",
+      "default": "./dist/next/worker-browser.js"
     },
     "./package.json": "./package.json"
   },
@@ -20,6 +32,8 @@
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "vitest bench --run",
+    "bench:large": "node --expose-gc --max-old-space-size=8192 --import tsx benchmarks/scripts/large.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
@@ -29,23 +43,29 @@
     "scrape": "tsx scripts/scrape.ts",
     "validate:data": "tsx scripts/validate-data.ts",
     "ci:seed": "tsx scripts/ci/seed.ts",
-    "ci:report": "tsx scripts/ci/report.ts"
+    "ci:report": "tsx scripts/ci/report.ts",
+    "compare": "node --max-old-space-size=12288 --import tsx benchmarks/scripts/compare/compare.ts",
+    "bench:views": "node --expose-gc --max-old-space-size=8192 --import tsx benchmarks/scripts/views.ts",
+    "bench:async": "node --max-old-space-size=8192 --import tsx benchmarks/scripts/async.ts",
+    "bench:micro": "node --import tsx benchmarks/scripts/micro/micro.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.11",
-    "@changesets/cli": "^3.0.1",
-    "@types/node": "^26.4.0",
+    "@biomejs/biome": "^2.5.14",
+    "@changesets/cli": "^3.0.3",
+    "@codspeed/vitest-plugin": "^5.7.1",
+    "@types/node": "^26.6.3",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "node-html-parser": "^9.0.2",
-    "tsdown": "^0.22.14",
-    "tsx": "^4.23.13",
+    "node-html-parser": "^9.0.4",
+    "tsdown": "^0.23.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "unrun": "^0.3.1",
+    "vite": "^7.3.7",
     "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "pnpm@10.8.0",
   "license": "BSD-3-Clause",
@@ -83,6 +103,7 @@
     "typescript"
   ],
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"],
+    "ignoredBuiltDependencies": ["@codspeed/core"]
   }
 }
