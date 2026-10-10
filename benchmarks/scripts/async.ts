@@ -1,4 +1,4 @@
-// What the next parser's async parse() costs against a direct build, and how long it holds the
+// What the parser's async parse() costs against a direct build, and how long it holds the
 // host, on the synthetic logs. Local only.
 //   pnpm run bench:async [--runs=5] [--log=<name>]
 // Gates (100 MB): no host turn over 10 ms; the total within 10% of a direct build; an abort
@@ -8,10 +8,10 @@
 import process, { argv } from 'node:process';
 import { Worker } from 'node:worker_threads';
 import { flag, runIfMain } from '../../scripts/cli.js';
-import { nodeEngine } from '../../src/next/engine/node.js';
-import type { ApexLog } from '../../src/next/node.js';
-import { fromBuffers, parse, toBuffers } from '../../src/next/node.js';
-import { apexLog } from '../../src/next/views/log.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import type { ApexLog } from '../../src/node.js';
+import { fromBuffers, parse, toBuffers } from '../../src/node.js';
+import { apexLog } from '../../src/views/log.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
 import { median } from './large.js';
 import { versus } from './versus.js';
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
   const names = only ? [only] : Object.keys(largeLogs);
   let failed = false;
   // One worker for every log, as a host keeps one; it runs the source, as tsx compiles it.
-  const worker = new Worker(new URL('../../src/next/worker/node.ts', import.meta.url), {
+  const worker = new Worker(new URL('../../src/worker/node.ts', import.meta.url), {
     execArgv: ['--import', 'tsx'],
   });
   try {

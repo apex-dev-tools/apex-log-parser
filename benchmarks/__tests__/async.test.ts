@@ -1,4 +1,4 @@
-import { parse } from '../../src/next/node.js';
+import { parse } from '../../src/node.js';
 import { abortLatency, longestTurn, reopenMs } from '../scripts/async.js';
 
 /** Holds the host for `ms`, as one long task does. */

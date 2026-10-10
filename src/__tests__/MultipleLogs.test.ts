@@ -1,7 +1,8 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { parse } from '../index.js';
+import type { ApexLog } from '../views/log.js';
+import { parse } from './helpers.js';
 
 const SETTINGS = '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n';
 
@@ -15,8 +16,8 @@ function execution(nanos: number, unit: string, userName = 'user@example.com'): 
   );
 }
 
-function codeUnits(log: ReturnType<typeof parse>): string[] {
-  return log.eventsById.filter((event) => event.type === 'CODE_UNIT_STARTED').map((e) => e.text);
+function codeUnits(log: ApexLog): (string | null)[] {
+  return log.ofType('CODE_UNIT_STARTED').map((e) => e.text);
 }
 
 describe('a text that holds more than one log', () => {
@@ -26,17 +27,23 @@ describe('a text that holds more than one log', () => {
         execution(100, 'First.unit') +
         '\n' +
         SETTINGS +
-        execution(50, 'Second.unit', 'other@example.com'),
+        execution(50, 'Second.unit', 'other@example.com') +
+        SETTINGS +
+        execution(10, 'Third.unit'),
     );
 
     expect(codeUnits(log)).toEqual(['First.unit']);
     expect(log.userInfo?.userName).toBe('user@example.com');
-    expect(log.logIssues).toEqual([
+    // On the first log's last line: the exit that closed its execution.
+    expect(log.issues).toEqual([
       expect.objectContaining({
         summary: 'Multiple-Logs',
         type: 'error',
         startTime: 140,
-        description: expect.stringContaining('holds 2 logs'),
+        event: log.event(2),
+        exitType: 'EXECUTION_FINISHED',
+        description:
+          'The text holds 3 logs. Only the first log was parsed. Open each log on its own.',
       }),
     ]);
   });
@@ -50,9 +57,9 @@ describe('a text that holds more than one log', () => {
         execution(50, 'Second.unit'),
     );
 
-    expect(log.eventsById.find((event) => event.type === 'USER_DEBUG')?.text).toBe('DEBUG | hi');
+    expect(log.ofType('USER_DEBUG')[0]?.text).toBe('DEBUG | hi');
     expect(codeUnits(log)).toEqual([]);
-    expect(log.logIssues.map((issue) => issue.summary)).toContain('Multiple-Logs');
+    expect(log.issues.map((issue) => issue.summary)).toContain('Multiple-Logs');
   });
 
   it('keeps one log when a debug message quotes a settings line', () => {
@@ -67,7 +74,7 @@ describe('a text that holds more than one log', () => {
     );
 
     expect(codeUnits(log)).toEqual(['Real.unit']);
-    expect(log.logIssues.map((issue) => issue.summary)).not.toContain('Multiple-Logs');
+    expect(log.issues.map((issue) => issue.summary)).not.toContain('Multiple-Logs');
   });
 
   it('parses the first log when only a later log states EXECUTION_STARTED', () => {
@@ -80,15 +87,18 @@ describe('a text that holds more than one log', () => {
     );
 
     expect(codeUnits(log)).toEqual(['First.unit']);
-    expect(log.logIssues.map((issue) => issue.summary)).toContain('Multiple-Logs');
+    expect(log.issues.map((issue) => issue.summary)).toContain('Multiple-Logs');
   });
 
   it('keeps one log whose every execution states USER_INFO', () => {
     const log = parse(
-      SETTINGS + execution(100, 'FutureHandler - state load') + execution(200, 'Real.work'),
+      SETTINGS +
+        execution(100, 'FutureHandler - state load') +
+        execution(200, 'Real.work', 'later@example.com'),
     );
 
     expect(codeUnits(log)).toEqual(['FutureHandler - state load', 'Real.work']);
-    expect(log.logIssues).toEqual([]);
+    expect(log.userInfo?.userName).toBe('user@example.com');
+    expect(log.issues).toEqual([]);
   });
 });

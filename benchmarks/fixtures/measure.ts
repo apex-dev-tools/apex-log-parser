@@ -1,8 +1,9 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import type { LogEvent } from '../../src/index.js';
-import { parse } from '../../src/index.js';
+import { EVENT_TYPE_NAMES } from '../../src/catalog/types.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import { apexLog } from '../../src/views/log.js';
 
 export type ProfileName = 'small' | 'developer' | 'large';
 
@@ -29,6 +30,10 @@ export interface LogShape {
   logs: number;
 }
 
+const TYPES: ReadonlySet<string> = new Set(EVENT_TYPE_NAMES);
+// A line that starts an event: its time, then its type, which can end the line.
+const EVENT_LINE = /^\d\d:\d\d:\d\d\.\d+ \(\d+\)\|([A-Z_]+)(?=\||\r?$)/gm;
+
 // The parser joins each wrapped line onto its event's text with '\n'.
 function countLines(text: string): number {
   let count = 0;
@@ -48,27 +53,23 @@ export class LogTally {
 
   /** Adds the log, unless it holds no events, as a text that is not a debug log holds none. */
   add(log: string): void {
-    const apexLog = parse(log);
-    if (!apexLog.children.length) return;
+    const parsed = apexLog(nodeEngine.build(new TextEncoder().encode(log)));
+    if (!parsed.children.length) return;
     this.logs++;
     this.chars += log.length;
-    for (const { type, text } of apexLog.eventsById) {
-      // The root has no type.
-      if (!type) continue;
+    // Every event line, as profiles.json counts them: also the exit lines and merged package entries the tree folds away.
+    for (const [, type] of log.matchAll(EVENT_LINE)) {
+      if (!type || !TYPES.has(type)) continue;
       this.events++;
       this.counts.set(type, (this.counts.get(type) ?? 0) + 1);
-      const lines = countLines(text);
-      this.wrappedLines += lines;
-      this.wrapped.set(type, (this.wrapped.get(type) ?? 0) + lines);
     }
-    const walk = (event: LogEvent, depth: number): void => {
-      for (const child of event.children) {
-        this.nodes++;
-        this.depthSum += depth;
-        walk(child, depth + 1);
-      }
-    };
-    walk(apexLog, 1);
+    for (const event of parsed.events) {
+      const lines = countLines(event.text ?? '');
+      this.wrappedLines += lines;
+      this.wrapped.set(event.type, (this.wrapped.get(event.type) ?? 0) + lines);
+      this.nodes++;
+      this.depthSum += event.depth;
+    }
   }
 
   shape(): LogShape {

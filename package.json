@@ -3,28 +3,24 @@
   "version": "0.2.0",
   "description": "Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor limits and SOQL/DML counts. No dependencies.",
   "type": "module",
-  "sideEffects": ["./dist/next/worker-node.js", "./dist/next/worker-browser.js"],
+  "sideEffects": ["./dist/worker-node.js", "./dist/worker-browser.js"],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./next": {
       "node": {
-        "types": "./dist/next/node.d.ts",
-        "import": "./dist/next/node.js"
+        "types": "./dist/node.d.ts",
+        "import": "./dist/node.js"
       },
-      "types": "./dist/next/browser.d.ts",
-      "import": "./dist/next/browser.js"
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     },
-    "./next/worker": {
-      "node": "./dist/next/worker-node.js",
-      "default": "./dist/next/worker-browser.js"
+    "./worker": {
+      "node": "./dist/worker-node.js",
+      "default": "./dist/worker-browser.js"
     },
     "./package.json": "./package.json"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/node.js",
+  "types": "./dist/node.d.ts",
   "files": ["dist"],
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",

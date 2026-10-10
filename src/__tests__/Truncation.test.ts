@@ -1,18 +1,22 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { parse } from '../index.js';
+import type { ApexEvent } from '../views/events.js';
+import { at, logOf, outline, parse } from './helpers.js';
+
+const firstChild = (event: ApexEvent | undefined): ApexEvent | undefined =>
+  event?.isFrame ? event.children[0] : undefined;
 
 describe('truncation', () => {
   it('reports every skipped region, not just the first', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p000000000AAA|UnitOfWork.first()\n' +
       '*** Skipped 22,606,355 bytes of detailed log\n' +
-      '15:20:52.222 (400)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
-      '15:20:52.222 (600)|METHOD_ENTRY|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
+      '15:20:52.222 (400)|METHOD_EXIT|[185]|01p000000000AAA|UnitOfWork.first()\n' +
+      '15:20:52.222 (600)|METHOD_ENTRY|[190]|01p000000000AAB|UnitOfWork.second()\n' +
       '*** Skipped 1,000 bytes of detailed log\n' +
-      '15:20:52.222 (800)|METHOD_EXIT|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
+      '15:20:52.222 (800)|METHOD_EXIT|[190]|01p000000000AAB|UnitOfWork.second()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -23,18 +27,18 @@ describe('truncation', () => {
       'skipped-lines',
     ]);
     expect(apexLog.truncation.totalSkippedBytes).toBe(22_607_355);
-    expect(apexLog.logIssues.filter((issue) => issue.summary === 'Skipped-Lines').length).toBe(2);
+    expect(apexLog.issues.filter((issue) => issue.summary === 'Skipped-Lines').length).toBe(2);
   });
 
   it('bounds each skipped region at the point trust resumes', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p000000000AAA|UnitOfWork.first()\n' +
       '*** Skipped 500 bytes of detailed log\n' +
       '15:20:52.222 (500)|HEAP_ALLOCATE|[52]|Bytes:3\n' +
-      '15:20:52.222 (800)|METHOD_ENTRY|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
-      '15:20:52.222 (900)|METHOD_EXIT|[190]|01p4J00000FpS6u|UnitOfWork.second()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.first()\n' +
+      '15:20:52.222 (800)|METHOD_ENTRY|[190]|01p000000000AAB|UnitOfWork.second()\n' +
+      '15:20:52.222 (900)|METHOD_EXIT|[190]|01p000000000AAB|UnitOfWork.second()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p000000000AAA|UnitOfWork.first()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const region = parse(log).truncation.regions[0];
@@ -48,7 +52,7 @@ describe('truncation', () => {
   it('reports a max-size region and the event the log stopped inside', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p000000000AAA|UnitOfWork.getNextIdInternal()\n' +
       '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********\n';
 
     const apexLog = parse(log);
@@ -57,11 +61,11 @@ describe('truncation', () => {
     expect(apexLog.truncation.regions.length).toBe(1);
     expect(apexLog.truncation.regions[0]?.kind).toBe('max-size');
     // The platform states no byte figure on the max-size line.
-    expect(apexLog.truncation.regions[0]?.skippedBytes).toBeUndefined();
+    expect(apexLog.truncation.regions[0]?.skippedBytes).toBeNull();
     expect(apexLog.truncation.totalSkippedBytes).toBe(0);
     // Both frames the log stopped inside, innermost first.
-    expect(apexLog.truncatedEvents.map((event) => event.text)).toEqual([
-      'UnitOfWork.getNextIdInternal()',
+    expect(apexLog.truncatedEvents.map((event) => event.type)).toEqual([
+      'METHOD_ENTRY',
       'EXECUTION_STARTED',
     ]);
   });
@@ -69,10 +73,10 @@ describe('truncation', () => {
   it('keeps both skips when two skip lines follow the same event', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p000000000AAA|UnitOfWork.getNextIdInternal()\n' +
       '*** Skipped 500 bytes of detailed log\n' +
       '*** Skipped 700 bytes of detailed log\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p000000000AAA|UnitOfWork.getNextIdInternal()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -91,7 +95,7 @@ describe('truncation', () => {
     const apexLog = parse(log);
 
     const maxSize = apexLog.truncation.regions.find((region) => region.kind === 'max-size');
-    expect(maxSize?.skippedBytes).toBeUndefined();
+    expect(maxSize?.skippedBytes).toBeNull();
     expect(apexLog.truncation.totalSkippedBytes).toBe(500);
   });
 
@@ -102,7 +106,7 @@ describe('truncation', () => {
       '09:18:22.6 (300)|METHOD_ENTRY|[2]|01p000000000AAA|MyClass.inner()\n' +
       '09:18:22.6 (900)|METHOD_EXIT|[2]|01p000000000AAA|MyClass.inner()\n';
 
-    const outer = parse(log).children[0]?.children[0];
+    const outer = firstChild(parse(log).children[0]);
 
     expect(outer?.isTruncated).toBe(true);
     expect(outer?.exitStamp).toBe(900);
@@ -129,7 +133,8 @@ describe('truncation', () => {
     expect(apexLog.truncatedEvents.map((event) => event.text)).toEqual([
       'MyClass.run()',
       'First.unit',
-      'EXECUTION_STARTED',
+      // An execution's line states no text.
+      null,
     ]);
     expect(apexLog.children[1]?.isTruncated).toBe(false);
     expect(apexLog.truncatedEvents.map((event) => event.exitStamp)).toEqual([300, 300, 300]);
@@ -143,7 +148,7 @@ describe('truncation', () => {
       '09:18:22.6 (5000)|EXECUTION_STARTED\n' +
       '09:18:22.6 (5100)|EXECUTION_FINISHED\n';
 
-    const unit = parse(log).children[0]?.children[0];
+    const unit = firstChild(parse(log).children[0]);
 
     expect(unit?.exitStamp).toBe(5000);
     expect(unit?.duration.self).toBe(100);
@@ -167,14 +172,14 @@ describe('truncation', () => {
 
     expect(second?.isTruncated).toBe(false);
     expect(second?.exitStamp).toBe(460);
-    expect(apexLog.logIssues.map((issue) => issue.summary)).toContain('Unexpected-Exit');
+    expect(apexLog.issues.map((issue) => issue.summary)).toContain('Unexpected-Exit');
   });
 
   it('reports no truncation for a complete log', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p4J00000FpS6t|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p000000000AAA|UnitOfWork.getNextIdInternal()\n' +
+      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p000000000AAA|UnitOfWork.getNextIdInternal()\n' +
       '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
 
     const apexLog = parse(log);
@@ -194,9 +199,7 @@ describe('truncation', () => {
 
     expect(apexLog.truncation.regions.map((region) => region.kind)).toEqual(['skipped-lines']);
     expect(apexLog.truncation.totalSkippedBytes).toBe(1000);
-    expect(apexLog.eventsById.find((event) => event.type === 'USER_DEBUG')?.text).toBe(
-      'DEBUG | hello',
-    );
+    expect(apexLog.ofType('USER_DEBUG')[0]?.text).toBe('DEBUG | hello');
   });
 
   it('reports a max-size line that follows an event which takes wrapped text', () => {
@@ -207,9 +210,7 @@ describe('truncation', () => {
     );
 
     expect(apexLog.truncation.regions.map((region) => region.kind)).toEqual(['max-size']);
-    expect(apexLog.eventsById.find((event) => event.type === 'USER_DEBUG')?.text).toBe(
-      'DEBUG | hello',
-    );
+    expect(apexLog.ofType('USER_DEBUG')[0]?.text).toBe('DEBUG | hello');
   });
 
   it('keeps a skip line out of the limit block before it', () => {
@@ -224,7 +225,7 @@ describe('truncation', () => {
     );
 
     expect(apexLog.truncation.regions.map((region) => region.kind)).toEqual(['skipped-lines']);
-    expect(apexLog.governorLimits.final.soqlQueries).toMatchObject({ used: 8, limit: 100 });
+    expect(apexLog.limits.final.soqlQueries).toMatchObject({ used: 8, limit: 100 });
   });
 
   it('keeps a debug message that quotes the marker words as text', () => {
@@ -236,8 +237,49 @@ describe('truncation', () => {
     );
 
     expect(apexLog.truncation.regions).toEqual([]);
-    expect(apexLog.eventsById.find((event) => event.type === 'USER_DEBUG')?.text).toBe(
+    expect(apexLog.ofType('USER_DEBUG')[0]?.text).toBe(
       'DEBUG | line one\n*** Skipped lines are logged when MAXIMUM DEBUG LOG SIZE REACHED',
     );
+  });
+
+  it('marks the frame open at the maximum size, and reports its end before the maximum size', () => {
+    const log = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(3)}|FATAL_ERROR|System.LimitException`,
+    );
+    expect(outline(log)).toEqual(['METHOD_ENTRY@1-2!', '  STATEMENT_EXECUTE@2', 'FATAL_ERROR@3']);
+    // Replaced once the frame ends, so it follows the Unexpected-End issue at the same time.
+    expect(log.issues.map((i) => [i.summary, i.startTime, i.event?.id])).toEqual([
+      ['Unexpected-End', 2, 1],
+      ['Max-Size-reached', 2, 1],
+      ['System.LimitException', 3, 3],
+    ]);
+  });
+
+  it('ends the maximum size at an exit line after it, which gets no row', () => {
+    const log = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(5)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(9)}|STATEMENT_EXECUTE|[3]`,
+    );
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+      ['max-size', 2, 5],
+    ]);
+  });
+
+  it('reads the maximum size from the end of an event line it cut', () => {
+    const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
+    const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, cut, `${at(9)}|STATEMENT_EXECUTE|[3]`);
+    expect(log.parsingErrors).toEqual([`Invalid line number: ${cut}`]);
+    expect(log.issues.map((i) => [i.summary, i.event?.id, i.startTime])).toEqual([
+      ['Max-Size-reached', 2, 2],
+    ]);
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+      ['max-size', 2, 9],
+    ]);
   });
 });

@@ -32,7 +32,7 @@ const GATE_ADVICE: Record<keyof Gates, string> = {
     '`pnpm run validate:data` is red, so `data/` does not match its schema. ' +
     'Fix the scraper or `data/salesforce-debug-log-events.schema.json`.',
   verify:
-    '`pnpm run ci` is red. A newly documented event needs a class in `src/` — ' +
+    '`pnpm run ci` is red. A newly documented event needs a catalog entry — ' +
     'see "Adding an event type" in `AGENTS.md`. Fix that on this branch.',
 };
 
