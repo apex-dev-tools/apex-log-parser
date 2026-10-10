@@ -1,6 +1,8 @@
 // For logs too large for CodSpeed. Compare branches: --json=<path> on one, --baseline=<path> on the other.
 //   pnpm run bench:large [--engine=legacy|next] [--runs=5] [--json=<path>] [--baseline=<path>]
+//     [--max-heap-growth=<percent>]
 // --baseline matches logs by name, so one engine's --json is the other's baseline.
+// --max-heap-growth fails the run when a log's heap grows past it. Time is not gated: CI runners are noisy.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import process, { argv } from 'node:process';
@@ -48,6 +50,20 @@ export function report(results: LargeResult[], baseline: LargeResult[] = []): st
     const missing = baseline.length && !before ? ' (not in baseline)' : '';
     return `${result.name}: ${figure(result.ms, before?.ms, ms, 'time')}, heap ${figure(result.heapBytes, before?.heapBytes, mb, 'memory')}${missing}`;
   });
+}
+
+/** The logs whose heap grew by more than `percent` over the baseline's log of the same name. */
+export function heapGrowth(
+  results: LargeResult[],
+  baseline: LargeResult[],
+  percent: number,
+): string[] {
+  return results
+    .filter((result) => {
+      const before = baseline.find((b) => b.name === result.name);
+      return before && result.heapBytes > before.heapBytes * (1 + percent / 100);
+    })
+    .map((result) => result.name);
 }
 
 export function median(values: number[]): number {
@@ -98,6 +114,11 @@ async function main(): Promise<void> {
   if (!engine) throw new Error(`--engine must be one of ${Object.keys(ENGINES).join(', ')}`);
   const json = flag(args, '--json');
   const baselinePath = flag(args, '--baseline');
+  const maxGrowthFlag = flag(args, '--max-heap-growth');
+  const maxGrowth = maxGrowthFlag === null ? null : Number(maxGrowthFlag);
+  if (maxGrowth !== null && !(maxGrowth >= 0))
+    throw new Error('--max-heap-growth must be a percent of at least 0');
+  if (maxGrowth !== null && !baselinePath) throw new Error('--max-heap-growth needs --baseline');
 
   const results: LargeResult[] = [];
   for (const [name, options] of Object.entries(largeLogs)) {
@@ -125,6 +146,9 @@ async function main(): Promise<void> {
     : [];
   for (const line of report(results, baseline)) console.log(line);
   if (json) writeFileSync(json, `${JSON.stringify(results, null, 2)}\n`);
+  if (maxGrowth === null) return;
+  const grown = heapGrowth(results, baseline, maxGrowth);
+  if (grown.length) throw new Error(`Heap grew more than ${maxGrowth}%: ${grown.join(', ')}`);
 }
 
 runIfMain(import.meta.url, main);

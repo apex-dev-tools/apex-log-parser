@@ -11,9 +11,11 @@ applies.
   lines from `profiles.json`, which holds only numbers measured from real logs. A new hot path in
   the parser needs a shape there. `largeLogs` are the logs for `bench:large`.
 - `scripts/large.ts` — `pnpm run bench:large`, the 8, 20, 50, 75 and 100 MB synthetic logs, which
-  are too slow for the CodSpeed job. Local only. Run it with `--json=<path>` on one branch and
+  are too slow for the CodSpeed job. Run it with `--json=<path>` on one branch and
   `--baseline=<path>` on the other to compare them. `--engine=next` times the new parser; its
-  `--baseline` can be a legacy run's JSON.
+  `--baseline` can be a legacy run's JSON. `--max-heap-growth=<percent>` fails the run on heap
+  growth. The `heap` CI job runs it that way on each pull request, with the base's `--json` as the
+  head's `--baseline`, so the head must keep reading the base's JSON shape.
 - `scripts/views.ts` — `pnpm run bench:views`, what reading the next parser's views adds to its
   build on the same logs: every column of every event, and an object for every event. At
   100 MB it fails above 30 ms and 250 ms. Local only.

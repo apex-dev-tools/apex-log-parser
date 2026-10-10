@@ -1,4 +1,4 @@
-import { report } from '../scripts/large.js';
+import { heapGrowth, report } from '../scripts/large.js';
 
 describe('bench-large', () => {
   it('reports each log, with its change from the baseline', () => {
@@ -17,5 +17,21 @@ describe('bench-large', () => {
     expect(report([{ name: 'XL 100 MB', ms: 2000, heapBytes: 600_000_000 }])).toEqual([
       'XL 100 MB: 2000 ms, heap 600 MB',
     ]);
+  });
+
+  it('names each log whose heap grew past the limit, and only those', () => {
+    const baseline = [
+      { name: 'medium 8 MB', ms: 100, heapBytes: 100_000_000 },
+      { name: 'large 20 MB', ms: 200, heapBytes: 200_000_000 },
+    ];
+    const results = [
+      // +2.5%: past a 2% limit, although its time fell.
+      { name: 'medium 8 MB', ms: 50, heapBytes: 102_500_000 },
+      // +2% exactly: at the limit, not past it.
+      { name: 'large 20 MB', ms: 900, heapBytes: 204_000_000 },
+      { name: 'XL 100 MB', ms: 2000, heapBytes: 999_000_000 },
+    ];
+
+    expect(heapGrowth(results, baseline, 2)).toEqual(['medium 8 MB']);
   });
 });

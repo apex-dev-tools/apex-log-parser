@@ -42,6 +42,41 @@ jobs:
           # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
           run: node --run bench
 
+  # CodSpeed cannot see the V8 heap. Base and head run on one runner, so the heap compares exactly.
+  heap:
+    if: github.repository == 'apex-dev-tools/apex-log-parser' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      - run: node --run bench:large -- --runs=1 --json="$RUNNER_TEMP/base.json"
+        working-directory: base
+      - run: >-
+          node --run bench:large -- --runs=1 --baseline="$RUNNER_TEMP/base.json" --max-heap-growth=2
+          | tee "$RUNNER_TEMP/heap.txt"
+      - if: always()
+        run: |
+          [ -s "$RUNNER_TEMP/heap.txt" ] || exit 0
+          echo '### Heap against the base branch' >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/- /' "$RUNNER_TEMP/heap.txt" >> "$GITHUB_STEP_SUMMARY"
+
   # Manual only: macro runner minutes are billed, and a pull request would run fork code on them.
   walltime:
     if: github.repository == 'apex-dev-tools/apex-log-parser' && github.event_name == 'workflow_dispatch'

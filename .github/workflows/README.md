@@ -6,7 +6,7 @@ The YAML says what runs. The scripts decide what happens, so the logic is testab
 | Workflow | Trigger |
 | --- | --- |
 | `ci.yml` | push and pull request on `main` |
-| `benchmark.yml` | push and pull request on `main`; dispatch adds walltime |
+| `benchmark.yml` | push and pull request on `main`; pull request adds heap; dispatch adds walltime |
 | `codeql.yml` | schedule and pull request |
 | `release.yml` | push on `main`, through Changesets |
 | `scrape-events.yml` | quarterly schedule, dispatch, or another workflow |
@@ -28,6 +28,11 @@ the job near 1 minute. An instruction count changes by the same percentage at 1 
 unless the cost grows faster than the log. Logs of 8 to 100 MB show garbage
 collection in wall time, so `pnpm run bench:large` parses them locally.
 
+CodSpeed cannot see the V8 heap, so the `heap` job measures it on each pull request. It runs
+`bench:large` once per log on the base commit, then on the head with `--baseline`, on one runner,
+and fails when a log's heap grows by more than 2%. The job summary lists every log. It reports
+time too, but does not gate on it.
+
 Each log opens with one 2.5 s method, so every later time is past 2^31 ns. Node's V8 stores a
 number that large as a separate heap object, as it stores most times in a long real log. V8
 with pointer compression, as in Chrome and Electron, does so from 2^30 ns.
@@ -46,6 +51,9 @@ with pointer compression, as in Chrome and Electron, does so from 2^30 ns.
 | Fork pull requests | GitHub gives a fork no OIDC token, so CodSpeed uploads without a token. This works for a public repository. Never use `pull_request_target`. |
 | One concurrency group per `main` commit | Each `main` commit is a baseline. A shared group drops a pending run even with `cancel-in-progress` off. |
 | The CodSpeed check is required, not this job | The job passes on a regression. Only the CodSpeed check fails. |
+| Heap gate at 2% | Heap moves by 0.3% at most between runs. Time moves by up to 6%, so it is not gated. |
+| Base and head in one heap job | No stored baseline and no write token, so fork pull requests work. Both runs share a runner and a Node version. |
+| The base runs its own `bench:large` | The head reads the base's `--json`. A change to that file's shape must keep reading the old one. |
 
 To accept a deliberate regression, acknowledge it on the pull request's CodSpeed report.
 
