@@ -122,9 +122,12 @@ export class Issues {
   replace(startTime: number, id: number, text: IssueText): Issue | null {
     const key = `${text.type}:${text.summary}`;
     const at = this.list.findIndex((issue) => `${issue.type}:${issue.summary}` === key);
-    if (at > -1) this.list.splice(at, 1);
+    const [held] = at > -1 ? this.list.splice(at, 1) : [];
     this.keys.delete(key);
-    return this.add(startTime, id, text);
+    const issue = this.add(startTime, id, text);
+    // The cut is where the dropped part starts, not where the issue moves to.
+    if (issue && held) issue.after = held.after;
+    return issue;
   }
 }
 

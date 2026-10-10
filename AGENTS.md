@@ -55,8 +55,10 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   log. `views/lines.ts` reads an event's text, raw line, fields, suffix and cpuType from the
   source when a caller asks, through the catalog's rules; the flow interviews name, which needs the
   tree, is the one rule it holds itself. `views/details.ts` reads the values a line states beyond
-  its text, as `aggregations` or a limit usage, one reader per type; `EventDetails` lists them,
-  and `ofType` types each event's `details`. `views/log.ts` reads row 0 as `ApexLog`, the root, and makes each figure that needs work
+  its text, as `aggregations` or a limit usage, and the values the rows after it give, as a
+  throw's `caught`, one reader per type; `EventDetails` lists them,
+  and `ofType` types each event's `details`. `engine/throws.ts` reads each throw's outcome from
+  the rows after it, in one pass on the first `caught` read. `views/log.ts` reads row 0 as `ApexLog`, the root, and makes each figure that needs work
   on first read. A merged package run can end after the leaves that follow it, so `at()` searches
   frames only.
 - `src/__tests__/` — vitest suites. `helpers.ts` holds shared fixtures.

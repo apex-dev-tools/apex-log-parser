@@ -50,6 +50,14 @@ frame's exit details.
 The facts a folded exit line stated, such as the row count of `SOQL_EXECUTE_END`. Null when the
 frame never closed.
 
+**Details**:
+The values an event's line states beyond its text, such as a query's plan, or that the parser reads
+from the rows after it, such as whether a throw was caught. Not exit details.
+
+**Caught**:
+The parser's reading of a throw: execution went on after it, or a `FATAL_ERROR` ended it. The log
+does not state it.
+
 **Unterminated frame**:
 A frame that the log does not close, because the log ends or the platform dropped its exit line.
 _Avoid_: truncated event (truncation is a different thing, see below)

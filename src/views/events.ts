@@ -83,8 +83,9 @@ interface EventBase extends Rollups {
    */
   field(name: string): string | null;
   /**
-   * The values the line states beyond its text, parsed on first read, as `aggregations` or a limit
-   * usage: `EventDetails` lists them by type. Null for a type that states none.
+   * The values the line states beyond its text, or derives from the rows after it, parsed on first
+   * read, as `aggregations`, a limit usage or a throw's `caught`: `EventDetails` lists them by
+   * type. Null for a type that has none.
    */
   readonly details: AnyDetails | null;
 }
@@ -135,10 +136,10 @@ export class LogEvents {
   readonly lines: EventLines;
   private readonly views: (ApexEvent | undefined)[];
 
-  constructor({ store, strings, source }: Built) {
+  constructor({ store, strings, source, issues }: Built) {
     this.store = store;
     this.strings = strings;
-    this.lines = new EventLines(store, source);
+    this.lines = new EventLines(store, source, issues);
     this.views = new Array(store.count);
   }
 

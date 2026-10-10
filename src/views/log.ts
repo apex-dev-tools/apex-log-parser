@@ -116,7 +116,7 @@ export interface ApexLog extends Rollups {
   /** Every namespace the log states, in first-stated order. */
   readonly namespaces: readonly string[];
   /** Every `EXCEPTION_THROWN` and `FATAL_ERROR`, in id order. */
-  readonly exceptions: readonly ApexEvent[];
+  readonly exceptions: readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[];
   /** The code units at the top of the log or of an execution: where work starts. */
   readonly entryPoints: readonly EventOf<'CODE_UNIT_STARTED'>[];
   /** The user the `USER_INFO` line states; null when the log has none. */
@@ -168,7 +168,7 @@ class LogView extends RollupView implements ApexLog {
     parsingErrors?: readonly string[];
     limits?: GovernorLimits;
     namespaces?: readonly string[];
-    exceptions?: readonly ApexEvent[];
+    exceptions?: readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[];
     entryPoints?: readonly EventOf<'CODE_UNIT_STARTED'>[];
     userInfo?: UserInfo | null;
     debugLevels?: Partial<Record<DebugCategory, Level>>;
@@ -323,7 +323,7 @@ class LogView extends RollupView implements ApexLog {
     ));
   }
 
-  get exceptions(): readonly ApexEvent[] {
+  get exceptions(): readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[] {
     return (this.memo.exceptions ??= this.ofType('EXCEPTION_THROWN', 'FATAL_ERROR'));
   }
 
