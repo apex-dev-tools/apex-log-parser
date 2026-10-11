@@ -64,7 +64,7 @@ The scripts import `scripts/cli.ts` and `scripts/child.ts`, which the scraper sh
 - Real logs never go into the repository or CI. `scripts/profiles.ts` prints numbers, never log
   text. Never commit the output of `compare`; it names the logs.
 - Local `pnpm run bench` numbers are wall time; CI on a pull request reports instruction counts and
-  allocations. Do not compare the two. The manual `walltime` job reports wall time, on other hardware.
+  allocations. Do not compare the two.
 - Name each log in `benchLogs` and `largeLogs` `parse_<size>`, in lowercase, with an optional
   `_<what>` suffix: `parse_2mb`, `parse_500kb_uncommon`. CodSpeed and the `heap` job match logs by
   name, so a rename starts a new CodSpeed baseline and skips the heap gate for one run.
