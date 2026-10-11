@@ -6,7 +6,7 @@ The YAML says what runs. The scripts decide what happens, so the logic is testab
 | Workflow | Trigger |
 | --- | --- |
 | `ci.yml` | push and pull request on `main` |
-| `benchmark.yml` | push and pull request on `main`; pull request adds heap; dispatch adds walltime |
+| `benchmark.yml` | push and pull request on `main`; pull request adds heap |
 | `codeql.yml` | schedule and pull request |
 | `release.yml` | push on `main`, through Changesets |
 | `scrape-events.yml` | quarterly schedule, dispatch, or another workflow |
@@ -17,9 +17,8 @@ Runs `node --run bench` under [CodSpeed](https://codspeed.io) in 2 modes, one jo
 Simulation mode counts CPU instructions, not wall time, so a run on a shared runner is
 repeatable. Memory mode records peak RSS and `malloc` allocations: the parser's typed-array
 store, but not the V8 heap, which the `heap` job covers. Both run V8 with `--no-opt`, so neither
-measures code that TurboFan optimised. A manual dispatch also
-runs walltime mode on a CodSpeed macro runner: real time, with the full JIT. Each push
-to `main` records a baseline. On a pull request, CodSpeed posts a comment with the change
+measures code that TurboFan optimised; `pnpm run bench:large` measures wall time, with the full
+JIT, locally. Each push to `main` records a baseline. On a pull request, CodSpeed posts a comment with the change
 per benchmark, and its check fails when a benchmark regresses past the threshold set on
 codspeed.io.
 
@@ -45,8 +44,7 @@ with pointer compression, as in Chrome and Electron, does so from 2^30 ns.
 | --- | --- |
 | Simulation mode | Wall time on a shared runner varies by more than the regressions to catch. Instruction counts vary by about 1%. |
 | Memory mode on `ubuntu-24.04` | Peak RSS needs Linux kernel 6.8. `ubuntu-latest` can move. |
-| Walltime on dispatch only | Macro runner minutes are billed: 600 a month on the free plan. A pull request would run fork code on the runner. |
-| Macro runner for walltime | Wall time on a shared runner is too noisy. The org must allow public repositories in the runner group, or the job queues and never starts. |
+| No walltime job | Wall time on a shared runner is too noisy, and a CodSpeed macro runner needs the org to allow public repositories on its runners, or the job queues and never starts. |
 | Logs of 2.5 MB in all | Each bench parses 8 times under Valgrind, and the job holds up the merge. |
 | Exact Node version | Instruction counts move with the V8 version. A bump shifts the baseline once; acknowledge it on codspeed.io. |
 | No `paths:` filter | A required check that does not run stays "Expected" and blocks the merge. |
