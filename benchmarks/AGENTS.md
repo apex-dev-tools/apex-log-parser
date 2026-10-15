@@ -38,8 +38,6 @@ applies.
   checks that the whole output is deterministic. `current.ts` projects the current engine's
   result. A new engine, such as a published release, goes in `engines.ts` with its own projection;
   the two projections must then state the same fields for the diff to mean anything.
-- `scripts/micro/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's
-  low-level choices (`docs/adr/0004`), in Node and headless Chromium.
 - `scripts/versus.ts` — the one wording for a comparison: `4.4× faster (-77.6%)`.
 - `scripts/deopt.ts` — parses the 8 MB log until V8 has optimised the engine, then in a plain
   loop, then after each of several full GCs. `__tests__/deopt.test.ts` runs it under

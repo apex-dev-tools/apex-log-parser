@@ -7,8 +7,9 @@ The research proposed a byte scanner. We scan a string instead.
 `parse` still accepts bytes, a `Blob` and streams. It decodes them once with `TextDecoder`. Field
 text is then a slice of that string.
 
-Measured with `pnpm run bench:micro`, Node 22.23 and headless Chromium. Each time is Node, then
-Chromium, from a 95 MB corpus log:
+Measured with `pnpm run bench:micro`, on Node 22.23 and headless Chromium. A later change removed
+that script; see `git log -- benchmarks/scripts/micro`. Each time is Node, then Chromium, from a
+95 MB corpus log:
 
 | Task | Bytes core | String core |
 | --- | ---: | ---: |

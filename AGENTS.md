@@ -75,7 +75,7 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   renders the pull request body; `seed.ts` seeds `data/` from the open automation branch. See
   `.github/workflows/README.md`.
 - `benchmarks/` — every benchmark and its tools: the CodSpeed suite, the synthetic logs,
-  `bench:large`, `bench:micro` and `compare`. See `benchmarks/AGENTS.md`. A new hot path in the
+  `bench:large` and `compare`. See `benchmarks/AGENTS.md`. A new hot path in the
   parser needs a shape in `benchmarks/fixtures/profiles.json`. Every benchmark output states the
   raw figures, then the times and the percent change.
 - `scripts/` and `benchmarks/` are outside `tsconfig.json`, so `pnpm typecheck` does not see them.
