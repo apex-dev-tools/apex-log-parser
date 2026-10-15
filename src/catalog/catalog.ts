@@ -116,7 +116,20 @@ interface OtherClosedDef extends FrameDef {
 }
 
 interface PointDef extends CommonDef {
-  readonly shape?: Exclude<Shape, 'frame'>;
+  readonly shape?: Exclude<Shape, 'frame' | 'exit'>;
+  readonly category?: never;
+  readonly cpu?: never;
+  readonly suffix?: never;
+  readonly exits?: never;
+  readonly closes?: never;
+}
+
+/** An exit line. Its `debugCategory`, `level` and `kind` are those of the frame that lists it in `exits`. */
+interface ExitDef extends Omit<CommonDef, 'debugCategory' | 'level' | 'kind'> {
+  readonly shape: 'exit';
+  readonly debugCategory?: never;
+  readonly level?: never;
+  readonly kind?: never;
   readonly category?: never;
   readonly cpu?: never;
   readonly suffix?: never;
@@ -127,7 +140,7 @@ interface PointDef extends CommonDef {
 type FieldName<T extends EventType> = keyof EventFields[T] & string;
 
 /** One hand-written catalog entry. Omitted keys take the defaults in `infoOf`, `grammarOf` and `lineRulesOf`. */
-type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef) & {
+type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef | ExitDef) & {
   /** The line's fields from field 2 on, in order. */
   readonly fields?: readonly FieldName<T>[];
   readonly text?: TextSpec<FieldName<T>>;
@@ -276,17 +289,11 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CALLOUT_RESPONSE: {
     fields: ['line', 'response'],
     shape: 'exit',
-    kind: 'callout',
-    debugCategory: 'callout',
-    level: 'INFO',
     text: at('response'),
   },
   CODE_UNIT_FINISHED: {
     fields: ['name', 'typeRef'],
     shape: 'exit',
-    kind: 'code-unit',
-    debugCategory: 'apexCode',
-    level: 'ERROR',
     text: at('name'),
   },
   CODE_UNIT_STARTED: {
@@ -320,9 +327,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CONSTRUCTOR_EXIT: {
     fields: ['line', 'classId', 'signature', 'className'],
     shape: 'exit',
-    kind: 'method',
-    debugCategory: 'apexCode',
-    level: 'FINE',
   },
   CUMULATIVE_LIMIT_USAGE: {
     namespace: 'none',
@@ -336,9 +340,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   CUMULATIVE_LIMIT_USAGE_END: {
     shape: 'exit',
-    kind: 'limits',
-    debugCategory: 'apexProfiling',
-    level: 'INFO',
   },
   CUMULATIVE_PROFILING: {
     namespace: 'none',
@@ -357,7 +358,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'FINE',
     cpu: 'custom',
   },
-  CUMULATIVE_PROFILING_END: { shape: 'exit', debugCategory: 'apexProfiling', level: 'FINE' },
+  CUMULATIVE_PROFILING_END: { shape: 'exit' },
   CURSOR_CREATE_BEGIN: {
     fields: ['line', 'soqlQuery'],
     shape: 'frame',
@@ -371,9 +372,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CURSOR_CREATE_END: {
     fields: ['line', 'queryId', 'numberRowsResult'],
     shape: 'exit',
-    kind: 'soql',
-    debugCategory: 'database',
-    level: 'INFO',
   },
   CURSOR_FETCH: {
     fields: ['line', 'queryId', 'cursorOffsetPosition', 'numberRowsFetched'],
@@ -415,9 +413,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   DML_END: {
     fields: ['line'],
     shape: 'exit',
-    kind: 'dml',
-    debugCategory: 'database',
-    level: 'INFO',
   },
   DUPLICATE_DETECTION_BEGIN: {
     shape: 'frame',
@@ -427,7 +422,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'INFO',
     cpu: 'custom',
   },
-  DUPLICATE_DETECTION_END: { shape: 'exit', debugCategory: 'system', level: 'INFO' },
+  DUPLICATE_DETECTION_END: { shape: 'exit' },
   DUPLICATE_DETECTION_MATCH_INVOCATION_DETAILS: {
     fields: ['entityType', 'actionTaken', 'duplicateRecordIds'],
     debugCategory: 'system',
@@ -495,9 +490,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   EVENT_SERVICE_PUB_END: {
     fields: ['eventType'],
     shape: 'exit',
-    kind: 'workflow',
-    debugCategory: 'workflow',
-    level: 'INFO',
     text: at('eventType'),
   },
   EVENT_SERVICE_SUB_BEGIN: {
@@ -534,9 +526,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   EVENT_SERVICE_SUB_END: {
     fields: ['eventType', 'action'],
     shape: 'exit',
-    kind: 'workflow',
-    debugCategory: 'workflow',
-    level: 'INFO',
     text: join(' ', 'eventType', 'action'),
   },
   EXCEPTION_THROWN: {
@@ -552,9 +541,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   EXECUTION_FINISHED: {
     shape: 'exit',
-    kind: 'execution',
-    debugCategory: 'apexCode',
-    level: 'ERROR',
   },
   EXECUTION_STARTED: {
     namespace: 'none',
@@ -624,9 +610,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   FLOW_BULK_ELEMENT_END: {
     fields: ['interviewId', 'element', 'records', 'executionTime'],
     shape: 'exit',
-    kind: 'flow',
-    debugCategory: 'workflow',
-    level: 'FINE',
   },
   FLOW_BULK_ELEMENT_LIMIT_USAGE: {
     hook: 'flowTotal',
@@ -689,9 +672,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   FLOW_ELEMENT_END: {
     fields: ['interviewId', 'elementType', 'elementName'],
     shape: 'exit',
-    kind: 'flow',
-    debugCategory: 'workflow',
-    level: 'FINE',
   },
   FLOW_ELEMENT_ERROR: {
     fields: ['message', 'elementType', 'elementName'],
@@ -781,9 +761,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   FLOW_START_INTERVIEW_END: {
     fields: ['interviewId', 'flowName'],
     shape: 'exit',
-    kind: 'flow',
-    debugCategory: 'workflow',
-    level: 'INFO',
   },
   FLOW_START_INTERVIEW_LIMIT_USAGE: {
     fields: ['usage'],
@@ -806,9 +783,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   FLOW_START_INTERVIEWS_END: {
     fields: ['requests'],
     shape: 'exit',
-    kind: 'flow',
-    debugCategory: 'workflow',
-    level: 'INFO',
   },
   FLOW_START_INTERVIEWS_ERROR: {
     fields: ['message', 'interviewId', 'flowName'],
@@ -879,7 +853,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'FINER',
     cpu: 'method',
   },
-  FORMULA_EVALUATE_END: { shape: 'exit', debugCategory: 'apexCode', level: 'FINER' },
+  FORMULA_EVALUATE_END: { shape: 'exit' },
   FUNCTION_INVOCATION_REQUEST: {
     fields: ['invocationRequestDetails'],
     debugCategory: 'callout',
@@ -958,7 +932,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'INFO',
     cpu: 'method',
   },
-  MATCH_ENGINE_END: { shape: 'exit', debugCategory: 'system', level: 'INFO' },
+  MATCH_ENGINE_END: { shape: 'exit' },
   MATCH_ENGINE_INVOCATION: {
     fields: ['invocationDetails'],
     debugCategory: 'system',
@@ -982,9 +956,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     namespace: 'methodExit',
     fields: ['line', 'classId', 'signature'],
     shape: 'exit',
-    kind: 'method',
-    debugCategory: 'apexCode',
-    level: 'FINE',
     text: methodExitText,
   },
   NAMED_CREDENTIAL_REQUEST: {
@@ -1058,9 +1029,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   NBA_NODE_END: {
     fields: ['elementName', 'elementType', 'message'],
     shape: 'exit',
-    kind: 'nba',
-    debugCategory: 'nba',
-    level: 'FINE',
     text: from('elementName', ' | '),
   },
   NBA_NODE_ERROR: {
@@ -1091,9 +1059,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   NBA_STRATEGY_END: {
     fields: ['strategyName', 'countOutputs'],
     shape: 'exit',
-    kind: 'nba',
-    debugCategory: 'nba',
-    level: 'FINE',
     text: from('strategyName', ' | '),
   },
   NBA_STRATEGY_ERROR: {
@@ -1119,9 +1084,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   ORG_CACHE_GET_END: {
     fields: ['hitMiss'],
     shape: 'exit',
-    kind: 'cache',
-    debugCategory: 'apexCode',
-    level: 'INFO',
   },
   ORG_CACHE_GET_PARTITION: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   ORG_CACHE_MEMORY_USAGE: {
@@ -1141,7 +1103,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'INFO',
     cpu: 'method',
   },
-  ORG_CACHE_PUT_END: { shape: 'exit', kind: 'cache', debugCategory: 'apexCode', level: 'INFO' },
+  ORG_CACHE_PUT_END: { shape: 'exit' },
   ORG_CACHE_REMOVE: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   ORG_CACHE_REMOVE_BEGIN: {
     fields: ['key'],
@@ -1153,7 +1115,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'INFO',
     cpu: 'method',
   },
-  ORG_CACHE_REMOVE_END: { shape: 'exit', kind: 'cache', debugCategory: 'apexCode', level: 'INFO' },
+  ORG_CACHE_REMOVE_END: { shape: 'exit' },
   PLAY_PROMPT: { debugCategory: 'workflow', level: 'INFO' },
   POLICY_RULE_DEFINITION_CONDITION_EVALUATION_RESPONSE: {
     fields: ['response'],
@@ -1250,9 +1212,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   QUERY_MORE_END: {
     fields: ['line'],
     shape: 'exit',
-    kind: 'soql',
-    debugCategory: 'database',
-    level: 'INFO',
     text: queryMoreText,
   },
   QUERY_MORE_ITERATIONS: {
@@ -1280,7 +1239,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     cpu: 'method',
   },
   RLM_CONFIGURATOR_DEPLOY: { debugCategory: 'system', level: 'FINE' },
-  RLM_CONFIGURATOR_END: { shape: 'exit', debugCategory: 'system', level: 'FINE' },
+  RLM_CONFIGURATOR_END: { shape: 'exit' },
   RLM_CONFIGURATOR_STATS: { debugCategory: 'system', level: 'FINE' },
   RLM_PRICING_BEGIN: {
     shape: 'frame',
@@ -1290,7 +1249,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'FINE',
     cpu: 'method',
   },
-  RLM_PRICING_END: { shape: 'exit', debugCategory: 'system', level: 'FINE' },
+  RLM_PRICING_END: { shape: 'exit' },
   ROUTE_WORK_ACTION: { debugCategory: 'workflow', level: 'INFO' },
   RULES_EXECUTION_DETAIL: { fields: ['executionDetail'], debugCategory: 'wave', level: 'FINER' },
   RULES_EXECUTION_SUMMARY: { fields: ['summaryData'], debugCategory: 'wave', level: 'FINE' },
@@ -1326,9 +1285,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SESSION_CACHE_GET_END: {
     fields: ['hitMiss'],
     shape: 'exit',
-    kind: 'cache',
-    debugCategory: 'apexCode',
-    level: 'INFO',
   },
   SESSION_CACHE_GET_PARTITION: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   SESSION_CACHE_MEMORY_USAGE: {
@@ -1350,9 +1306,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   SESSION_CACHE_PUT_END: {
     shape: 'exit',
-    kind: 'cache',
-    debugCategory: 'apexCode',
-    level: 'INFO',
   },
   SESSION_CACHE_REMOVE: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   SESSION_CACHE_REMOVE_BEGIN: {
@@ -1367,9 +1320,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   SESSION_CACHE_REMOVE_END: {
     shape: 'exit',
-    kind: 'cache',
-    debugCategory: 'apexCode',
-    level: 'INFO',
   },
   SLA_CASE_MILESTONE: { debugCategory: 'workflow', level: 'FINE', kind: 'workflow' },
   SLA_END: {
@@ -1410,9 +1360,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     rows: { field: 'rows', of: 'soql' },
     fields: ['line', 'rows'],
     shape: 'exit',
-    kind: 'soql',
-    debugCategory: 'database',
-    level: 'INFO',
   },
   SOQL_EXECUTE_EXPLAIN: {
     fields: ['line', 'plan'],
@@ -1437,9 +1384,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     rows: { field: 'rows', of: 'sosl' },
     fields: ['line', 'rows'],
     shape: 'exit',
-    kind: 'sosl',
-    debugCategory: 'database',
-    level: 'INFO',
   },
   STACK_FRAME_VARIABLE_LIST: {
     fields: ['frame'],
@@ -1476,9 +1420,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SYSTEM_CONSTRUCTOR_EXIT: {
     fields: ['line', 'signature'],
     shape: 'exit',
-    kind: 'method',
-    debugCategory: 'system',
-    level: 'FINE',
   },
   SYSTEM_METHOD_ENTRY: {
     fields: ['line', 'signature'],
@@ -1494,9 +1435,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SYSTEM_METHOD_EXIT: {
     fields: ['line', 'signature'],
     shape: 'exit',
-    kind: 'method',
-    debugCategory: 'system',
-    level: 'FINE',
   },
   SYSTEM_MODE_ENTER: { fields: ['mode'], debugCategory: 'system', level: 'INFO', text: at('mode') },
   SYSTEM_MODE_EXIT: { fields: ['mode'], debugCategory: 'system', level: 'INFO', text: at('mode') },
@@ -1617,9 +1555,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_APEX_CALL_END: {
     fields: ['element', 'method'],
     shape: 'exit',
-    kind: 'method',
-    debugCategory: 'visualforce',
-    level: 'FINE',
     text: at('element'),
   },
   // A line that names no method, or a page-message controller, opens no frame; the engine decides.
@@ -1648,9 +1583,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_DESERIALIZE_CONTINUATION_STATE_END: {
     shape: 'exit',
-    kind: 'visualforce',
-    debugCategory: 'visualforce',
-    level: 'INFO',
   },
   VF_DESERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
@@ -1664,9 +1596,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_DESERIALIZE_VIEWSTATE_END: {
     shape: 'exit',
-    kind: 'visualforce',
-    debugCategory: 'visualforce',
-    level: 'INFO',
   },
   VF_EVALUATE_FORMULA_BEGIN: {
     fields: ['viewStateId', 'formula'],
@@ -1682,9 +1611,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_EVALUATE_FORMULA_END: {
     shape: 'exit',
-    kind: 'visualforce',
-    debugCategory: 'visualforce',
-    level: 'FINER',
   },
   VF_PAGE_MESSAGE: {
     fields: ['message'],
@@ -1705,9 +1631,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_SERIALIZE_CONTINUATION_STATE_END: {
     shape: 'exit',
-    kind: 'visualforce',
-    debugCategory: 'visualforce',
-    level: 'INFO',
   },
   VF_SERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
@@ -1721,9 +1644,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_SERIALIZE_VIEWSTATE_END: {
     shape: 'exit',
-    kind: 'visualforce',
-    debugCategory: 'visualforce',
-    level: 'INFO',
   },
   WAVE_APP_LIFECYCLE: { fields: ['lifecycleEvent'], debugCategory: 'wave', level: 'INFO' },
   WF_ACTION: {
@@ -1811,9 +1731,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_CRITERIA_END: {
     fields: ['result'],
     shape: 'exit',
-    kind: 'workflow',
-    debugCategory: 'workflow',
-    level: 'INFO',
   },
   WF_EMAIL_ALERT: {
     fields: ['alert'],
@@ -2003,7 +1920,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     cpu: 'custom',
     text: at('ruleType'),
   },
-  WF_RULE_EVAL_END: { shape: 'exit', kind: 'workflow', debugCategory: 'workflow', level: 'INFO' },
+  WF_RULE_EVAL_END: { shape: 'exit' },
   WF_RULE_EVAL_VALUE: {
     fields: ['value'],
     debugCategory: 'workflow',
@@ -2032,9 +1949,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_RULE_NOT_EVALUATED: {
     shape: 'exit',
-    kind: 'workflow',
-    debugCategory: 'workflow',
-    level: 'INFO',
   },
   WF_SEND_ACTION: { debugCategory: 'workflow', level: 'INFO', kind: 'workflow' },
   WF_SOFT_REJECT: {
@@ -2110,17 +2024,38 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
 
 const typeIds = new Map(EVENT_TYPE_NAMES.map((type, typeId) => [type, typeId]));
 
+/** The frame that lists each exit type in its `exits`. */
+const OPENER = new Map<EventType, EventType>();
+for (const type of EVENT_TYPE_NAMES) {
+  for (const exit of ENTRIES[type].exits ?? NO_TYPES) {
+    if (OPENER.has(exit)) throw new Error(`${exit}: two frames list it in exits`);
+    OPENER.set(exit, type);
+  }
+}
+
+/** What an entry states for its type info; an exit entry states none, so its frame's apply. */
+function statedBy(type: EventType): { debugCategory: DebugCategory; level: Level; kind?: Kind } {
+  const def = ENTRIES[type];
+  if (def.shape !== 'exit') return def;
+  const opener = OPENER.get(type);
+  if (!opener) throw new Error(`${type}: an exit entry, but no frame lists it in exits`);
+  const frame = ENTRIES[opener];
+  if (frame.shape === 'exit') throw new Error(`${opener}: an exit entry lists exits`);
+  return frame;
+}
+
 function infoOf(type: EventType, typeId: number): EventTypeInfo {
   const def = ENTRIES[type];
+  const { debugCategory, level, kind } = statedBy(type);
   return Object.freeze({
     typeId,
     type,
     fields: Object.freeze(fieldNamesOf(type)),
     shape: def.shape ?? 'leaf',
-    kind: def.kind ?? 'other',
+    kind: kind ?? 'other',
     category: def.category ?? null,
-    debugCategory: def.debugCategory,
-    debugLevel: def.level,
+    debugCategory,
+    debugLevel: level,
     exitTypes: def.exits ? Object.freeze(def.exits) : NO_TYPES,
   });
 }
