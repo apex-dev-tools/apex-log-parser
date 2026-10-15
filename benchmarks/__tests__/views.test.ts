@@ -1,6 +1,6 @@
-import { idOfType } from '../../src/next/catalog/catalog.js';
-import { nodeEngine } from '../../src/next/engine/node.js';
-import { apexLog } from '../../src/next/views/log.js';
+import { idOfType } from '../../src/catalog/catalog.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import { apexLog } from '../../src/views/log.js';
 import { readColumns, readEvents } from '../scripts/views.js';
 
 const log = apexLog(

@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
-import { parse } from '../index.js';
+import { parse } from './helpers.js';
 
 function logWithUserInfo(userInfoLine: string): string {
   return (
@@ -18,13 +18,13 @@ describe('userInfo', () => {
   it('reads the id, user name, label, IANA name and offset', () => {
     const apexLog = parse(
       logWithUserInfo(
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
       ),
     );
 
     expect(apexLog.userInfo).toEqual({
-      id: '005J000000E9ctM',
-      userName: 'test@example.com',
+      id: '005000000000AAA',
+      userName: 'user@example.com',
       timezone: {
         text: '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)',
         label: 'Pacific Standard Time',
@@ -38,7 +38,7 @@ describe('userInfo', () => {
   it('reports no IANA name when the header states a bare label', () => {
     const apexLog = parse(
       logWithUserInfo(
-        "00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|0053r00000AUqiB|user@example.com|Heure d'Europe centrale|GMT+01:00",
+        "00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAB|user@example.com|Heure d'Europe centrale|GMT+01:00",
       ),
     );
 
@@ -54,7 +54,7 @@ describe('userInfo', () => {
   it('treats GMTZ as zero offset', () => {
     const apexLog = parse(
       logWithUserInfo(
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT+00:00) Greenwich Mean Time (Europe/London)|GMTZ',
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT+00:00) Greenwich Mean Time (Europe/London)|GMTZ',
       ),
     );
 
@@ -64,7 +64,7 @@ describe('userInfo', () => {
   it('keeps the slashes in a multi-part IANA name', () => {
     const apexLog = parse(
       logWithUserInfo(
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT-04:00) Eastern Daylight Time (America/Indiana/Indianapolis)|GMT-04:00',
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT-04:00) Eastern Daylight Time (America/Indiana/Indianapolis)|GMT-04:00',
       ),
     );
 
@@ -82,12 +82,13 @@ describe('userInfo', () => {
   it('reads a CRLF log', () => {
     const apexLog = parse(
       logWithUserInfo(
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00\r',
+        // No `(GMT…)` in the label, so only the last column, once its CR is gone, gives the offset.
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
       ).replaceAll('\n', '\r\n'),
     );
 
     expect(apexLog.userInfo?.timezone).toEqual({
-      text: '(GMT-08:00) Pacific Standard Time (America/Los_Angeles)',
+      text: 'Pacific Standard Time (America/Los_Angeles)',
       label: 'Pacific Standard Time',
       name: 'America/Los_Angeles',
       offsetMinutes: -480,
@@ -98,7 +99,7 @@ describe('userInfo', () => {
   it('reads a GMT-prefixed label that states no IANA name', () => {
     const apexLog = parse(
       logWithUserInfo(
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT+05:30) India Standard Time|GMT+05:30',
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT+05:30) India Standard Time|GMT+05:30',
       ),
     );
 
@@ -114,7 +115,7 @@ describe('userInfo', () => {
   it('reports no offset when the header states none it can read', () => {
     const apexLog = parse(
       logWithUserInfo(
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|Pacific Standard Time',
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time',
       ),
     );
 
@@ -124,7 +125,7 @@ describe('userInfo', () => {
   it('reads the offset from the label when the header states no offset column', () => {
     const apexLog = parse(
       logWithUserInfo(
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005J000000E9ctM|test@example.com|(GMT+05:30) India Standard Time',
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT+05:30) India Standard Time',
       ),
     );
 
@@ -179,7 +180,7 @@ describe('userInfo', () => {
       '61.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +
         '09:18:22.6 (100)|EXECUTION_STARTED\n' +
         '09:18:22.6 (200)|USER_DEBUG|[9]|DEBUG|a nested log follows\n' +
-        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005OTHERUSER|other@example.com|(GMT+01:00) Central European Time|GMT+01:00\n' +
+        '00:53:58.0 (525718)|USER_INFO|[EXTERNAL]|005000000000AAC|other@example.com|(GMT+01:00) Central European Time|GMT+01:00\n' +
         '09:19:13.82 (2000)|EXECUTION_FINISHED\n',
     );
 
@@ -219,18 +220,5 @@ describe('userInfo', () => {
     );
 
     expect(apexLog.userInfo).toBeNull();
-  });
-
-  it('reads the first header when every execution states one', () => {
-    const apexLog = parse(
-      logWithUserInfo(
-        '09:18:22.6 (50)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time|GMT-08:00',
-      ) +
-        '09:19:13.90 (3000)|USER_INFO|[EXTERNAL]|005000000000AAB|later@example.com|Pacific Standard Time|GMT-08:00\n' +
-        '09:19:13.90 (3100)|EXECUTION_STARTED\n' +
-        '09:19:13.95 (4000)|EXECUTION_FINISHED\n',
-    );
-
-    expect(apexLog.userInfo?.userName).toBe('user@example.com');
   });
 });

@@ -2,8 +2,10 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
-import type { ApexLog, LogEvent } from '../../src/index.js';
-import { parse } from '../../src/index.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import type { ApexEvent } from '../../src/views/events.js';
+import type { ApexLog } from '../../src/views/log.js';
+import { apexLog as logOf } from '../../src/views/log.js';
 import { benchLogs, makeLog, profileLog, profileSettings } from '../fixtures/fixtures.js';
 import type { LogShape, ProfileName } from '../fixtures/measure.js';
 import { LogTally, profileBands } from '../fixtures/measure.js';
@@ -28,18 +30,26 @@ function hash(text: string): string {
 // The events that open a generator frame. A trigger's code unit is one too, unless its DML_BEGIN opened it.
 const frameTypes = new Set(['METHOD_ENTRY', 'CONSTRUCTOR_ENTRY', 'DML_BEGIN']);
 
-function opensFrame(event: LogEvent): boolean {
-  if (frameTypes.has(event.type ?? '')) return true;
+const parse = (log: string): ApexLog => logOf(nodeEngine.build(new TextEncoder().encode(log)));
+
+function opensFrame(event: ApexEvent): boolean {
+  if (frameTypes.has(event.type)) return true;
   return (
     event.type === 'CODE_UNIT_STARTED' &&
-    event.text.includes('__sfdc_trigger') &&
+    !!event.text?.includes('__sfdc_trigger') &&
     event.parent?.type !== 'DML_BEGIN'
   );
 }
 
-function frameDepth(event: LogEvent): number {
-  const own = opensFrame(event) ? 1 : 0;
-  return own + event.children.reduce((deepest, child) => Math.max(deepest, frameDepth(child)), 0);
+function frameDepth(events: readonly ApexEvent[]): number {
+  return events.reduce(
+    (deepest, event) =>
+      Math.max(
+        deepest,
+        (opensFrame(event) ? 1 : 0) + (event.isFrame ? frameDepth(event.children) : 0),
+      ),
+    0,
+  );
 }
 
 const idPattern = /(?<![\w.])[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?(?![\w.])/g;
@@ -59,12 +69,12 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
 
   it('parses with no errors, issues or unclosed events', () => {
     expect(apexLog.parsingErrors).toEqual([]);
-    expect(apexLog.logIssues).toEqual([]);
+    expect(apexLog.issues).toEqual([]);
     expect(apexLog.truncatedEvents).toEqual([]);
   });
 
   it('holds the events it is named for', () => {
-    const types = new Set<string | null>(apexLog.eventsById.map((event) => event.type));
+    const types = new Set<string>([...apexLog.events].map((event) => event.type));
     expect(options.covers.filter((type) => !types.has(type))).toEqual([]);
   });
 
@@ -73,7 +83,7 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
   });
 
   it('times every event after its opening slow call past 2^31 ns', () => {
-    const early = apexLog.eventsById.filter((event) => event.type && event.timestamp < 2 ** 31);
+    const early = [...apexLog.events].filter((event) => event.timestamp < 2 ** 31);
     expect(early.map((event) => event.type)).toEqual([
       'USER_INFO',
       'EXECUTION_STARTED',
@@ -83,7 +93,7 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
   });
 
   it('nests its frames to maxDepth, and no deeper than a DML leaf below it', () => {
-    const depth = frameDepth(apexLog);
+    const depth = frameDepth(apexLog.children);
     expect(depth).toBeGreaterThanOrEqual(options.maxDepth);
     expect(depth).toBeLessThanOrEqual(options.maxDepth + 1);
   });
@@ -97,12 +107,14 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
     // The one address is the USER_INFO header's.
     expect(log.split('@').length).toBe(2);
     expect(log).toContain('|user@example.com|');
-    expect([...apexLog.namespaces].sort()).toEqual(['default', 'ns']);
+    expect([...apexLog.namespaces]).toEqual(['ns']);
   });
 
   it.runIf(options.mix.userDebugWrapped)('wraps USER_DEBUG text', () => {
     expect(
-      apexLog.eventsById.some((event) => event.type === 'USER_DEBUG' && event.text.includes('\n')),
+      [...apexLog.events].some(
+        (event) => event.type === 'USER_DEBUG' && !!event.text?.includes('\n'),
+      ),
     ).toBe(true);
   });
 

@@ -163,7 +163,7 @@ describe('renderReport', () => {
   it('puts a failing gate under the decisions, with what to do', () => {
     const body = renderReport(quiet, { validate: 'success', verify: 'failure' });
     expect(body).toContain('## Needs a decision');
-    expect(body).toContain('needs a class in `src/`');
+    expect(body).toContain('needs a catalog entry');
     expect(body).toContain('Checks — tests: `failure`');
     expect(body).not.toContain('does not match its schema');
     expect(body).not.toContain('Nothing here needs a decision');

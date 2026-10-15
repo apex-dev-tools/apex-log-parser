@@ -824,7 +824,7 @@ function refreshEntry(
  * Reports where a source has *moved* to contradict the entry's curated `category`
  * or `level`.
  *
- * Those two fields are the ones `EventMetadata.test.ts` and the generated markdown
+ * Those two fields are the ones `Catalog.test.ts` and the generated markdown
  * read, and a scrape deliberately does not overwrite them — they may carry a
  * correction the documentation does not. So the contradiction is surfaced for a
  * human instead of being resolved silently either way.

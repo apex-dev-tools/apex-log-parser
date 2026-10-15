@@ -1,12 +1,12 @@
-// What reading the next parser's views adds to its build, on the synthetic logs. Local only.
+// What reading the parser's views adds to its build, on the synthetic logs. Local only.
 //   pnpm run bench:views [--runs=5] [--log=<name>]
 // Gates (100 MB): reading every column adds < 30 ms; an object for every event < 250 ms.
 
 import process, { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
-import { nodeEngine } from '../../src/next/engine/node.js';
-import type { ApexLog } from '../../src/next/views/log.js';
-import { apexLog } from '../../src/next/views/log.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import type { ApexLog } from '../../src/views/log.js';
+import { apexLog } from '../../src/views/log.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
 import { median } from './large.js';
 import { liveBytes } from './memory.js';

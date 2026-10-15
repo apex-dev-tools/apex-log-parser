@@ -2,34 +2,95 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
-/**
- * Shared parsing for governor-limit log lines. One label map + one number parser serve every
- * limit-reporting format so the mappings live in a single place:
- * - `LIMIT_USAGE_FOR_NS` cumulative block   — "Number of SOQL queries: 8 out of 100"
- * - flow colon reports                       — "SOQL queries: 0 out of 100"
- * - flow running-total reports               — "1 SOQL queries, total 1 out of 100"
- * - single `LIMIT_USAGE`                      — code "SOQL", used "1", limit "100"
- */
-
-import type {
-  GovernorLimits,
-  GovernorSnapshot,
-  Limits,
-  LimitValue,
-  NamespaceLimits,
-} from './types.js';
-
-/** Metric key of a governor limit that can be tracked granularly. */
-export type LimitMetricKey = keyof Limits;
-
-/** A limit value with `percentUsed` derived, null when the log stated no ceiling. */
-export function toLimitValue(used: number, limit: number): LimitValue {
-  return { used, limit, percentUsed: limit > 0 ? (used / limit) * 100 : null };
+/** One governor limit: what the code used, and the ceiling the log stated. */
+export interface LimitValue {
+  readonly used: number;
+  /** Null when the log stated no ceiling. */
+  readonly limit: number | null;
+  /** Null when the log stated no ceiling. */
+  readonly percentUsed: number | null;
 }
 
-/** Every metric at zero, with no ceiling. The one place a `Limits` is built from nothing. */
+/** Governor limit usage. `cpuTime` is milliseconds, `heapSize` is bytes, every other metric a count. */
+export interface Limits {
+  readonly soqlQueries: LimitValue;
+  readonly soslQueries: LimitValue;
+  readonly queryRows: LimitValue;
+  readonly dmlStatements: LimitValue;
+  readonly publishImmediateDml: LimitValue;
+  readonly dmlRows: LimitValue;
+  readonly cpuTime: LimitValue;
+  readonly heapSize: LimitValue;
+  readonly callouts: LimitValue;
+  readonly emailInvocations: LimitValue;
+  readonly futureCalls: LimitValue;
+  readonly queueableJobsAddedToQueue: LimitValue;
+  readonly mobileApexPushCalls: LimitValue;
+}
+
+export type LimitMetric = keyof Limits;
+
+/** The units a limit metric is stated in. */
+export const LIMIT_UNIT = {
+  Count: 'count',
+  Millisecond: 'millisecond',
+  Byte: 'byte',
+} as const;
+
+export type LimitUnit = (typeof LIMIT_UNIT)[keyof typeof LIMIT_UNIT];
+
+/** Every limit metric, with the unit its `used` and `limit` are stated in. */
+export const LIMIT_METRICS: Readonly<Record<LimitMetric, LimitUnit>> = Object.freeze({
+  soqlQueries: LIMIT_UNIT.Count,
+  soslQueries: LIMIT_UNIT.Count,
+  queryRows: LIMIT_UNIT.Count,
+  dmlStatements: LIMIT_UNIT.Count,
+  publishImmediateDml: LIMIT_UNIT.Count,
+  dmlRows: LIMIT_UNIT.Count,
+  cpuTime: LIMIT_UNIT.Millisecond,
+  heapSize: LIMIT_UNIT.Byte,
+  callouts: LIMIT_UNIT.Count,
+  emailInvocations: LIMIT_UNIT.Count,
+  futureCalls: LIMIT_UNIT.Count,
+  queueableJobsAddedToQueue: LIMIT_UNIT.Count,
+  mobileApexPushCalls: LIMIT_UNIT.Count,
+});
+
+/** One `LIMIT_USAGE_FOR_NS` block: a namespace's cumulative usage at that point in the log. */
+export interface LimitSnapshot {
+  /** Nanoseconds. */
+  readonly timestamp: number;
+  /** The name the block states, `'default'` included. */
+  readonly namespace: string;
+  readonly limits: Limits;
+}
+
+/** One namespace's usage, from the snapshots it reported. */
+export interface NamespaceLimits {
+  /** Its last snapshot. */
+  readonly final: Limits;
+  /** The highest value each metric reached in its own snapshots. */
+  readonly peak: Limits;
+}
+
+/** The log's governor limit usage, from its snapshots. */
+export interface GovernorLimits {
+  readonly snapshots: readonly LimitSnapshot[];
+  /** Each namespace's last snapshot, combined. */
+  readonly final: Limits;
+  /** The highest each metric of the combined figure reached at any point. */
+  readonly peak: Limits;
+  /** Per namespace, in the order the log first reports them. */
+  readonly byNamespace: ReadonlyMap<string, NamespaceLimits>;
+}
+
+function value(used: number, limit: number | null): LimitValue {
+  return { used, limit, percentUsed: limit !== null && limit > 0 ? (used / limit) * 100 : null };
+}
+
+/** Every metric at zero, with no ceiling. */
 export function emptyLimits(): Limits {
-  const zero = (): LimitValue => toLimitValue(0, 0);
+  const zero = (): LimitValue => value(0, null);
   return {
     soqlQueries: zero(),
     soslQueries: zero(),
@@ -47,118 +108,12 @@ export function emptyLimits(): Limits {
   };
 }
 
-/**
- * A single governor-limit observation parsed from a limit-usage log line. `used`/`limit` are the
- * cumulative values reported for that metric at the point in the log where the line was emitted.
- */
-export interface LimitObservation {
-  metric: LimitMetricKey;
-  used: number;
-  limit: number;
-}
+const METRICS = Object.keys(emptyLimits()) as LimitMetric[];
 
-/**
- * A running-total observation, e.g. "1 SOQL queries, total 1 out of 100". `delta` is the leading
- * incremental count: how much the reporting event itself used since the last report.
- */
-export interface RunningTotalObservation extends LimitObservation {
-  delta: number;
-}
+// The platform shares these across namespaces, so combining them takes the highest, not the sum.
+const SHARED: ReadonlySet<LimitMetric> = new Set<LimitMetric>(['heapSize']);
 
-/** An empty limit set: no snapshots, so nothing derived from them either. */
-export function emptyGovernorLimits(): GovernorLimits {
-  return { snapshots: [], final: emptyLimits(), peak: emptyLimits(), byNamespace: new Map() };
-}
-
-// Exhaustive by construction: the keys of a total `Limits`, so no metric can be missed.
-const LIMIT_METRIC_KEYS = Object.keys(emptyLimits()) as LimitMetricKey[];
-
-/**
- * Limits the platform shares across namespaces, so the per-namespace figures are not additive:
- * combining them takes the highest, not the sum.
- */
-const SHARED_METRICS: ReadonlySet<LimitMetricKey> = new Set<LimitMetricKey>(['heapSize']);
-
-/**
- * Fold `used` per metric across sources. `limit` takes the highest stated ceiling, because 0 means
- * the source stated none and no log states two different ceilings for one metric.
- */
-function foldLimits(
-  sources: Iterable<Limits>,
-  foldUsed: (metric: LimitMetricKey, running: number, next: number) => number,
-): Limits {
-  const folded = emptyLimits();
-  for (const source of sources) {
-    for (const metric of LIMIT_METRIC_KEYS) {
-      const running = folded[metric];
-      const next = source[metric];
-      folded[metric] = toLimitValue(
-        foldUsed(metric, running.used, next.used),
-        Math.max(running.limit, next.limit),
-      );
-    }
-  }
-  return folded;
-}
-
-/** Combine per-namespace limits into one figure: summed, except the shared limits. */
-function combineLimits(sources: Iterable<Limits>): Limits {
-  return foldLimits(sources, (metric, running, next) =>
-    SHARED_METRICS.has(metric) ? Math.max(running, next) : running + next,
-  );
-}
-
-/** The highest `used` each metric reached across the sources. */
-function maxLimits(sources: Iterable<Limits>): Limits {
-  return foldLimits(sources, (_metric, running, next) => Math.max(running, next));
-}
-
-/** A detached copy, so a caller cannot reach back into the snapshot it came from. */
-function copyLimits(limits: Limits): Limits {
-  return maxLimits([limits]);
-}
-
-/** A source that states heap alone, so a heap figure from elsewhere folds in like any other. */
-function heapOnly(used: number): Limits {
-  return { ...emptyLimits(), heapSize: toLimitValue(used, 0) };
-}
-
-/**
- * Derives the whole-log and per-namespace figures from the snapshots, which are in log order. A
- * namespace states a cumulative total each time, so its last snapshot is its final figure, and the
- * combined figure at any timepoint carries every other namespace forward.
- *
- * `heapPeak` is folded into the combined peak because it comes from the heap events, not from a
- * snapshot: an observed block states heap as 0, so it is the only heap figure most logs give.
- */
-export function deriveGovernorLimits(
-  snapshots: GovernorSnapshot[],
-  heapPeak: number,
-): GovernorLimits {
-  const byNamespace = new Map<string, NamespaceLimits>();
-  let final = emptyLimits();
-  let peak = emptyLimits();
-
-  for (const { namespace, limits } of snapshots) {
-    const previous = byNamespace.get(namespace);
-    byNamespace.set(namespace, {
-      final: copyLimits(limits),
-      peak: previous ? maxLimits([previous.peak, limits]) : copyLimits(limits),
-    });
-    final = combineLimits(Array.from(byNamespace.values(), (nsLimits) => nsLimits.final));
-    peak = maxLimits([peak, final]);
-  }
-
-  return { snapshots, final, peak: maxLimits([peak, heapOnly(heapPeak)]), byNamespace };
-}
-
-/**
- * Every known governor-limit label → metric key. Covers the cumulative block ("Number of …" /
- * "Maximum …"), the flow colon reports, and the flow running-total reports ("ms CPU time").
- * Labels not present here are not tracked governor limits (e.g. FIELDS_DESCRIBES).
- */
-const LIMIT_LABELS = new Map<string, LimitMetricKey>([
-  // LIMIT_USAGE_FOR_NS cumulative block
+const LABELS = new Map<string, LimitMetric>([
   ['Number of SOQL queries', 'soqlQueries'],
   ['Number of query rows', 'queryRows'],
   ['Number of SOSL queries', 'soslQueries'],
@@ -172,7 +127,7 @@ const LIMIT_LABELS = new Map<string, LimitMetricKey>([
   ['Number of future calls', 'futureCalls'],
   ['Number of queueable jobs added to the queue', 'queueableJobsAddedToQueue'],
   ['Number of Mobile Apex push calls', 'mobileApexPushCalls'],
-  // Flow colon reports + running-total labels
+  // The flow reports' labels.
   ['SOQL queries', 'soqlQueries'],
   ['SOQL query rows', 'queryRows'],
   ['SOSL queries', 'soslQueries'],
@@ -187,11 +142,10 @@ const LIMIT_LABELS = new Map<string, LimitMetricKey>([
   ['Jobs in queue', 'queueableJobsAddedToQueue'],
 ]);
 
-/**
- * Governor-limit codes for the single-line LIMIT_USAGE format. Non-governor codes
- * (FIELDS_DESCRIBES, FIELDSETS_DESCRIBES, AGGS, SCRIPT_STATEMENTS) are intentionally omitted.
- */
-const LIMIT_USAGE_CODES = new Map<string, LimitMetricKey>([
+const USED_OF = /(\d+)\s*(?:out of|\/)\s*(\d+)/;
+const COUNT_LABEL = /^(\d+)\s+(.+)$/;
+
+const CODES = new Map<string, LimitMetric>([
   ['SOQL', 'soqlQueries'],
   ['SOQL_ROWS', 'queryRows'],
   ['SOSL', 'soslQueries'],
@@ -199,61 +153,154 @@ const LIMIT_USAGE_CODES = new Map<string, LimitMetricKey>([
   ['DML_ROWS', 'dmlRows'],
 ]);
 
-/** Matches "<used> out of <limit>" or "<used>/<limit>". */
-const USED_OF_RE = /(\d+)\s*(?:out of|\/)\s*(\d+)/;
-
-/** Matches the "<count> <label>" head of a running-total line, e.g. "1 SOQL queries". */
-const COUNT_LABEL_RE = /^(\d+)\s+(.+)$/;
-
-function toInt(value: string): number {
-  return Number.parseInt(value, 10);
+/** One line's reading of one limit. `cpuTime` is milliseconds, `heapSize` bytes, others a count. */
+export interface LimitUsage {
+  /** Null for a label or code no metric tracks, such as `AGGS`. */
+  readonly metric: LimitMetric | null;
+  /** The label or code, as the line states it. */
+  readonly label: string;
+  readonly used: number;
+  readonly limit: number;
 }
 
-function used(metric: LimitMetricKey | undefined, text: string): LimitObservation | null {
-  if (!metric) {
-    return null;
-  }
-  const match = USED_OF_RE.exec(text);
-  return match ? { metric, used: toInt(match[1]!), limit: toInt(match[2]!) } : null;
+/** A flow report's running total: `used` so far, and `delta`, what the reporting element used. */
+export interface RunningUsage extends LimitUsage {
+  readonly delta: number;
+}
+
+/** `used out of limit` or `used/limit` in `text`, read as `label`; null when it states neither. */
+function usage(label: string, text: string): LimitUsage | null {
+  const match = USED_OF.exec(text);
+  if (!match) return null;
+  return {
+    metric: LABELS.get(label) ?? null,
+    label,
+    // The pattern matched two digit runs.
+    used: Number.parseInt(match[1]!, 10),
+    limit: Number.parseInt(match[2]!, 10),
+  };
+}
+
+/** A `LIMIT_USAGE` line's code and figures; null unless the line states all three. */
+export function codedUsage(
+  code: string | null,
+  used: number | null,
+  limit: number | null,
+): LimitUsage | null {
+  if (code === null || used === null || limit === null) return null;
+  return { metric: CODES.get(code) ?? null, label: code, used, limit };
+}
+
+/** A `Label: used out of limit` line; null when it states no label or no figures. */
+export function labelledUsage(text: string): LimitUsage | null {
+  const colon = text.indexOf(':');
+  return colon < 0 ? null : usage(text.slice(0, colon).trim(), text.slice(colon + 1));
+}
+
+/** A running-total line, as `1 SOQL queries, total 1 out of 100`; null when it states no total. */
+export function runningUsage(text: string): RunningUsage | null {
+  const comma = text.indexOf(',');
+  if (comma < 0) return null;
+  // A head with no leading count still reports a total, so it is kept with a zero delta.
+  const head = text.slice(0, comma).trim();
+  const [, count = '0', label = head] = COUNT_LABEL.exec(head) ?? [];
+  const found = usage(label, text.slice(comma + 1));
+  return found && { ...found, delta: Number.parseInt(count, 10) };
+}
+
+// The engine's scan reads the two below. Built on the views' parsers above, they made the scan
+// lose its optimised code across a GC (deopt.test.ts), so they stay apart.
+
+/** A flow report's running total of a tracked metric, for the log's figures. */
+export interface RunningTotal {
+  metric: LimitMetric;
+  used: number;
+  limit: number;
+  delta: number;
+}
+
+/** A running-total line, as `1 SOQL queries, total 1 out of 100`; null for an untracked label. */
+export function runningTotal(text: string): RunningTotal | null {
+  const comma = text.indexOf(',');
+  if (comma < 0) return null;
+  // A head with no leading count still reports a total, so it is kept with a zero delta.
+  const head = text.slice(0, comma).trim();
+  const [, count = '0', label = head] = COUNT_LABEL.exec(head) ?? [];
+  const metric = LABELS.get(label);
+  const match = metric ? USED_OF.exec(text.slice(comma + 1)) : null;
+  if (!metric || !match) return null;
+  return {
+    metric,
+    // The pattern matched two digit runs.
+    used: Number.parseInt(match[1]!, 10),
+    limit: Number.parseInt(match[2]!, 10),
+    delta: Number.parseInt(count, 10),
+  };
 }
 
 /**
- * Parse a labelled limit line, e.g. "Number of SOQL queries: 8 out of 100" (cumulative block) or
- * "SOQL queries: 0 out of 100" (flow). Returns null for untracked labels.
+ * The usage a limit text states, one `Label: used/limit` or `Label: used out of limit` line per
+ * metric: a limit block, or a flow element's report.
  */
-export function parseLabelledLimit(body: string): LimitObservation | null {
-  const colon = body.indexOf(':');
-  if (colon === -1) {
-    return null;
+export function limitsOfBlock(text: string): Limits {
+  const limits: Record<LimitMetric, LimitValue> = emptyLimits();
+  for (const line of text.split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon < 0) continue;
+    const metric = LABELS.get(line.slice(0, colon).trim());
+    const match = metric ? USED_OF.exec(line.slice(colon + 1)) : null;
+    if (metric && match) {
+      // The pattern matched two digit runs.
+      limits[metric] = value(Number.parseInt(match[1]!, 10), Number.parseInt(match[2]!, 10));
+    }
   }
-  return used(LIMIT_LABELS.get(body.slice(0, colon).trim()), body.slice(colon + 1));
+  return limits;
 }
 
-/**
- * Parse a running-total limit line, e.g. "1 SOQL queries, total 1 out of 100". Uses the reported
- * running total as `used` and the leading count as `delta`. Returns null for untracked labels.
- */
-export function parseTotalLimit(body: string): RunningTotalObservation | null {
-  const comma = body.indexOf(',');
-  if (comma === -1) {
-    return null;
-  }
-  // A head with no leading count still reports a usable total, so keep it with a zero delta.
-  const head = body.slice(0, comma).trim();
-  const [, count = '0', label = head] = COUNT_LABEL_RE.exec(head) ?? [];
-  const observation = used(LIMIT_LABELS.get(label), body.slice(comma + 1));
-  return observation ? { ...observation, delta: toInt(count) } : null;
+/** The highest stated ceiling, or null when neither states one. */
+function ceiling(a: number | null, b: number | null): number | null {
+  return a === null ? b : b === null ? a : Math.max(a, b);
 }
 
+/** `limit` takes the highest stated ceiling: no log states two for one metric. */
+function fold(
+  sources: Iterable<Limits>,
+  used: (m: LimitMetric, a: number, b: number) => number,
+): Limits {
+  const out: Record<LimitMetric, LimitValue> = emptyLimits();
+  for (const source of sources) {
+    for (const m of METRICS) {
+      const a = out[m];
+      const b = source[m];
+      out[m] = value(used(m, a.used, b.used), ceiling(a.limit, b.limit));
+    }
+  }
+  return out;
+}
+
+const combined = (sources: Iterable<Limits>): Limits =>
+  fold(sources, (m, a, b) => (SHARED.has(m) ? Math.max(a, b) : a + b));
+const highest = (sources: Iterable<Limits>): Limits => fold(sources, (_m, a, b) => Math.max(a, b));
+
 /**
- * Parse a single-line LIMIT_USAGE record, e.g. code "SOQL", used "1", limit "100".
- * Returns null for non-governor codes.
+ * The whole-log and per-namespace figures from snapshots in log order. Each snapshot is
+ * cumulative, so a namespace's last is its final figure. `heapPeak` (bytes) comes from the heap
+ * events, because a block states heap as 0.
  */
-export function parseCodedLimit(
-  code: string | undefined,
-  usedValue: string | undefined,
-  limit: string | undefined,
-): LimitObservation | null {
-  const metric = code ? LIMIT_USAGE_CODES.get(code) : undefined;
-  return metric ? { metric, used: toInt(usedValue ?? '0'), limit: toInt(limit ?? '0') } : null;
+export function governorLimits(snapshots: LimitSnapshot[], heapPeak: number): GovernorLimits {
+  const byNamespace = new Map<string, NamespaceLimits>();
+  let final = emptyLimits();
+  let peak = emptyLimits();
+  for (const { namespace, limits } of snapshots) {
+    const previous = byNamespace.get(namespace);
+    byNamespace.set(namespace, {
+      // A copy, so a caller cannot reach the snapshot through it.
+      final: highest([limits]),
+      peak: highest(previous ? [previous.peak, limits] : [limits]),
+    });
+    final = combined(Array.from(byNamespace.values(), (ns) => ns.final));
+    peak = highest([peak, final]);
+  }
+  const heap = { ...emptyLimits(), heapSize: value(heapPeak, null) };
+  return { snapshots, final, peak: highest([peak, heap]), byNamespace };
 }

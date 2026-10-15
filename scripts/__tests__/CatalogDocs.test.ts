@@ -3,10 +3,10 @@
  */
 import { readFileSync } from 'node:fs';
 import eventDatabase from '../../data/salesforce-debug-log-events.json' with { type: 'json' };
-import { EVENT_TYPES } from '../../src/next/catalog/catalog.js';
+import { EVENT_TYPES } from '../../src/catalog/catalog.js';
 
 // The docs are TSDoc on a type, which no runtime value holds, so this reads the source.
-const source = readFileSync(new URL('../../src/next/catalog/fields.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/catalog/fields.ts', import.meta.url), 'utf8');
 
 const NO_DESCRIPTION = 'Salesforce does not describe this type.';
 const database = eventDatabase as { events: { event: string; description: string }[] };

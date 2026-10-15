@@ -2,9 +2,8 @@
  * Runs every log in a folder through the parse engines, checks they give the same output, and
  * times them. Writes `results.jsonl` as it goes and `report.md` at the end.
  *
- * It diffs every later engine against the first, by the facts in `facts.ts`. A difference a rule in
- * an engine's `known` list explains is counted by rule, not reported. Naming one engine
- * twice with `--projection=full` (`--engines=legacy,legacy`) checks that its whole output is
+ * It diffs every later engine against the first, by the facts in `facts.ts`. Naming one engine
+ * twice with `--projection=full` (`--engines=current,current`) checks that its whole output is
  * deterministic. Timing runs each engine's tsdown bundle, built into `<out>/bundle`; the diff runs
  * the source. `--runs=0` skips timing. `--baseline=<results.jsonl>`
  * adds each engine's change against an earlier run, matched by log path.
@@ -29,14 +28,13 @@ import { bundleEngines } from './bundle.js';
 import type { DiffResult } from './diff.js';
 import { diffProjections } from './diff.js';
 import { engine, loadEngine } from './engines.js';
-import { explainer } from './known.js';
 import type { Measurement } from './measure.js';
 import type { Projection } from './project.js';
 import type { Failure, FileResult } from './report.js';
 import { renderReport } from './report.js';
 
 const USAGE =
-  'Usage: pnpm run compare <dir> --out=<dir> [--engines=legacy,next] [--projection=facts|full] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
+  'Usage: pnpm run compare <dir> --out=<dir> [--engines=current,current] [--projection=facts|full] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
 const LOG_FILE = /\.(log|txt)$/i;
 const measureScript = fileURLToPath(new URL('./measure.ts', import.meta.url));
 
@@ -89,14 +87,7 @@ async function diff(
 ): Promise<DiffResult | Failure> {
   try {
     const bytes = readFileSync(file);
-    const known = left === 'legacy' && kind === 'facts' ? engine(right).known : undefined;
-    if (!known) {
-      return diffProjections(await project(left, bytes, kind), await project(right, bytes, kind));
-    }
-    // The rules can need records the streaming diff has not reached, so both are read whole.
-    const a = [...(await project(left, bytes, kind))];
-    const b = [...(await project(right, bytes, kind))];
-    return diffProjections(a, b, 20, explainer(a, b, known));
+    return diffProjections(await project(left, bytes, kind), await project(right, bytes, kind));
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
@@ -108,7 +99,7 @@ runIfMain(import.meta.url, async () => {
   const out = flag(args, '--out');
   if (!dir || !out) throw new Error(USAGE);
 
-  const engines = (flag(args, '--engines') ?? 'legacy').split(',');
+  const engines = (flag(args, '--engines') ?? 'current').split(',');
   engines.forEach(engine);
   const kind = flag(args, '--projection') ?? 'facts';
   if (kind !== 'facts' && kind !== 'full') throw new Error(USAGE);

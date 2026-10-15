@@ -1,17 +1,14 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parse } from '../../src/index.js';
-import { nodeEngine } from '../../src/next/engine/node.js';
-import { apexLog } from '../../src/next/views/log.js';
+import { nodeEngine } from '../../src/engine/node.js';
+import { apexLog } from '../../src/views/log.js';
 import { findLogs } from '../scripts/compare/compare.js';
 import { compareKeys, diffProjections, same } from '../scripts/compare/diff.js';
 import type { LogFact } from '../scripts/compare/facts.js';
-import { legacyFacts, nextFacts, nextProjection } from '../scripts/compare/facts.js';
-import type { Entry, KnownDifference } from '../scripts/compare/known.js';
-import { explainer } from '../scripts/compare/known.js';
-import type { Projection } from '../scripts/compare/project.js';
-import { canonical, projectLegacy } from '../scripts/compare/project.js';
+import { currentFacts, currentProjection } from '../scripts/compare/facts.js';
+import type { Entry, Projection } from '../scripts/compare/project.js';
+import { canonical } from '../scripts/compare/project.js';
 import type { FileResult } from '../scripts/compare/report.js';
 import { percentile, renderReport } from '../scripts/compare/report.js';
 
@@ -30,6 +27,9 @@ const log = [
 const records = (p: Projection): Map<string, Record<string, unknown>> =>
   new Map([...p].map(([k, v]) => [k, v as Record<string, unknown>]));
 
+const built = (text: string) => apexLog(nodeEngine.build(new TextEncoder().encode(text)));
+const facts = (text: string): Entry[] => [...currentFacts(built(text))];
+
 describe('canonical', () => {
   it('sorts keys, so field order does not count', () => {
     expect(canonical({ b: 1, a: 2 })).toBe(canonical({ a: 2, b: 1 }));
@@ -42,99 +42,12 @@ describe('canonical', () => {
   });
 });
 
-describe('projectLegacy', () => {
-  it('gives one record per tree node, in pre-order, with no exit lines', () => {
-    const out = records(projectLegacy(parse(log)));
-    expect([...out.keys()]).toEqual(['log', '0', '0/0', '0/0/0', '0/0/0/0']);
-    expect([...out.values()].map((r) => r.type)).toEqual([
-      null,
-      'EXECUTION_STARTED',
-      'CODE_UNIT_STARTED',
-      'METHOD_ENTRY',
-      'SOQL_EXECUTE_BEGIN',
-    ]);
-  });
-
-  it('states every reference to an event as its tree path', () => {
-    const out = records(projectLegacy(parse(log)));
-    expect(out.get('log')?.entryPoints).toEqual([{ node: '0/0' }]);
-    expect(out.get('0/0/0')?.children).toEqual([{ node: '0/0/0/0' }]);
-  });
-
-  it('keeps the subclass fields and leaves out parser state', () => {
-    const soql = records(projectLegacy(parse(log))).get('0/0/0/0');
-    expect(soql?.aggregations).toBe(0);
-    expect(soql?.soqlRowCount).toEqual({ self: 10, total: 10 });
-    expect(soql).not.toHaveProperty('logParser');
-    expect(soql).not.toHaveProperty('eventIndex');
-    expect(soql).not.toHaveProperty('parent');
-  });
-});
-
-describe('legacyFacts', () => {
-  it('gives one record per tree node, in pre-order, keyed like the full projection', () => {
-    const out = records(legacyFacts(parse(log)));
-    expect([...out.keys()]).toEqual(['log', '0', '0/0', '0/0/0', '0/0/0/0']);
-    expect(out.get('0/0/0/0')).toMatchObject({
-      type: 'SOQL_EXECUTE_BEGIN',
-      lineNumber: 12,
-      exitStamp: 5500000,
-      counts: { soql: { self: 1, total: 1 }, soqlRows: { self: 10, total: 10 } },
-    });
-    expect(out.get('0/0')?.counts).toMatchObject({ soqlRows: { self: 0, total: 10 } });
-  });
-
-  it('refers to an event the tree does not hold by its type and time', () => {
-    const skipped = log.replace(
-      'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()',
-      'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()\n*** Skipped 1,024 bytes of detailed log',
-    );
-    const facts = records(legacyFacts(parse(skipped))).get('log') as unknown as LogFact;
-    expect(facts.entryPoints).toEqual([{ node: '0/0' }]);
-    expect(facts.truncation.regions).toEqual([
-      expect.objectContaining({ at: { offTree: 'METHOD_EXIT', at: 7000000 }, skippedBytes: 1024 }),
-    ]);
-  });
-
-  it('states an empty namespace or line-number field as null', () => {
-    const facts = records(
-      legacyFacts(parse('64.0 APEX_CODE,FINE\n09:00:00.001 (1000000)|STATEMENT_EXECUTE|')),
-    ).get('0');
-    expect(facts).toMatchObject({ lineNumber: null, namespace: null });
-  });
-
-  it('keeps a stated line number 0, and states no namespace for today’s default', () => {
-    const out = records(
-      legacyFacts(
-        parse(
-          [
-            '64.0 APEX_CODE,FINE',
-            '09:00:00.001 (1000000)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex',
-            '09:00:00.002 (2000000)|STATEMENT_EXECUTE|[0]',
-            '09:00:00.003 (3000000)|CODE_UNIT_FINISHED|execute_anonymous_apex',
-          ].join('\n'),
-        ),
-      ),
-    );
-    expect(out.get('0')).toMatchObject({ namespace: null });
-    expect(out.get('0/0')).toMatchObject({ lineNumber: 0, namespace: null });
-    expect((out.get('log') as unknown as LogFact).namespaces).toEqual([]);
-  });
-
-  it('states an id no event has as missing, not as no reference', () => {
-    const parsed = parse(log);
-    parsed.logIssues.push({ type: 'unexpected', summary: 's', description: 'd', eventIndex: 999 });
-    const facts = records(legacyFacts(parsed)).get('log') as unknown as LogFact;
-    expect(facts.issues.at(-1)?.at).toEqual({ missing: 999 });
-  });
-});
-
 describe('diffProjections', () => {
   const p = (entries: [string, unknown][]): Projection => entries;
 
   it('finds no difference between two parses of one log', () => {
-    const result = diffProjections(projectLegacy(parse(log)), projectLegacy(parse(log)));
-    expect(result).toEqual({ records: 5, differing: 0, differences: [], explained: {} });
+    const result = diffProjections(currentProjection(built(log)), currentProjection(built(log)));
+    expect(result).toEqual({ records: 5, differing: 0, differences: [] });
   });
 
   it('names the path of a changed field', () => {
@@ -180,7 +93,6 @@ describe('diffProjections', () => {
       records: 4,
       differing: 1,
       differences: [{ key: '0/0', path: '', left: '0/0', right: '<absent>' }],
-      explained: {},
     });
   });
 
@@ -196,90 +108,60 @@ describe('diffProjections', () => {
   });
 });
 
-describe('nextFacts', () => {
-  const next = (text: string): Entry[] => [
-    ...nextFacts(apexLog(nodeEngine.build(new TextEncoder().encode(text)))),
-  ];
-  const vsLegacy = (text: string) => {
-    const left = [...legacyFacts(parse(text))];
-    const right = next(text);
-    return diffProjections(left, right, 20, explainer(left, right));
-  };
-
-  it('states the facts legacy states, apart from the known differences', () => {
-    expect(vsLegacy(log)).toEqual({
-      records: 5,
-      differing: 0,
-      differences: [],
-      explained: { 'code-unit-line': 1 },
+describe('currentFacts', () => {
+  it('gives one record per tree node, in pre-order, with no exit lines', () => {
+    const out = records(facts(log));
+    expect([...out.keys()]).toEqual(['log', '0', '0/0', '0/0/0', '0/0/0/0']);
+    expect(out.get('0/0/0/0')).toMatchObject({
+      type: 'SOQL_EXECUTE_BEGIN',
+      lineNumber: 12,
+      exitStamp: 5500000,
+      counts: { soql: { self: 1, total: 1 }, soqlRows: { self: 10, total: 10 } },
     });
+    expect(out.get('0/0')?.counts).toMatchObject({ soqlRows: { self: 0, total: 10 } });
   });
 
-  it('explains a maximum-size marker inside an event line, which legacy misses', () => {
-    const cut = [
-      '64.0 APEX_CODE,FINE',
-      '09:00:00.001 (1000000)|STATEMENT_EXECUTE|[1]',
-      '09:00:00.002 (2000000)|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
-      '09:00:00.003 (3000000)|STATEMENT_EXECUTE|[3]',
-    ].join('\n');
-    expect(vsLegacy(cut)).toMatchObject({
-      differing: 0,
-      // The issue, the region, and the log's isTruncated.
-      explained: { 'malformed-number': 2, 'max-size-in-line': 3 },
-    });
+  it('states every reference to an event as its tree path, and an exit line by its type and time', () => {
+    const skipped = log.replace(
+      'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()',
+      'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()\n*** Skipped 1,024 bytes of detailed log',
+    );
+    const fact = records(facts(skipped)).get('log') as unknown as LogFact;
+    expect(fact.entryPoints).toEqual([{ node: '0/0' }]);
+    expect(fact.truncation.regions).toEqual([
+      expect.objectContaining({ at: { offTree: 'METHOD_EXIT', at: 7000000 }, skippedBytes: 1024 }),
+    ]);
   });
 
-  it('states no duration for an exit at 0, as legacy does', () => {
-    const zero = [
-      '64.0 APEX_CODE,FINE',
-      '09:00:00.001 (1000000)|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()',
-      '09:00:00.000 (0)|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()',
-    ].join('\n');
-    expect(vsLegacy(zero)).toMatchObject({ differing: 0, explained: {} });
-  });
-
-  it('explains an issue on a merged package entry, and malformed rows', () => {
-    const merged = [
-      '64.0 APEX_CODE,FINE',
-      '09:00:00.001 (1000000)|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()',
-      '09:00:00.002 (2000000)|ENTERING_MANAGED_PKG|ns',
-      '09:00:00.003 (3000000)|ENTERING_MANAGED_PKG|ns',
-      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
-      '09:00:00.004 (4000000)|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Account',
-      '09:00:00.005 (5000000)|SOQL_EXECUTE_END|[2]|Rows:abc',
-      '09:00:00.006 (6000000)|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()',
-    ].join('\n');
-    const result = vsLegacy(merged);
-    expect(result.differences).toEqual([]);
-    // The issue and its region; the parsing error, and the rows on the query, its method and the log.
-    expect(result.explained).toEqual({ 'merged-package-issue': 2, 'malformed-number': 4 });
-  });
-
-  it('explains the exit of a package entry that ends the log, which legacy leaves out', () => {
-    const last = (above: string): string =>
-      ['64.0 APEX_CODE,FINE', above, '09:00:00.002 (2000000)|ENTERING_MANAGED_PKG|ns'].join('\n');
-    expect(
-      vsLegacy(last('09:00:00.001 (1000000)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex')),
-    ).toMatchObject({ differing: 0, explained: { 'code-unit-line': 1, 'package-duration': 1 } });
-    // At the top level it also ends the execution.
-    expect(vsLegacy(last('09:00:00.001 (1000000)|EXECUTION_FINISHED'))).toMatchObject({
-      differing: 0,
-      explained: { 'package-duration': 2 },
-    });
+  it('states an empty line-number field as null, and keeps a stated 0', () => {
+    const out = records(
+      facts(
+        [
+          '64.0 APEX_CODE,FINE',
+          '09:00:00.001 (1000000)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex',
+          '09:00:00.002 (2000000)|STATEMENT_EXECUTE|[0]',
+          '09:00:00.003 (3000000)|STATEMENT_EXECUTE|',
+          '09:00:00.004 (4000000)|CODE_UNIT_FINISHED|execute_anonymous_apex',
+        ].join('\n'),
+      ),
+    );
+    expect(out.get('0/0')).toMatchObject({ lineNumber: 0, namespace: null });
+    expect(out.get('0/1')).toMatchObject({ lineNumber: null, namespace: null });
+    expect((out.get('log') as unknown as LogFact).namespaces).toEqual([]);
   });
 });
 
-describe('nextProjection', () => {
+describe('currentProjection', () => {
   it('states each facts record, and adds each event its text figures', () => {
-    const built = apexLog(nodeEngine.build(new TextEncoder().encode(log)));
-    const facts = [...nextFacts(built)];
-    const full = [...nextProjection(built)];
-    const events = [...built.events];
+    const parsed = built(log);
+    const stated = [...currentFacts(parsed)];
+    const full = [...currentProjection(parsed)];
+    const events = [...parsed.events];
 
-    expect(full.map(([key]) => key)).toEqual(facts.map(([key]) => key));
-    expect(full[0]).toEqual(facts[0]);
+    expect(full.map(([key]) => key)).toEqual(stated.map(([key]) => key));
+    expect(full[0]).toEqual(stated[0]);
     expect(full.slice(1)).toEqual(
-      facts.slice(1).map(([key, node], i) => {
+      stated.slice(1).map(([key, node], i) => {
         const event = events[i];
         return [
           key,
@@ -294,55 +176,7 @@ describe('nextProjection', () => {
         ];
       }),
     );
-    expect(full).toHaveLength(built.eventCount + 1);
-  });
-});
-
-describe('explainer', () => {
-  const half: KnownDifference = {
-    name: 'half',
-    undo: (_key, field, value) => (field === 'n' ? (value as number) / 2 : value),
-  };
-  const run = (left: number, right: number) => {
-    const a: Entry[] = [['0', { n: left, m: 1 }]];
-    const b: Entry[] = [['0', { n: right, m: 1 }]];
-    return diffProjections(a, b, 20, explainer(a, b, [half]));
-  };
-
-  it('counts a field by rule when the rule undoes all of its difference', () => {
-    expect(run(2, 4)).toEqual({
-      records: 1,
-      differing: 0,
-      differences: [],
-      explained: { half: 1 },
-    });
-  });
-
-  it('reports the field with its own values when the rule does not', () => {
-    expect(run(2, 6)).toMatchObject({
-      differing: 1,
-      differences: [{ key: '0', path: 'n', left: '2', right: '6' }],
-      explained: {},
-    });
-  });
-
-  it('gives a parent back the self time its package children gained', () => {
-    const pkg = (total: number) => ({
-      type: 'ENTERING_MANAGED_PKG',
-      duration: { self: total, total },
-    });
-    const a: Entry[] = [
-      ['0', { type: 'METHOD_ENTRY', duration: { self: 10, total: 10 } }],
-      ['0/0', pkg(0)],
-    ];
-    const b: Entry[] = [
-      ['0', { type: 'METHOD_ENTRY', duration: { self: 7, total: 10 } }],
-      ['0/0', pkg(3)],
-    ];
-    expect(diffProjections(a, b, 20, explainer(a, b))).toMatchObject({
-      differing: 0,
-      explained: { 'package-duration': 2 },
-    });
+    expect(full).toHaveLength(parsed.eventCount + 1);
   });
 });
 
@@ -449,15 +283,5 @@ describe('report', () => {
     );
     expect(report).not.toContain('| 10.0 MB | 100 ms | 100 ms |');
     expect(report).not.toContain('big.log');
-  });
-
-  it('counts the known differences by rule, and the log as identical', () => {
-    const diff = { records: 3, differing: 0, differences: [], explained: { rule: 2 } };
-    const results: FileResult[] = [
-      { file: 'a.log', bytes: 100, runs: {}, diffs: { 'old→new (facts)': diff } },
-    ];
-    const report = renderReport(results, ['old', 'new']);
-    expect(report).toContain('1 of 1 identical');
-    expect(report).toContain('- `rule`: 2 fields in 1 logs');
   });
 });

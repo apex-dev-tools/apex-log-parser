@@ -5,7 +5,6 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
-import { utf8ByteLength } from '../../src/utf8.js';
 import type { LogShape, ProfileName } from '../fixtures/measure.js';
 import { LogTally, profileBands } from '../fixtures/measure.js';
 
@@ -19,7 +18,7 @@ export function bandOf(bytes: number): ProfileName {
 export function profile(logs: Iterable<string>): Partial<Record<ProfileName, LogShape>> {
   const tallies = new Map<ProfileName, LogTally>();
   for (const log of logs) {
-    const band = bandOf(utf8ByteLength(log));
+    const band = bandOf(Buffer.byteLength(log));
     const tally = tallies.get(band) ?? new LogTally();
     tally.add(log);
     tallies.set(band, tally);
