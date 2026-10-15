@@ -24,8 +24,8 @@ export const at = (ns: number): string => `09:00:00.0 (${ns})`;
 /** The log of `HEADER` and `lines`. */
 export const logOf = (...lines: string[]): ApexLog => parse([HEADER, ...lines].join('\n'));
 
-/** A code unit, a method, a SOQL query and a statement: 5 events, 2 at the top level. */
-export const method: string[] = [
+/** A code unit with a method, a SOQL query and a statement: 4 events, from 10 to 100 ns. */
+export const method: readonly string[] = [
   `${at(10)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
   `${at(20)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
   `${at(30)}|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Account`,
