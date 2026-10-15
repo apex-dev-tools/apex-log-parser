@@ -3,9 +3,10 @@
  * times them. Writes `results.jsonl` as it goes and `report.md` at the end.
  *
  * It diffs every later engine against the first, field by field. Naming one engine twice
- * (`--engines=current,current`) checks that its output is deterministic. Timing runs each engine's tsdown bundle, built into `<out>/bundle`; the diff runs
- * the source. `--runs=0` skips timing. `--baseline=<results.jsonl>`
- * adds each engine's change against an earlier run, matched by log path.
+ * (`--engines=current,current`) checks that its output is deterministic. Timing runs each
+ * engine's tsdown bundle, built into `<out>/bundle`; the diff runs the source. `--runs=0` skips
+ * timing. `--baseline=<results.jsonl>` adds each engine's change against an earlier run, matched
+ * by log path.
  *
  * Never commit the output: it names the logs, and the logs come from orgs.
  */
@@ -84,6 +85,9 @@ runIfMain(import.meta.url, async () => {
   const args = argv.slice(2);
   const dir = args.find((a) => !a.startsWith('--'));
   const out = flag(args, '--out');
+  // The facts-only mode is gone, and an unknown flag is otherwise ignored.
+  if (args.some((a) => a.startsWith('--projection')))
+    throw new Error('--projection is gone: the diff compares every field');
   if (!dir || !out) throw new Error(USAGE);
 
   const engines = (flag(args, '--engines') ?? 'current').split(',');

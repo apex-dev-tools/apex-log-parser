@@ -132,9 +132,9 @@ describe('currentProjection', () => {
       'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()',
       'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()\n*** Skipped 1,024 bytes of detailed log',
     );
-    const fact = records(projection(skipped)).get('log') as unknown as LogRecord;
-    expect(fact.entryPoints).toEqual([{ node: '0/0' }]);
-    expect(fact.truncation.regions).toEqual([
+    const record = records(projection(skipped)).get('log') as unknown as LogRecord;
+    expect(record.entryPoints).toEqual([{ node: '0/0' }]);
+    expect(record.truncation.regions).toEqual([
       expect.objectContaining({ at: { offTree: 'METHOD_EXIT', at: 7000000 }, skippedBytes: 1024 }),
     ]);
   });

@@ -46,6 +46,8 @@ applies.
   `--trace-deopt` for each build. It fails on any deopt in the loop, and on any deopt a GC causes.
   A tier up from Maglev to TurboFan in a hot loop (`prepare for on stack replacement`) is not a
   loss, and can land in the loop on a slower machine, so the test lets it through.
+- `scripts/runs.ts` — `median`, `runsFlag` and `timedRuns`: the repeat-and-median loop the scripts
+  share. `timedRuns` reads the heap each run, so it needs `--expose-gc`.
 - `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
   GC's freeing has finished. One `gc()` is not enough, because V8 frees buffer memory off the
   main thread.

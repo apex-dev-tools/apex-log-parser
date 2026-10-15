@@ -55,7 +55,7 @@ export function* currentProjection(log: ApexLog): Projection {
         };
 
   const limits = log.limits;
-  const fact = {
+  const record = {
     size: log.size,
     timestamp: log.timestamp,
     exitStamp: log.exitStamp,
@@ -97,7 +97,7 @@ export function* currentProjection(log: ApexLog): Projection {
       byNamespace: [...limits.byNamespace],
     },
   };
-  yield [LOG_KEY, fact];
+  yield [LOG_KEY, record];
 
   for (const event of log.events) {
     // Every event has a path: treePaths gives one to each.

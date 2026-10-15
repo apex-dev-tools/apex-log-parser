@@ -16,7 +16,7 @@ export interface Engine {
   readonly entry: string;
   /** Timed from the bytes, so an engine that must decode them first pays for it. */
   parse(module: unknown, bytes: Uint8Array): unknown;
-  /** Every field the result holds, to compare two runs. */
+  /** Every field the result holds. A second engine states the same fields, minus any it lacks. */
   project(result: unknown): Projection;
 }
 
