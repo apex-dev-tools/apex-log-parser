@@ -61,7 +61,6 @@ export function* currentProjection(log: ApexLog): Projection {
     exitStamp: log.exitStamp,
     duration: log.duration,
     startTime: log.startTime,
-    executionEndTime: log.executionEndTime,
     isTruncated: log.isTruncated,
     counts: countsOf(log),
     namespaces: [...log.namespaces],

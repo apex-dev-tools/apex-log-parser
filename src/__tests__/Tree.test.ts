@@ -261,17 +261,17 @@ describe('flows', () => {
 });
 
 describe("the log's times", () => {
-  it('ends the log at its last line, and the execution at the last frame that ends', () => {
+  it('ends the log at its last line', () => {
     const log = parse(
       PROCESS_BUILDER +
         '17:52:36.320 (1510000000)|FLOW_START_INTERVIEWS_BEGIN|2\n' +
         '17:52:36.320 (1520000000)|FLOW_START_INTERVIEWS_END|2\n' +
         '17:52:36.321 (1530000000)|FLOW_INTERVIEW_FINISHED_LIMIT_USAGE|SOQL queries: 0 out of 100',
     );
-    expect([log.exitStamp, log.executionEndTime]).toEqual([1530000000, 1520000000]);
+    expect(log.exitStamp).toBe(1530000000);
   });
 
-  it('states an execution end of 0 for a log of leaves only', () => {
+  it('ends the log at its last line for a log of leaves only', () => {
     const log = parse(
       [1500000000, 1510000000, 1520000000, 1530000000]
         .map(
@@ -280,7 +280,7 @@ describe("the log's times", () => {
         )
         .join('\n'),
     );
-    expect([log.exitStamp, log.executionEndTime]).toEqual([1530000000, 0]);
+    expect(log.exitStamp).toBe(1530000000);
   });
 });
 
@@ -302,7 +302,7 @@ describe('package entries', () => {
         '11:52:06.13 (1000)|ENTERING_MANAGED_PKG|ns2\n' +
         '11:52:06.13 (1100)|ENTERING_MANAGED_PKG|ns2\n',
     );
-    expect([log.children.length, log.exitStamp, log.executionEndTime]).toEqual([1, 1100, 1100]);
+    expect([log.children.length, log.exitStamp]).toEqual([1, 1100]);
     const top = kids(log.children[0]);
     expect(top.map((e) => [e.type, e.timestamp, e.exitStamp, e.namespace])).toEqual([
       // A three-part name states a namespace only once the log has stated it.
@@ -418,7 +418,7 @@ describe('the tree', () => {
       `${at(3)}|ENTERING_MANAGED_PKG|ns`,
     );
     expect(outline(log)).toEqual(['ENTERING_MANAGED_PKG@1-3', 'STATEMENT_EXECUTE@2']);
-    expect([log.exitStamp, log.executionEndTime]).toEqual([3, 2]);
+    expect(log.exitStamp).toBe(3);
   });
 
   it('reads a CRLF log as an LF log, and starts at the first timestamped line', () => {

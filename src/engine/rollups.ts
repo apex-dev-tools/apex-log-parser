@@ -19,20 +19,15 @@ export interface FlowTotal {
 
 /**
  * The last top-level package entry, when it merged into the run before it. v0 set the log's
- * times before the merge, so they still see it, and the kept entry's exit before the merge.
+ * times before the merge, so they still see it.
  */
 export interface MergedTail {
   /** Nanoseconds. */
   timestamp: number;
-  kept: number;
-  /** Nanoseconds; the kept entry's exit before this one merged. */
-  keptExit: number;
 }
 
 /** What `setLogTimes` finds besides row 0's times. */
 export interface LogTimes {
-  /** Nanoseconds: the exit of the last top-level event that has one, or 0. */
-  executionEndTime: number;
   /** The first top-level event with a time, or `NONE`. */
   first: number;
 }
@@ -41,13 +36,10 @@ export interface LogTimes {
 export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
   let first = NONE;
   let last = NONE;
-  let executionEnd = 0;
   // Each top-level event's subtree ends where the next one starts; every id here is a row.
   for (let id = 1; id < store.count; id = store.subtreeEnd[id]!) {
     if (first === NONE && store.timestamp[id]) first = id;
     last = id;
-    const exit = tail && id === tail.kept ? tail.keptExit : store.exitStamp[id]!;
-    if (exit) executionEnd = exit;
   }
   let end = 0;
   // Nothing follows a merged tail, so it has no exit of its own.
@@ -55,7 +47,7 @@ export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
   else if (last !== NONE) end = store.exitStamp[last]! || store.timestamp[last]!;
   store.timestamp[0] = first === NONE ? 0 : store.timestamp[first]!;
   store.exitStamp[0] = end;
-  return { executionEndTime: executionEnd, first };
+  return { first };
 }
 
 /**

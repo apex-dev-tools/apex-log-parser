@@ -71,7 +71,6 @@ function summary(log: ApexLog): unknown {
     columns: Object.fromEntries(Object.entries(log.columns).map(([k, v]) => [k, [...v]])),
     size: log.size,
     startTime: log.startTime,
-    executionEndTime: log.executionEndTime,
     isTruncated: log.isTruncated,
     truncation: {
       ...log.truncation,

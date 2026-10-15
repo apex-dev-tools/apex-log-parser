@@ -99,8 +99,6 @@ export interface ApexLog extends Rollups {
   readonly size: number;
   /** Milliseconds since midnight, from the first event's line; null when it states none. */
   readonly startTime: number | null;
-  /** Nanoseconds: the end of the last event at the top that has one, or 0. */
-  readonly executionEndTime: number;
   /** The platform did not write part of the log. A frame with no exit does not count. */
   readonly isTruncated: boolean;
   /** The parts of the log the platform did not write. */
@@ -257,10 +255,6 @@ class LogView extends RollupView implements ApexLog {
 
   get startTime(): number | null {
     return this.built.startTime;
-  }
-
-  get executionEndTime(): number {
-    return this.built.executionEndTime;
   }
 
   get isTruncated(): boolean {

@@ -36,7 +36,6 @@ describe('ApexLog', () => {
       { self: 0, total: 1 },
       { self: 0, total: 4 },
     ]);
-    expect(log.executionEndTime).toBe(100);
   });
 
   it('lists the events of the given types in id order, once each', () => {
