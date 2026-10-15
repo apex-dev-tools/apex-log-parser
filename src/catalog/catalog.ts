@@ -97,8 +97,9 @@ interface CommonDef {
   readonly after?: AfterRule;
 }
 
+/** A frame states `exits` or `closes`, which is what makes its shape a frame. */
 interface FrameDef extends CommonDef {
-  readonly shape: 'frame';
+  readonly shape?: never;
   readonly category: Category;
   readonly cpu: CpuType;
   readonly suffix?: string;
@@ -266,7 +267,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   CALLOUT_REQUEST: {
     fields: ['line', 'request'],
-    shape: 'frame',
     exits: ['CALLOUT_RESPONSE'],
     category: 'Callout',
     debugCategory: 'callout',
@@ -297,7 +297,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CODE_UNIT_STARTED: {
     namespace: 'codeUnit',
     fields: ['line', 'unit', 'name', 'typeRef'],
-    shape: 'frame',
     kind: 'code-unit',
     exits: ['CODE_UNIT_FINISHED'],
     category: 'Code Unit',
@@ -311,7 +310,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CONSTRUCTOR_ENTRY: {
     namespace: 'constructor',
     fields: ['line', 'classId', 'signature', 'className'],
-    shape: 'frame',
     kind: 'method',
     exits: ['CONSTRUCTOR_EXIT'],
     category: 'Apex',
@@ -328,7 +326,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   CUMULATIVE_LIMIT_USAGE: {
     namespace: 'none',
-    shape: 'frame',
     kind: 'limits',
     exits: ['CUMULATIVE_LIMIT_USAGE_END'],
     category: 'System',
@@ -349,7 +346,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   CUMULATIVE_PROFILING_BEGIN: {
     namespace: 'none',
-    shape: 'frame',
     exits: ['CUMULATIVE_PROFILING_END'],
     category: 'System',
     debugCategory: 'apexProfiling',
@@ -359,7 +355,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CUMULATIVE_PROFILING_END: { shape: 'exit' },
   CURSOR_CREATE_BEGIN: {
     fields: ['line', 'soqlQuery'],
-    shape: 'frame',
     kind: 'soql',
     exits: ['CURSOR_CREATE_END'],
     category: 'SOQL',
@@ -399,7 +394,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     rows: { field: 'rows', of: 'dml' },
     namespace: 'none',
     fields: ['line', 'operation', 'objectType', 'rows'],
-    shape: 'frame',
     kind: 'dml',
     exits: ['DML_END'],
     category: 'DML',
@@ -413,7 +407,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     shape: 'exit',
   },
   DUPLICATE_DETECTION_BEGIN: {
-    shape: 'frame',
     exits: ['DUPLICATE_DETECTION_END'],
     category: 'System',
     debugCategory: 'system',
@@ -457,7 +450,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   ENTERING_MANAGED_PKG: {
     namespace: 'package',
     fields: ['namespace'],
-    shape: 'frame',
     kind: 'package',
     closes: 'next-event',
     category: 'Apex',
@@ -469,7 +461,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   EVENT_SERVICE_PUB_BEGIN: {
     fields: ['eventType'],
-    shape: 'frame',
     exits: ['EVENT_SERVICE_PUB_END'],
     category: 'Automation',
     debugCategory: 'workflow',
@@ -490,7 +481,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   EVENT_SERVICE_SUB_BEGIN: {
     fields: ['eventType', 'action'],
-    shape: 'frame',
     exits: ['EVENT_SERVICE_SUB_END'],
     category: 'Automation',
     debugCategory: 'workflow',
@@ -538,7 +528,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   EXECUTION_STARTED: {
     namespace: 'none',
-    shape: 'frame',
     kind: 'execution',
     exits: ['EXECUTION_FINISHED'],
     category: 'Apex',
@@ -583,7 +572,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   FLOW_BULK_ELEMENT_BEGIN: {
     fields: ['interviewId', 'elementType'],
-    shape: 'frame',
     kind: 'flow',
     exits: ['FLOW_BULK_ELEMENT_END'],
     category: 'Automation',
@@ -645,7 +633,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   FLOW_ELEMENT_BEGIN: {
     fields: ['interviewId', 'elementType', 'elementName'],
-    shape: 'frame',
     kind: 'flow',
     exits: ['FLOW_ELEMENT_END'],
     category: 'Automation',
@@ -740,7 +727,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   FLOW_START_INTERVIEW_BEGIN: {
     fields: ['interviewId', 'flowName'],
-    shape: 'frame',
     kind: 'flow',
     exits: ['FLOW_START_INTERVIEW_END'],
     category: 'Automation',
@@ -764,7 +750,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   // Text and suffix come from its first interview and what started it: `views/lines.ts`.
   FLOW_START_INTERVIEWS_BEGIN: {
     fields: ['requests'],
-    shape: 'frame',
     kind: 'flow',
     exits: ['FLOW_START_INTERVIEWS_END'],
     category: 'Automation',
@@ -838,7 +823,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   FOR_UPDATE_LOCKS_RELEASE: { debugCategory: 'database', level: 'WARN' },
   FORMULA_BUILD: { debugCategory: 'apexCode', level: 'DEBUG' },
   FORMULA_EVALUATE_BEGIN: {
-    shape: 'frame',
     exits: ['FORMULA_EVALUATE_END'],
     category: 'Apex',
     debugCategory: 'apexCode',
@@ -915,7 +899,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     after: limitsForNamespaceAfter,
   },
   MATCH_ENGINE_BEGIN: {
-    shape: 'frame',
     exits: ['MATCH_ENGINE_END'],
     category: 'System',
     debugCategory: 'system',
@@ -931,7 +914,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   METHOD_ENTRY: {
     namespace: 'method',
     fields: ['line', 'classId', 'signature'],
-    shape: 'frame',
     kind: 'method',
     exits: ['METHOD_EXIT'],
     category: 'Apex',
@@ -997,7 +979,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   NBA_NODE_BEGIN: {
     fields: ['elementName', 'elementType'],
-    shape: 'frame',
     exits: ['NBA_NODE_END'],
     category: 'Automation',
     debugCategory: 'nba',
@@ -1030,7 +1011,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   NBA_STRATEGY_BEGIN: {
     fields: ['strategyName'],
-    shape: 'frame',
     exits: ['NBA_STRATEGY_END'],
     category: 'Automation',
     debugCategory: 'nba',
@@ -1053,7 +1033,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   ORG_CACHE_GET: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   ORG_CACHE_GET_BEGIN: {
     fields: ['key'],
-    shape: 'frame',
     kind: 'cache',
     exits: ['ORG_CACHE_GET_END'],
     category: 'Apex',
@@ -1076,7 +1055,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   ORG_CACHE_PUT: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   ORG_CACHE_PUT_BEGIN: {
     fields: ['key'],
-    shape: 'frame',
     kind: 'cache',
     exits: ['ORG_CACHE_PUT_END'],
     category: 'Apex',
@@ -1088,7 +1066,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   ORG_CACHE_REMOVE: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   ORG_CACHE_REMOVE_BEGIN: {
     fields: ['key'],
-    shape: 'frame',
     kind: 'cache',
     exits: ['ORG_CACHE_REMOVE_END'],
     category: 'Apex',
@@ -1181,7 +1158,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   QUERY_MORE_BEGIN: {
     fields: ['line'],
-    shape: 'frame',
     kind: 'soql',
     exits: ['QUERY_MORE_END'],
     category: 'SOQL',
@@ -1212,7 +1188,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'FINEST',
   },
   RLM_CONFIGURATOR_BEGIN: {
-    shape: 'frame',
     exits: ['RLM_CONFIGURATOR_END'],
     category: 'System',
     debugCategory: 'system',
@@ -1223,7 +1198,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   RLM_CONFIGURATOR_END: { shape: 'exit' },
   RLM_CONFIGURATOR_STATS: { debugCategory: 'system', level: 'FINE' },
   RLM_PRICING_BEGIN: {
-    shape: 'frame',
     exits: ['RLM_PRICING_END'],
     category: 'System',
     debugCategory: 'system',
@@ -1254,7 +1228,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SESSION_CACHE_GET: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   SESSION_CACHE_GET_BEGIN: {
     fields: ['key'],
-    shape: 'frame',
     kind: 'cache',
     exits: ['SESSION_CACHE_GET_END'],
     category: 'Apex',
@@ -1277,7 +1250,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SESSION_CACHE_PUT: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   SESSION_CACHE_PUT_BEGIN: {
     fields: ['key'],
-    shape: 'frame',
     kind: 'cache',
     exits: ['SESSION_CACHE_PUT_END'],
     category: 'Apex',
@@ -1291,7 +1263,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SESSION_CACHE_REMOVE: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   SESSION_CACHE_REMOVE_BEGIN: {
     fields: ['key'],
-    shape: 'frame',
     kind: 'cache',
     exits: ['SESSION_CACHE_REMOVE_END'],
     category: 'Apex',
@@ -1325,7 +1296,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SOQL_EXECUTE_BEGIN: {
     count: 'soql',
     fields: ['line', 'aggregations', 'query'],
-    shape: 'frame',
     kind: 'soql',
     exits: ['SOQL_EXECUTE_END'],
     category: 'SOQL',
@@ -1349,7 +1319,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   SOSL_EXECUTE_BEGIN: {
     count: 'sosl',
     fields: ['line', 'query'],
-    shape: 'frame',
     kind: 'sosl',
     exits: ['SOSL_EXECUTE_END'],
     category: 'SOQL',
@@ -1385,7 +1354,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   SYSTEM_CONSTRUCTOR_ENTRY: {
     fields: ['line', 'signature'],
-    shape: 'frame',
     kind: 'method',
     exits: ['SYSTEM_CONSTRUCTOR_EXIT'],
     category: 'System',
@@ -1401,7 +1369,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   SYSTEM_METHOD_ENTRY: {
     fields: ['line', 'signature'],
-    shape: 'frame',
     kind: 'method',
     exits: ['SYSTEM_METHOD_EXIT'],
     category: 'System',
@@ -1536,7 +1503,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_APEX_CALL_START: {
     hook: 'vfApexCall',
     fields: ['line', 'element', 'method', 'controller'],
-    shape: 'frame',
     kind: 'method',
     exits: ['VF_APEX_CALL_END'],
     category: 'Apex',
@@ -1548,7 +1514,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: vfApexCallText,
   },
   VF_DESERIALIZE_CONTINUATION_STATE_BEGIN: {
-    shape: 'frame',
     exits: ['VF_DESERIALIZE_CONTINUATION_STATE_END'],
     category: 'Apex',
     debugCategory: 'visualforce',
@@ -1560,7 +1525,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_DESERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
-    shape: 'frame',
     exits: ['VF_DESERIALIZE_VIEWSTATE_END'],
     category: 'System',
     debugCategory: 'visualforce',
@@ -1572,7 +1536,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_EVALUATE_FORMULA_BEGIN: {
     fields: ['viewStateId', 'formula'],
-    shape: 'frame',
     exits: ['VF_EVALUATE_FORMULA_END'],
     category: 'System',
     debugCategory: 'visualforce',
@@ -1593,7 +1556,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     text: at('message'),
   },
   VF_SERIALIZE_CONTINUATION_STATE_BEGIN: {
-    shape: 'frame',
     exits: ['VF_SERIALIZE_CONTINUATION_STATE_END'],
     category: 'Apex',
     debugCategory: 'visualforce',
@@ -1605,7 +1567,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_SERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
-    shape: 'frame',
     exits: ['VF_SERIALIZE_VIEWSTATE_END'],
     category: 'System',
     debugCategory: 'visualforce',
@@ -1637,7 +1598,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_APEX_ACTION: { debugCategory: 'workflow', level: 'INFO' },
   WF_APPROVAL: {
     fields: ['transitionType', 'record', 'nodeName'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1653,7 +1613,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_APPROVAL_SUBMIT: {
     fields: ['submissionDetails'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1680,7 +1639,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_CRITERIA_BEGIN: {
     fields: ['record', 'ruleName', 'ruleId', 'triggerType', 'recursiveCount'],
-    shape: 'frame',
     exits: ['WF_CRITERIA_END', 'WF_RULE_NOT_EVALUATED'],
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1694,7 +1652,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_EMAIL_ALERT: {
     fields: ['alert'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1704,7 +1661,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_EMAIL_SENT: {
     fields: ['template', 'recipients', 'ccEmails'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1727,7 +1683,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_ESCALATION_RULE: { debugCategory: 'workflow', level: 'INFO' },
   WF_EVAL_ENTRY_CRITERIA: {
     fields: ['processName', 'emailTemplateId', 'result'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1737,7 +1692,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_FIELD_UPDATE: {
     fields: ['record', 'field', 'value', 'detail', 'currentRule'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1777,7 +1731,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_FORMULA: {
     fields: ['formula', 'values'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1795,7 +1748,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_NEXT_APPROVER: {
     fields: ['owner', 'nextOwnerType', 'field'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1812,7 +1764,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_PROCESS_FOUND: {
     fields: ['process', 'label'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1822,7 +1773,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_PROCESS_NODE: {
     fields: ['processName'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1851,7 +1801,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_RULE_EVAL_BEGIN: {
     fields: ['ruleType'],
-    shape: 'frame',
     exits: ['WF_RULE_EVAL_END'],
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1875,7 +1824,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   WF_RULE_INVOCATION: {
     fields: ['rule'],
-    shape: 'frame',
     closes: 'next-line',
     category: 'Automation',
     debugCategory: 'workflow',
@@ -1981,7 +1929,7 @@ function infoOf(type: EventType, typeId: number): EventTypeInfo {
     typeId,
     type,
     fields: Object.freeze(fieldNamesOf(type)),
-    shape: def.shape ?? 'leaf',
+    shape: def.exits || def.closes ? 'frame' : (def.shape ?? 'leaf'),
     kind: kind ?? (KINDS.has(debugCategory) ? (debugCategory as Kind) : 'other'),
     category: def.category ?? null,
     debugCategory,
@@ -2010,7 +1958,7 @@ function grammarOf(type: EventType): Grammar {
   const reads = (rule: string, names: readonly string[]): readonly number[] =>
     names.length ? Object.freeze(names.map(positionIn(type, rule))) : NO_POSITIONS;
   return Object.freeze({
-    closes: def.shape === 'frame' ? (def.closes ?? 'exit') : null,
+    closes: def.exits ? 'exit' : (def.closes ?? null),
     lineField: line < 0 ? -1 : line + FIRST_FIELD,
     acceptsText: def.acceptsText ?? false,
     discontinuity: def.discontinuity ?? false,
