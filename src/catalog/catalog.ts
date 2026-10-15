@@ -87,7 +87,10 @@ const HOOK_FIELDS: { readonly [H in Hook]: readonly string[] } = {
 export type Closes = 'exit' | 'next-line' | 'next-event';
 
 interface CommonDef {
-  /** Omit when it equals the `debugCategory`, as for `callout`; else `other` when omitted. */
+  /**
+   * Omit to take the `debugCategory` when that is a kind, as for `callout`, else `other`. State
+   * `other` to opt out.
+   */
   readonly kind?: Kind;
   readonly debugCategory: DebugCategory;
   readonly level: Level;
@@ -99,6 +102,7 @@ interface CommonDef {
 
 /** A frame states `exits` or `closes`, which is what makes its shape a frame. */
 interface FrameDef extends CommonDef {
+  /** Not stated: a frame states `exits` or `closes`, which make its shape. */
   readonly shape?: never;
   readonly category: Category;
   readonly cpu: CpuType;
@@ -119,6 +123,7 @@ interface OtherClosedDef extends FrameDef {
 
 interface PointDef extends CommonDef {
   readonly shape?: Exclude<Shape, 'frame' | 'exit'>;
+  /** Only a frame states a category. A frame also states `exits` or `closes`. */
   readonly category?: never;
   readonly cpu?: never;
   readonly suffix?: never;
@@ -129,6 +134,7 @@ interface PointDef extends CommonDef {
 /** An exit line. Its `debugCategory`, `level` and `kind` are those of the frame that lists it in `exits`. */
 interface ExitDef extends Omit<CommonDef, 'debugCategory' | 'level' | 'kind'> {
   readonly shape: 'exit';
+  /** Not stated: the frame that lists this exit in `exits` states `debugCategory`, `level` and `kind`. */
   readonly debugCategory?: never;
   readonly level?: never;
   readonly kind?: never;
@@ -1900,24 +1906,34 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
 
 const typeIds = new Map(EVENT_TYPE_NAMES.map((type, typeId) => [type, typeId]));
 
-/** The frame that lists each exit type in its `exits`. */
-const OPENER = new Map<EventType, EventType>();
-for (const type of EVENT_TYPE_NAMES) {
-  for (const exit of ENTRIES[type].exits ?? NO_TYPES) {
-    if (OPENER.has(exit)) throw new Error(`${exit}: two frames list it in exits`);
-    OPENER.set(exit, type);
+interface Stated {
+  readonly debugCategory: DebugCategory;
+  readonly level: Level;
+  readonly kind?: Kind;
+}
+
+/** The frame that lists each exit type in its `exits`, and what that frame states. */
+const FRAME_OF = new Map<EventType, { frame: EventType; stated: Stated }>();
+for (const frame of EVENT_TYPE_NAMES) {
+  const def = ENTRIES[frame];
+  if (!def.exits) continue;
+  for (const exit of def.exits) {
+    const first = FRAME_OF.get(exit);
+    if (first) throw new Error(`${exit}: listed in exits by ${first.frame} and ${frame}; keep one`);
+    FRAME_OF.set(exit, { frame, stated: def });
   }
 }
 
 /** What an entry states for its type info; an exit entry states none, so its frame's apply. */
-function statedBy(type: EventType): { debugCategory: DebugCategory; level: Level; kind?: Kind } {
+function statedBy(type: EventType): Stated {
   const def = ENTRIES[type];
   if (def.shape !== 'exit') return def;
-  const opener = OPENER.get(type);
-  if (!opener) throw new Error(`${type}: an exit entry, but no frame lists it in exits`);
-  const frame = ENTRIES[opener];
-  if (frame.shape === 'exit') throw new Error(`${opener}: an exit entry lists exits`);
-  return frame;
+  const of = FRAME_OF.get(type);
+  if (!of)
+    throw new Error(
+      `${type}: states shape 'exit', but no frame lists it in exits; add it to its frame's exits`,
+    );
+  return of.stated;
 }
 
 const KINDS: ReadonlySet<string> = new Set(Object.values(KIND));

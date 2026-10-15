@@ -151,6 +151,10 @@ than the test run. Run both.
    declares it in the entry: `count`, `rows`, `heap`, `namespace`. Scan-time work no declaration
    states is a `hook`, which the engine runs. Text, suffix and cpuType work is not: the views do
    it.
+   An exit line states `shape: 'exit'`, its `fields` and its `text`. Its category, level and kind
+   come from the frame that lists it in `exits`. A frame states `exits` or `closes`, not a shape.
+   Omit `kind` when the debug category is also a kind, such as `callout`. State `kind: 'other'` to
+   opt out.
 3. `src/catalog/fields.ts` — document it in `EventFields`: the data JSON description, then each
    field with its `Format:`. Add the `@remarks` line unless a real log confirms the layout.
 4. `data/salesforce-debug-log-events.json` — via `pnpm scrape`, once Salesforce documents it.
