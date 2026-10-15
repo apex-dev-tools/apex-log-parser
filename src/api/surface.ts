@@ -8,7 +8,6 @@
 export { EVENT_TYPES, eventType } from '../catalog/catalog.js';
 export type { EventFields } from '../catalog/fields.js';
 export type {
-  Category,
   CpuType,
   DebugCategory,
   DebugCategoryToken,
@@ -19,7 +18,6 @@ export type {
   Shape,
 } from '../catalog/types.js';
 export {
-  CATEGORY,
   CPU_TYPE,
   DEBUG_CATEGORY,
   DEBUG_CATEGORY_TOKEN,

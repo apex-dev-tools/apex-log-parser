@@ -5,7 +5,6 @@ import type {
   AnyDetails,
   ApexEvent,
   ApexLog,
-  Category,
   Columns,
   CpuType,
   DebugCategory,
@@ -61,7 +60,6 @@ import * as node from '../node.js';
 // The package root is what every consumer imports, so a change to it must be deliberate.
 // Object.keys sees runtime bindings only, hence the type positions below.
 const PUBLIC_EXPORTS = [
-  'CATEGORY',
   'CPU_TYPE',
   'DEBUG_CATEGORY',
   'DEBUG_CATEGORY_TOKEN',
@@ -86,7 +84,6 @@ interface PublicTypeSurface {
   anyDetails: AnyDetails;
   apexEvent: ApexEvent;
   apexLog: ApexLog;
-  category: Category;
   columns: Columns;
   cpuType: CpuType;
   debugCategory: DebugCategory;

@@ -4,7 +4,6 @@
 import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
 import type { EventFields } from '../catalog/fields.js';
 import type {
-  Category,
   CpuType,
   DebugCategory,
   EventType,
@@ -49,8 +48,6 @@ interface EventBase extends Rollups {
   readonly id: number;
   readonly type: EventType;
   readonly kind: Kind;
-  /** The timeline group. Null for a type outside the timeline. */
-  readonly category: Category | null;
   readonly debugCategory: DebugCategory;
   readonly debugLevel: Level;
   /** 1 for an event at the top of the log, which is depth 0, as `columns.depth` states. */
@@ -268,10 +265,6 @@ class EventView extends RollupView {
 
   get kind(): Kind {
     return this.info.kind;
-  }
-
-  get category(): Category | null {
-    return this.info.category;
   }
 
   get debugCategory(): DebugCategory {

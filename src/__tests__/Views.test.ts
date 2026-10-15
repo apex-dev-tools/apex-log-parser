@@ -48,12 +48,7 @@ describe('events', () => {
     ]);
     // The namespace rules give `ns.MyClass.run()` no namespace of its own, nor the code unit one.
     expect([run.lineNumber, run.namespace, run.isTruncated]).toEqual([1, null, false]);
-    expect([run.kind, run.category, run.debugCategory, run.debugLevel]).toEqual([
-      'method',
-      'Apex',
-      'apexCode',
-      'FINE',
-    ]);
+    expect([run.kind, run.debugCategory, run.debugLevel]).toEqual(['method', 'apexCode', 'FINE']);
     expect(log.event(1)?.lineNumber).toBe('EXTERNAL');
   });
 

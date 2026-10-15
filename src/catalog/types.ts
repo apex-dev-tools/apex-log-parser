@@ -308,21 +308,6 @@ export const EVENT_TYPE_NAMES = [
 /** An event type name, such as `SOQL_EXECUTE_BEGIN`. */
 export type EventType = (typeof EVENT_TYPE_NAMES)[number];
 
-/** The timeline groups. */
-export const CATEGORY = {
-  Apex: 'Apex',
-  System: 'System',
-  CodeUnit: 'Code Unit',
-  Automation: 'Automation',
-  DML: 'DML',
-  SOQL: 'SOQL',
-  Validation: 'Validation',
-  Callout: 'Callout',
-} as const;
-
-/** The timeline group an event type belongs to. */
-export type Category = (typeof CATEGORY)[keyof typeof CATEGORY];
-
 /** The Salesforce debug log categories, keyed by the token the log header uses for each. */
 export const DEBUG_CATEGORY = {
   APEX_CODE: 'apexCode',
@@ -430,8 +415,6 @@ export interface EventTypeInfo {
   readonly fields: readonly string[];
   readonly shape: Shape;
   readonly kind: Kind;
-  /** The timeline group. Null for a type outside the timeline, such as a leaf or an exit line. */
-  readonly category: Category | null;
   /** The Salesforce debug log category, which indexes `ApexLog.debugLevels`. */
   readonly debugCategory: DebugCategory;
   /** The debug level at which Salesforce writes this type. */

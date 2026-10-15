@@ -23,7 +23,6 @@ import {
   wfFormulaAfter,
 } from './text.js';
 import type {
-  Category,
   CpuType,
   DebugCategory,
   EventType,
@@ -104,7 +103,6 @@ interface CommonDef {
 interface FrameDef extends CommonDef {
   /** Not stated: a frame states `exits` or `closes`, which make its shape. */
   readonly shape?: never;
-  readonly category: Category;
   readonly cpu: CpuType;
 }
 
@@ -122,8 +120,6 @@ interface OtherClosedDef extends FrameDef {
 
 interface PointDef extends CommonDef {
   readonly shape?: Exclude<Shape, 'frame' | 'exit'>;
-  /** Only a frame states a category. A frame also states `exits` or `closes`. */
-  readonly category?: never;
   readonly cpu?: never;
   readonly exits?: never;
   readonly closes?: never;
@@ -136,7 +132,6 @@ interface ExitDef extends Omit<CommonDef, 'debugCategory' | 'level' | 'kind'> {
   readonly debugCategory?: never;
   readonly level?: never;
   readonly kind?: never;
-  readonly category?: never;
   readonly cpu?: never;
   readonly exits?: never;
   readonly closes?: never;
@@ -270,7 +265,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CALLOUT_REQUEST: {
     fields: ['line', 'request'],
     exits: ['CALLOUT_RESPONSE'],
-    category: 'Callout',
     debugCategory: 'callout',
     level: 'INFO',
     cpu: 'free',
@@ -301,7 +295,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'unit', 'name', 'typeRef'],
     kind: 'code-unit',
     exits: ['CODE_UNIT_FINISHED'],
-    category: 'Code Unit',
     debugCategory: 'apexCode',
     level: 'ERROR',
     cpu: 'method',
@@ -313,7 +306,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'classId', 'signature', 'className'],
     kind: 'method',
     exits: ['CONSTRUCTOR_EXIT'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINE',
     cpu: 'method',
@@ -328,7 +320,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     namespace: 'none',
     kind: 'limits',
     exits: ['CUMULATIVE_LIMIT_USAGE_END'],
-    category: 'System',
     debugCategory: 'apexProfiling',
     level: 'INFO',
     cpu: 'system',
@@ -347,7 +338,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CUMULATIVE_PROFILING_BEGIN: {
     namespace: 'none',
     exits: ['CUMULATIVE_PROFILING_END'],
-    category: 'System',
     debugCategory: 'apexProfiling',
     level: 'FINE',
     cpu: 'custom',
@@ -357,7 +347,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'soqlQuery'],
     kind: 'soql',
     exits: ['CURSOR_CREATE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
     cpu: 'method',
@@ -396,7 +385,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'operation', 'objectType', 'rows'],
     kind: 'dml',
     exits: ['DML_END'],
-    category: 'DML',
     debugCategory: 'database',
     level: 'INFO',
     cpu: 'free',
@@ -408,7 +396,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   DUPLICATE_DETECTION_BEGIN: {
     exits: ['DUPLICATE_DETECTION_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'INFO',
     cpu: 'custom',
@@ -452,7 +439,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['namespace'],
     kind: 'package',
     closes: 'next-event',
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINE',
     cpu: 'pkg',
@@ -461,7 +447,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   EVENT_SERVICE_PUB_BEGIN: {
     fields: ['eventType'],
     exits: ['EVENT_SERVICE_PUB_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -481,7 +466,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   EVENT_SERVICE_SUB_BEGIN: {
     fields: ['eventType', 'action'],
     exits: ['EVENT_SERVICE_SUB_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -529,7 +513,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     namespace: 'none',
     kind: 'execution',
     exits: ['EXECUTION_FINISHED'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'ERROR',
     cpu: 'method',
@@ -573,7 +556,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['interviewId', 'elementType'],
     kind: 'flow',
     exits: ['FLOW_BULK_ELEMENT_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'FINE',
     cpu: 'custom',
@@ -634,7 +616,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['interviewId', 'elementType', 'elementName'],
     kind: 'flow',
     exits: ['FLOW_ELEMENT_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'FINE',
     cpu: 'custom',
@@ -728,7 +709,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['interviewId', 'flowName'],
     kind: 'flow',
     exits: ['FLOW_START_INTERVIEW_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -750,7 +730,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['requests'],
     kind: 'flow',
     exits: ['FLOW_START_INTERVIEWS_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -822,7 +801,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   FORMULA_BUILD: { debugCategory: 'apexCode', level: 'DEBUG' },
   FORMULA_EVALUATE_BEGIN: {
     exits: ['FORMULA_EVALUATE_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINER',
     cpu: 'method',
@@ -898,7 +876,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   MATCH_ENGINE_BEGIN: {
     exits: ['MATCH_ENGINE_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'INFO',
     cpu: 'method',
@@ -914,7 +891,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'classId', 'signature'],
     kind: 'method',
     exits: ['METHOD_EXIT'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINE',
     cpu: 'method',
@@ -978,7 +954,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   NBA_NODE_BEGIN: {
     fields: ['elementName', 'elementType'],
     exits: ['NBA_NODE_END'],
-    category: 'Automation',
     debugCategory: 'nba',
     level: 'FINE',
     cpu: 'method',
@@ -1010,7 +985,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   NBA_STRATEGY_BEGIN: {
     fields: ['strategyName'],
     exits: ['NBA_STRATEGY_END'],
-    category: 'Automation',
     debugCategory: 'nba',
     level: 'FINE',
     cpu: 'method',
@@ -1033,7 +1007,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['ORG_CACHE_GET_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
     cpu: 'method',
@@ -1055,7 +1028,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['ORG_CACHE_PUT_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
     cpu: 'method',
@@ -1066,7 +1038,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['ORG_CACHE_REMOVE_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
     cpu: 'method',
@@ -1158,7 +1129,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line'],
     kind: 'soql',
     exits: ['QUERY_MORE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
     cpu: 'custom',
@@ -1187,7 +1157,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   RLM_CONFIGURATOR_BEGIN: {
     exits: ['RLM_CONFIGURATOR_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
     cpu: 'method',
@@ -1197,7 +1166,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   RLM_CONFIGURATOR_STATS: { debugCategory: 'system', level: 'FINE' },
   RLM_PRICING_BEGIN: {
     exits: ['RLM_PRICING_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
     cpu: 'method',
@@ -1228,7 +1196,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['SESSION_CACHE_GET_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
     cpu: 'method',
@@ -1250,7 +1217,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['SESSION_CACHE_PUT_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
     cpu: 'method',
@@ -1263,7 +1229,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['SESSION_CACHE_REMOVE_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
     cpu: 'method',
@@ -1296,7 +1261,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'aggregations', 'query'],
     kind: 'soql',
     exits: ['SOQL_EXECUTE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
     cpu: 'free',
@@ -1319,7 +1283,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'query'],
     kind: 'sosl',
     exits: ['SOSL_EXECUTE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
     cpu: 'free',
@@ -1354,7 +1317,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'signature'],
     kind: 'method',
     exits: ['SYSTEM_CONSTRUCTOR_EXIT'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
     cpu: 'method',
@@ -1368,7 +1330,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'signature'],
     kind: 'method',
     exits: ['SYSTEM_METHOD_EXIT'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
     cpu: 'method',
@@ -1502,7 +1463,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'element', 'method', 'controller'],
     kind: 'method',
     exits: ['VF_APEX_CALL_END'],
-    category: 'Apex',
     debugCategory: 'visualforce',
     level: 'FINE',
     cpu: 'method',
@@ -1511,7 +1471,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_DESERIALIZE_CONTINUATION_STATE_BEGIN: {
     exits: ['VF_DESERIALIZE_CONTINUATION_STATE_END'],
-    category: 'Apex',
     debugCategory: 'visualforce',
     level: 'INFO',
     cpu: 'method',
@@ -1522,7 +1481,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_DESERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
     exits: ['VF_DESERIALIZE_VIEWSTATE_END'],
-    category: 'System',
     debugCategory: 'visualforce',
     level: 'INFO',
     cpu: 'method',
@@ -1533,7 +1491,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_EVALUATE_FORMULA_BEGIN: {
     fields: ['viewStateId', 'formula'],
     exits: ['VF_EVALUATE_FORMULA_END'],
-    category: 'System',
     debugCategory: 'visualforce',
     level: 'FINER',
     cpu: 'custom',
@@ -1552,7 +1509,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_SERIALIZE_CONTINUATION_STATE_BEGIN: {
     exits: ['VF_SERIALIZE_CONTINUATION_STATE_END'],
-    category: 'Apex',
     debugCategory: 'visualforce',
     level: 'INFO',
     cpu: 'method',
@@ -1563,7 +1519,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_SERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
     exits: ['VF_SERIALIZE_VIEWSTATE_END'],
-    category: 'System',
     debugCategory: 'visualforce',
     level: 'INFO',
     cpu: 'method',
@@ -1594,7 +1549,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_APPROVAL: {
     fields: ['transitionType', 'record', 'nodeName'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1609,7 +1563,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_APPROVAL_SUBMIT: {
     fields: ['submissionDetails'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1635,7 +1588,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_CRITERIA_BEGIN: {
     fields: ['record', 'ruleName', 'ruleId', 'triggerType', 'recursiveCount'],
     exits: ['WF_CRITERIA_END', 'WF_RULE_NOT_EVALUATED'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1648,7 +1600,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_EMAIL_ALERT: {
     fields: ['alert'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1657,7 +1608,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_EMAIL_SENT: {
     fields: ['template', 'recipients', 'ccEmails'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1679,7 +1629,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_EVAL_ENTRY_CRITERIA: {
     fields: ['processName', 'emailTemplateId', 'result'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1688,7 +1637,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_FIELD_UPDATE: {
     fields: ['record', 'field', 'value', 'detail', 'currentRule'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1727,7 +1675,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_FORMULA: {
     fields: ['formula', 'values'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1744,7 +1691,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_NEXT_APPROVER: {
     fields: ['owner', 'nextOwnerType', 'field'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1760,7 +1706,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_PROCESS_FOUND: {
     fields: ['process', 'label'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1769,7 +1714,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_PROCESS_NODE: {
     fields: ['processName'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1797,7 +1741,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_RULE_EVAL_BEGIN: {
     fields: ['ruleType'],
     exits: ['WF_RULE_EVAL_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1820,7 +1763,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_RULE_INVOCATION: {
     fields: ['rule'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
@@ -1936,7 +1878,6 @@ function infoOf(type: EventType, typeId: number): EventTypeInfo {
     fields: Object.freeze(fieldNamesOf(type)),
     shape: def.exits || def.closes ? 'frame' : (def.shape ?? 'leaf'),
     kind: kind ?? (KINDS.has(debugCategory) ? (debugCategory as Kind) : 'other'),
-    category: def.category ?? null,
     debugCategory,
     debugLevel: level,
     exitTypes: def.exits ? Object.freeze(def.exits) : NO_TYPES,

@@ -69,7 +69,7 @@ An event type's number, the same in every parse and every release. Not an event'
 _Avoid_: id (alone), type index
 
 **Type info**:
-What is true of every event of one type: its category, debug category, level, kind and exit types.
+What is true of every event of one type: its debug category, level, kind and exit types.
 It belongs to the type, never to one event.
 _Avoid_: event metadata
 
@@ -91,10 +91,6 @@ _Avoid_: kind (a different thing, see below)
 What an event type means for analysis: a method frame, an execution, a package boundary, a SOQL
 query, a SOSL search, a DML operation, and so on.
 _Avoid_: classification
-
-**Category**:
-The timeline group an event type belongs to, such as Apex, SOQL or Automation. Not the Salesforce
-debug category.
 
 **Debug category**:
 The Salesforce debug log category an event type belongs to, such as `apexCode` or `database`.
