@@ -45,10 +45,10 @@
     "bench:async": "node --max-old-space-size=8192 --import tsx benchmarks/scripts/async.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
+    "@biomejs/biome": "^2.5.15",
     "@changesets/cli": "^3.0.3",
     "@codspeed/vitest-plugin": "^5.7.1",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "node-html-parser": "^9.0.4",
