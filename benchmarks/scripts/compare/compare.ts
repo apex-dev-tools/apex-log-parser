@@ -2,11 +2,11 @@
  * Runs every log in a folder through the parse engines, checks they give the same output, and
  * times them. Writes `results.jsonl` as it goes and `report.md` at the end.
  *
- * It diffs every later engine against the first, by the facts in `facts.ts`. Naming one engine
- * twice with `--projection=full` (`--engines=current,current`) checks that its whole output is
- * deterministic. Timing runs each engine's tsdown bundle, built into `<out>/bundle`; the diff runs
- * the source. `--runs=0` skips timing. `--baseline=<results.jsonl>`
- * adds each engine's change against an earlier run, matched by log path.
+ * It diffs every later engine against the first, field by field. Naming one engine twice
+ * (`--engines=current,current`) checks that its output is deterministic. Timing runs each
+ * engine's tsdown bundle, built into `<out>/bundle`; the diff runs the source. `--runs=0` skips
+ * timing. `--baseline=<results.jsonl>` adds each engine's change against an earlier run, matched
+ * by log path.
  *
  * Never commit the output: it names the logs, and the logs come from orgs.
  */
@@ -34,7 +34,7 @@ import type { Failure, FileResult } from './report.js';
 import { renderReport } from './report.js';
 
 const USAGE =
-  'Usage: pnpm run compare <dir> --out=<dir> [--engines=current,current] [--projection=facts|full] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
+  'Usage: pnpm run compare <dir> --out=<dir> [--engines=current,current] [--runs=5] [--match=<text>] [--limit=<n>] [--baseline=<results.jsonl>]';
 const LOG_FILE = /\.(log|txt)$/i;
 const measureScript = fileURLToPath(new URL('./measure.ts', import.meta.url));
 
@@ -67,27 +67,15 @@ function time(
   }
 }
 
-type ProjectionKind = 'facts' | 'full';
-
-async function project(
-  engineName: string,
-  bytes: Uint8Array,
-  kind: ProjectionKind,
-): Promise<Projection> {
-  const subject = engine(engineName);
+async function project(engineName: string, bytes: Uint8Array): Promise<Projection> {
   const result = await (await loadEngine(engineName, null))(bytes);
-  return kind === 'full' ? subject.project(result) : subject.facts(result);
+  return engine(engineName).project(result);
 }
 
-async function diff(
-  left: string,
-  right: string,
-  file: string,
-  kind: ProjectionKind,
-): Promise<DiffResult | Failure> {
+async function diff(left: string, right: string, file: string): Promise<DiffResult | Failure> {
   try {
     const bytes = readFileSync(file);
-    return diffProjections(await project(left, bytes, kind), await project(right, bytes, kind));
+    return diffProjections(await project(left, bytes), await project(right, bytes));
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
@@ -97,12 +85,13 @@ runIfMain(import.meta.url, async () => {
   const args = argv.slice(2);
   const dir = args.find((a) => !a.startsWith('--'));
   const out = flag(args, '--out');
+  // The facts-only mode is gone, and an unknown flag is otherwise ignored.
+  if (args.some((a) => a.startsWith('--projection')))
+    throw new Error('--projection is gone: the diff compares every field');
   if (!dir || !out) throw new Error(USAGE);
 
   const engines = (flag(args, '--engines') ?? 'current').split(',');
   engines.forEach(engine);
-  const kind = flag(args, '--projection') ?? 'facts';
-  if (kind !== 'facts' && kind !== 'full') throw new Error(USAGE);
   const runs = Number(flag(args, '--runs') ?? 5);
   const match = flag(args, '--match');
   const limit = Number(flag(args, '--limit') ?? Number.POSITIVE_INFINITY);
@@ -132,7 +121,7 @@ runIfMain(import.meta.url, async () => {
     const name = relative(dir, file);
     const result: FileResult = { file: name, bytes: statSync(file).size, runs: {}, diffs: {} };
     for (const other of engines.slice(1)) {
-      result.diffs[`${baseline}→${other} (${kind})`] = await diff(baseline, other, file, kind);
+      result.diffs[`${baseline}→${other}`] = await diff(baseline, other, file);
     }
     if (runs > 0) for (const e of timed) result.runs[e] = time(e, file, runs, bundleDir);
     results.push(result);

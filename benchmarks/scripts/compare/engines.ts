@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Built } from '../../../src/engine/builder.js';
 import { apexLog } from '../../../src/views/log.js';
-import { currentFacts, currentProjection } from './facts.js';
+import { currentProjection } from './current.js';
 import type { Projection } from './project.js';
 
 export interface Engine {
@@ -16,10 +16,8 @@ export interface Engine {
   readonly entry: string;
   /** Timed from the bytes, so an engine that must decode them first pays for it. */
   parse(module: unknown, bytes: Uint8Array): unknown;
-  /** Every field the result holds. Compares two runs of one engine. */
+  /** Every field the result holds. A second engine states the same fields, minus any it lacks. */
   project(result: unknown): Projection;
-  /** The facts in `facts.ts`. Compares two engines. */
-  facts(result: unknown): Projection;
 }
 
 // The build only: bench:async times parse()'s slices. The views read it lazily, so they are untimed.
@@ -29,7 +27,6 @@ const current: Engine = {
   parse: (module, bytes) =>
     (module as typeof import('../../../src/engine/node.js')).nodeEngine.build(bytes),
   project: (result) => currentProjection(apexLog(result as Built)),
-  facts: (result) => currentFacts(apexLog(result as Built)),
 };
 
 const ENGINES: readonly Engine[] = [current];

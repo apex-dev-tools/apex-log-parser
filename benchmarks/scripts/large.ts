@@ -8,7 +8,7 @@ import { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
 import { nodeEngine } from '../../src/engine/node.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
-import { liveBytes } from './memory.js';
+import { runsFlag, timedRuns } from './runs.js';
 import type { Measure } from './versus.js';
 import { parts } from './versus.js';
 
@@ -55,17 +55,6 @@ export function heapGrowth(
     .map((result) => result.name);
 }
 
-export function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = sorted.length / 2;
-  return Number.isInteger(middle)
-    ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
-    : (sorted[Math.floor(middle)] ?? 0);
-}
-
-// Module-level, so optimised code cannot drop the result before the second reading.
-let _held: unknown = null;
-
 /**
  * The median parse time (ms), and the median heap and array buffers the result holds (bytes), over
  * `runs` parses of `log`. Its bytes are made before the timing starts, so neither figure counts
@@ -76,27 +65,12 @@ export async function measureLog(
   runs: number,
 ): Promise<{ ms: number; heapBytes: number }> {
   const bytes = new TextEncoder().encode(log);
-  // A first parse compiles the parser, so the runs measure neither the compile nor its code.
-  nodeEngine.build(bytes);
-  const times: number[] = [];
-  const heaps: number[] = [];
-  for (let run = 0; run < runs; run++) {
-    _held = null;
-    const before = await liveBytes();
-    const start = performance.now();
-    _held = nodeEngine.build(bytes);
-    times.push(performance.now() - start);
-    heaps.push((await liveBytes()) - before);
-  }
-  _held = null;
-  return { ms: median(times), heapBytes: median(heaps) };
+  return timedRuns(runs, () => nodeEngine.build(bytes));
 }
 
 async function main(): Promise<void> {
   const args = argv.slice(2);
-  const runs = Number(flag(args, '--runs') ?? 5);
-  if (!Number.isInteger(runs) || runs < 1)
-    throw new Error('--runs must be a whole number of at least 1');
+  const runs = runsFlag(args);
   const json = flag(args, '--json');
   const baselinePath = flag(args, '--baseline');
   const maxGrowthFlag = flag(args, '--max-heap-growth');

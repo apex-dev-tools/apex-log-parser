@@ -13,7 +13,7 @@ import type { ApexLog } from '../../src/node.js';
 import { fromBuffers, parse, toBuffers } from '../../src/node.js';
 import { apexLog } from '../../src/views/log.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
-import { median } from './large.js';
+import { median, runsFlag } from './runs.js';
 import { versus } from './versus.js';
 
 const GATES = { turnMs: 10, overBuild: 0.1, abortMs: 10, reopenMs: 20 } as const;
@@ -83,9 +83,7 @@ const verdict = (pass: boolean, gate: string): string =>
 
 async function main(): Promise<void> {
   const args = argv.slice(2);
-  const runs = Number(flag(args, '--runs') ?? 5);
-  if (!Number.isInteger(runs) || runs < 1)
-    throw new Error('--runs must be a whole number of at least 1');
+  const runs = runsFlag(args);
   // A renamed log would otherwise skip the gates and still pass.
   if (!(GATE_LOG in largeLogs)) throw new Error(`No log ${GATE_LOG} for the gates`);
   const only = flag(args, '--log');

@@ -34,17 +34,18 @@ applies.
 - `scripts/profiles.ts` — measures a local folder of real logs by size band and prints
   `fixtures/profiles.json`. Local only.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
-  parse engine, diffs their output field by field, and times them. `--engines=current,current
-  --projection=full` checks that the whole output is deterministic. A new engine, such as a
-  published release, goes in `engines.ts`.
-- `scripts/micro/` — `pnpm run bench:micro --file=<log>`: the micro-benchmarks behind the engine's
-  low-level choices (`docs/adr/0004`), in Node and headless Chromium.
+  parse engine, diffs their output field by field, and times them. `--engines=current,current`
+  checks that the whole output is deterministic. `current.ts` projects the current engine's
+  result. A new engine, such as a published release, goes in `engines.ts` with its own projection;
+  the two projections must then state the same fields for the diff to mean anything.
 - `scripts/versus.ts` — the one wording for a comparison: `4.4× faster (-77.6%)`.
 - `scripts/deopt.ts` — parses the 8 MB log until V8 has optimised the engine, then in a plain
   loop, then after each of several full GCs. `__tests__/deopt.test.ts` runs it under
   `--trace-deopt` for each build. It fails on any deopt in the loop, and on any deopt a GC causes.
   A tier up from Maglev to TurboFan in a hot loop (`prepare for on stack replacement`) is not a
   loss, and can land in the loop on a slower machine, so the test lets it through.
+- `scripts/runs.ts` — `median`, `runsFlag` and `timedRuns`: the repeat-and-median loop the scripts
+  share. `timedRuns` reads the heap each run, so it needs `--expose-gc`.
 - `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
   GC's freeing has finished. One `gc()` is not enough, because V8 frees buffer memory off the
   main thread.

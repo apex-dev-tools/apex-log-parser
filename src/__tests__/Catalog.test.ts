@@ -99,6 +99,37 @@ describe('type info', () => {
       ),
     ).toEqual([]);
   });
+
+  it('gives an exit line the debug category, level and kind of its frame', () => {
+    const bad = EVENT_TYPES.flatMap((frame) =>
+      frame.exitTypes
+        .map((exit) => eventType(exit))
+        .filter(
+          (exit) =>
+            exit.debugCategory !== frame.debugCategory ||
+            exit.debugLevel !== frame.debugLevel ||
+            exit.kind !== frame.kind,
+        )
+        .map((exit) => `${exit.type}: not ${frame.type}'s`),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  it('makes a frame of exactly the types that state how they close', () => {
+    const bad = EVENT_TYPES.filter(
+      (info) => (GRAMMAR[info.typeId]?.closes !== null) !== (info.shape === 'frame'),
+    ).map((info) => info.type);
+    expect(bad).toEqual([]);
+  });
+
+  it('takes a kind from the debug category when that is a kind, unless the type states other', () => {
+    expect(eventType('XDS_RESPONSE_ERROR').kind).toBe('callout');
+    expect(eventType('END_CALL').kind).toBe('other');
+    expect(eventType('PLAY_PROMPT').kind).toBe('other');
+    expect(eventType('ROUTE_WORK_ACTION').kind).toBe('other');
+    // apexCode is not a kind, so a type that states none is other.
+    expect(eventType('AE_PERSIST_VALIDATION').kind).toBe('other');
+  });
 });
 
 describe('field layouts', () => {

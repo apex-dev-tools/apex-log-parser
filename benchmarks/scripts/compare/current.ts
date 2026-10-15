@@ -1,97 +1,13 @@
 /**
- * The facts two parse engines must agree on, as canonical records. Both engines map into these
- * shapes, so an engine's own types and names do not count, only what it states about the log.
- *
- * Records follow `project.ts`: `log` first, then one per tree node in pre-order, keyed by its path
- * of child positions. Text, `cpuType` and `suffix` are left out: those are design choices of each
- * API, not facts of the log.
+ * The current engine's result as canonical records: every field its views state. Records follow
+ * `project.ts`: `log` first, then one per tree node in pre-order, keyed by its path of child
+ * positions.
  */
 
 import type { ApexEvent } from '../../../src/views/events.js';
 import type { ApexLog, LogPlace } from '../../../src/views/log.js';
 import type { Projection } from './project.js';
 import { LOG_KEY } from './project.js';
-
-/** An event the tree holds, by path, one it does not, such as a matched exit line, or an id no event has. */
-export type EventRef =
-  | { node: string }
-  | { offTree: string | null; at: number }
-  | { missing: number }
-  | null;
-
-export interface SelfTotalFact {
-  self: number;
-  total: number;
-}
-
-export interface CountsFact {
-  dml: SelfTotalFact;
-  soql: SelfTotalFact;
-  sosl: SelfTotalFact;
-  dmlRows: SelfTotalFact;
-  soqlRows: SelfTotalFact;
-  soslRows: SelfTotalFact;
-  thrown: SelfTotalFact;
-  heapAllocated: SelfTotalFact;
-  heapGross: SelfTotalFact;
-  heapPeak: number;
-}
-
-export interface NodeFact {
-  type: string | null;
-  timestamp: number;
-  exitStamp: number | null;
-  duration: SelfTotalFact;
-  lineNumber: number | 'EXTERNAL' | null;
-  namespace: string | null;
-  isTruncated: boolean;
-  counts: CountsFact;
-}
-
-export interface IssueFact {
-  type: string;
-  summary: string;
-  description: string;
-  startTime: number | null;
-  endTime: number | null;
-  at: EventRef;
-}
-
-export interface LogFact {
-  size: number;
-  timestamp: number;
-  exitStamp: number | null;
-  duration: SelfTotalFact;
-  startTime: number | null;
-  executionEndTime: number;
-  isTruncated: boolean;
-  counts: CountsFact;
-  namespaces: string[];
-  issues: IssueFact[];
-  parsingErrors: string[];
-  truncation: {
-    regions: {
-      kind: string;
-      startTime: number;
-      endTime: number | null;
-      at: EventRef;
-      skippedBytes: number | null;
-    }[];
-    totalSkippedBytes: number;
-  };
-  truncatedEvents: EventRef[];
-  entryPoints: EventRef[];
-  exceptions: EventRef[];
-  userInfo: unknown;
-  debugLevels: unknown;
-  debugLevelSettings: unknown;
-  limits: {
-    snapshots: readonly { timestamp: number; namespace: string; limits: unknown }[];
-    final: unknown;
-    peak: unknown;
-    byNamespace: [string, unknown][];
-  };
-}
 
 /** The rollup getters an event and the log state, by the same names. */
 type Counted = Pick<
@@ -108,7 +24,7 @@ type Counted = Pick<
   | 'heapPeak'
 >;
 
-function countsOf(event: Counted): CountsFact {
+function countsOf(event: Counted) {
   return {
     dml: event.dmlCount,
     soql: event.soqlCount,
@@ -123,14 +39,14 @@ function countsOf(event: Counted): CountsFact {
   };
 }
 
-/** The log's facts, then `nodeOf` each event, in id order: pre-order, as the projection needs. */
-function* currentRecords(log: ApexLog, nodeOf: (event: ApexEvent) => unknown): Projection {
+/** The log's record, then each event's, in id order, which is pre-order. */
+export function* currentProjection(log: ApexLog): Projection {
   const paths = treePaths(log);
-  const ref = (event: { id: number } | null): EventRef => ({
+  const ref = (event: { id: number } | null) => ({
     node: (event && paths[event.id]) ?? LOG_KEY,
   });
   // An issue on an exit line refers to that line, which folded into the frame it closed.
-  const placeOf = (place: LogPlace): EventRef =>
+  const placeOf = (place: LogPlace) =>
     place.exitType === null
       ? ref(place.event)
       : {
@@ -139,7 +55,7 @@ function* currentRecords(log: ApexLog, nodeOf: (event: ApexEvent) => unknown): P
         };
 
   const limits = log.limits;
-  const fact: LogFact = {
+  const record = {
     size: log.size,
     timestamp: log.timestamp,
     exitStamp: log.exitStamp,
@@ -181,7 +97,7 @@ function* currentRecords(log: ApexLog, nodeOf: (event: ApexEvent) => unknown): P
       byNamespace: [...limits.byNamespace],
     },
   };
-  yield [LOG_KEY, fact];
+  yield [LOG_KEY, record];
 
   for (const event of log.events) {
     // Every event has a path: treePaths gives one to each.
@@ -189,21 +105,7 @@ function* currentRecords(log: ApexLog, nodeOf: (event: ApexEvent) => unknown): P
   }
 }
 
-/** The log, as facts, read through its views. Ids are in pre-order, so the records come out in it too. */
-export const currentFacts = (log: ApexLog): Projection => currentRecords(log, currentNode);
-
-/** Every field the views state: its facts, then each event's text figures. */
-export const currentProjection = (log: ApexLog): Projection =>
-  currentRecords(log, (event) => ({
-    ...currentNode(event),
-    text: event.text,
-    logLine: event.logLine,
-    suffix: event.suffix,
-    cpuType: event.cpuType,
-    hasValidSymbols: event.hasValidSymbols,
-  }));
-
-const currentNode = (event: ApexEvent): NodeFact => ({
+const nodeOf = (event: ApexEvent) => ({
   type: event.type,
   timestamp: event.timestamp,
   exitStamp: event.exitStamp,
@@ -212,6 +114,11 @@ const currentNode = (event: ApexEvent): NodeFact => ({
   namespace: event.namespace,
   isTruncated: event.isTruncated,
   counts: countsOf(event),
+  text: event.text,
+  logLine: event.logLine,
+  suffix: event.suffix,
+  cpuType: event.cpuType,
+  hasValidSymbols: event.hasValidSymbols,
 });
 
 /** Each event's path of child positions; index 0 is the log. */

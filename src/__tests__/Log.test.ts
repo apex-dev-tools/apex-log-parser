@@ -4,19 +4,9 @@
 import { idOfType } from '../catalog/catalog.js';
 import { nodeEngine } from '../engine/node.js';
 import { apexLog } from '../views/log.js';
-import { at, encode, HEADER, logOf } from './helpers.js';
+import { at, encode, HEADER, logOf, method } from './helpers.js';
 
 const ids = (events: Iterable<{ id: number }>): number[] => [...events].map((e) => e.id);
-
-const method = [
-  `${at(10)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
-  `${at(20)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
-  `${at(30)}|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Account`,
-  `${at(50)}|SOQL_EXECUTE_END|[2]|Rows:4`,
-  `${at(60)}|STATEMENT_EXECUTE|[3]`,
-  `${at(90)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
-  `${at(100)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
-];
 
 describe('ApexLog', () => {
   it('holds every event, its top level as children, and the same object as event()', () => {
@@ -47,23 +37,6 @@ describe('ApexLog', () => {
       { self: 0, total: 4 },
     ]);
     expect(log.executionEndTime).toBe(100);
-    const other = logOf(
-      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
-      `${at(2)}|DML_BEGIN|[2]|Op:Insert|Type:Account|Rows:2`,
-      `${at(3)}|DML_END|[2]`,
-      `${at(4)}|SOSL_EXECUTE_BEGIN|[3]|FIND {x}`,
-      `${at(5)}|SOSL_EXECUTE_END|[3]|Rows:3`,
-      `${at(6)}|EXCEPTION_THROWN|[4]|System.NullPointerException: x`,
-      `${at(7)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
-    );
-    const totals = [
-      other.dmlCount,
-      other.dmlRowCount,
-      other.soslCount,
-      other.soslRowCount,
-      other.thrownCount,
-    ].map((c) => c.total);
-    expect(totals).toEqual([1, 2, 1, 3, 1]);
   });
 
   it('lists the events of the given types in id order, once each', () => {

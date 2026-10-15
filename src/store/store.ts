@@ -43,8 +43,25 @@ export const NONE = -1;
 // and growing by half keeps both the growth copies and the unused tail small.
 const BYTES_PER_ROW = 256;
 const MIN_ROWS = 64;
-/** The per-row columns `resizeColumn` lists. */
-const COLUMNS = 14;
+/** The per-row columns, in the order `state` lists them, which is the order `restore` reads. */
+const COLUMN_NAMES = [
+  'type',
+  'start',
+  'end',
+  'timestamp',
+  'exitStamp',
+  'parent',
+  'subtreeEnd',
+  'depth',
+  'lineNumber',
+  'namespace',
+  'flags',
+  'durationSelf',
+  'countSlot',
+  'heapSlot',
+] as const;
+const COLUMNS = COLUMN_NAMES.length;
+type ColumnName = (typeof COLUMN_NAMES)[number];
 
 declare const performance: { now(): number };
 
@@ -288,86 +305,19 @@ export class Store {
     this.setColumn(c, resized(this.column(c), size));
   }
 
-  /** Per-row column `c`: the one list of them, which `setColumn` mirrors. */
+  /** Per-row column `c`. */
   private column(c: number): Column {
-    switch (c) {
-      case 0:
-        return this.type;
-      case 1:
-        return this.start;
-      case 2:
-        return this.end;
-      case 3:
-        return this.timestamp;
-      case 4:
-        return this.exitStamp;
-      case 5:
-        return this.parent;
-      case 6:
-        return this.subtreeEnd;
-      case 7:
-        return this.depth;
-      case 8:
-        return this.lineNumber;
-      case 9:
-        return this.namespace;
-      case 10:
-        return this.flags;
-      case 11:
-        return this.durationSelf;
-      case 12:
-        return this.countSlot;
-      case 13:
-        return this.heapSlot;
-    }
-    throw new RangeError(`No column ${c}`);
+    return this[columnName(c)];
   }
 
   /** Sets per-row column `c`, which must be of the kind `column(c)` gives. */
   private setColumn(c: number, value: Column): void {
-    switch (c) {
-      case 0:
-        this.type = value as Uint16Array;
-        break;
-      case 1:
-        this.start = value as Int32Array;
-        break;
-      case 2:
-        this.end = value as Int32Array;
-        break;
-      case 3:
-        this.timestamp = value as Float64Array;
-        break;
-      case 4:
-        this.exitStamp = value as Float64Array;
-        break;
-      case 5:
-        this.parent = value as Int32Array;
-        break;
-      case 6:
-        this.subtreeEnd = value as Int32Array;
-        break;
-      case 7:
-        this.depth = value as Uint16Array;
-        break;
-      case 8:
-        this.lineNumber = value as Int32Array;
-        break;
-      case 9:
-        this.namespace = value as Int32Array;
-        break;
-      case 10:
-        this.flags = value as Uint8Array;
-        break;
-      case 11:
-        this.durationSelf = value as Float64Array;
-        break;
-      case 12:
-        this.countSlot = value as Int32Array;
-        break;
-      case 13:
-        this.heapSlot = value as Int32Array;
-        break;
-    }
+    (this as Record<ColumnName, Column>)[columnName(c)] = value;
   }
+}
+
+function columnName(c: number): ColumnName {
+  const name = COLUMN_NAMES[c];
+  if (!name) throw new RangeError(`No column ${c}`);
+  return name;
 }

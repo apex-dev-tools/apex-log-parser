@@ -18,8 +18,8 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   (`node.ts`, `browser.ts`), the `ByteFields` cursor and the type id lookup. `bytes/ascii.ts`
   holds the byte constants and byte searches every reader shares, and `bytes/lines.ts` the line
   tests: a timestamp, a type name, the first event line. Every `Fields`
-  adapter passes `__tests__/fieldsContract.ts`. `store/` holds the events as typed-array columns
-  (ADR 0002), with sparse count and heap pools and the string table of interned byte ranges.
+  adapter passes `__tests__/fieldsContract.ts`. `store/` holds the events as typed-array columns,
+  with sparse count and heap pools and the string table of interned byte ranges.
   `tags.ts` reads a value's type tag, which holds across realms where `instanceof` fails.
   `engine/builder.ts` builds the tree in one pass with v0's rules and v0's order of side
   effects. A matched exit line gets no row: it folds into the frame it closes. A package entry
@@ -51,7 +51,7 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   `engine/namespaces.ts` holds the namespace rules, read from bytes. `limits.ts` parses limit
   text and derives the whole-log figures.
   `views/events.ts` reads the store as events: one runtime class for every type, each event made
-  on first read and then the same object for its id (ADR 0002). Event ids start at 1; id 0 is the
+  on first read and then the same object for its id. Event ids start at 1; id 0 is the
   log. `views/lines.ts` reads an event's text, raw line, fields, suffix and cpuType from the
   source when a caller asks, through the catalog's rules; the flow interviews name, which needs the
   tree, is the one rule it holds itself. `views/details.ts` reads the values a line states beyond
@@ -75,7 +75,7 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   renders the pull request body; `seed.ts` seeds `data/` from the open automation branch. See
   `.github/workflows/README.md`.
 - `benchmarks/` — every benchmark and its tools: the CodSpeed suite, the synthetic logs,
-  `bench:large`, `bench:micro` and `compare`. See `benchmarks/AGENTS.md`. A new hot path in the
+  `bench:large` and `compare`. See `benchmarks/AGENTS.md`. A new hot path in the
   parser needs a shape in `benchmarks/fixtures/profiles.json`. Every benchmark output states the
   raw figures, then the times and the percent change.
 - `scripts/` and `benchmarks/` are outside `tsconfig.json`, so `pnpm typecheck` does not see them.
@@ -151,6 +151,10 @@ than the test run. Run both.
    declares it in the entry: `count`, `rows`, `heap`, `namespace`. Scan-time work no declaration
    states is a `hook`, which the engine runs. Text, suffix and cpuType work is not: the views do
    it.
+   An exit line states `shape: 'exit'`, its `fields` and its `text`. Its category, level and kind
+   come from the frame that lists it in `exits`. A frame states `exits` or `closes`, not a shape.
+   Omit `kind` when the debug category is also a kind, such as `callout`. State `kind: 'other'` to
+   opt out.
 3. `src/catalog/fields.ts` — document it in `EventFields`: the data JSON description, then each
    field with its `Format:`. Add the `@remarks` line unless a real log confirms the layout.
 4. `data/salesforce-debug-log-events.json` — via `pnpm scrape`, once Salesforce documents it.

@@ -2,24 +2,25 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { ApexEvent, FrameEvent } from '../views/events.js';
-import { at, logOf } from './helpers.js';
+import type { ApexLog } from '../views/log.js';
+import { at, logOf, method } from './helpers.js';
 
 const frame = (e: ApexEvent | null | undefined): FrameEvent => {
   if (!e?.isFrame) throw new Error(`not a frame: ${e?.type}`);
   return e;
 };
 
-describe('events', () => {
-  const method = [
-    `${at(10)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
-    `${at(20)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
-    `${at(30)}|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Account`,
-    `${at(50)}|SOQL_EXECUTE_END|[2]|Rows:4`,
-    `${at(60)}|STATEMENT_EXECUTE|[3]`,
-    `${at(90)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
-    `${at(100)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
-  ];
+const COUNTERS = [
+  'dmlCount',
+  'dmlRowCount',
+  'soslCount',
+  'soslRowCount',
+  'thrownCount',
+  'soqlCount',
+  'soqlRowCount',
+] as const;
 
+describe('events', () => {
   it('links each event to its parent and children, with the log at depth 0 and its top at 1', () => {
     const log = logOf(...method);
     const unit = frame(log.event(1));
@@ -67,16 +68,10 @@ describe('events', () => {
       `${at(7)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
     );
     const run = frame(log.event(1));
-    const totals = [
-      run.dmlCount,
-      run.dmlRowCount,
-      run.soslCount,
-      run.soslRowCount,
-      run.thrownCount,
-      run.soqlCount,
-      run.soqlRowCount,
-    ].map((c) => c.total);
-    expect(totals).toEqual([1, 2, 1, 3, 1, 0, 0]);
+    // The log is row 0, and rolls up the same figures as the one frame under it.
+    const totals = (e: ApexEvent | ApexLog): number[] => COUNTERS.map((name) => e[name].total);
+    expect(totals(log)).toEqual([1, 2, 1, 3, 1, 0, 0]);
+    expect(totals(run)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(run.dmlCount).not.toBe(run.dmlCount);
     expect(run.dmlCount).toEqual(run.dmlCount);
   });

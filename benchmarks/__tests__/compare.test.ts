@@ -4,9 +4,8 @@ import { join } from 'node:path';
 import { nodeEngine } from '../../src/engine/node.js';
 import { apexLog } from '../../src/views/log.js';
 import { findLogs } from '../scripts/compare/compare.js';
+import { currentProjection } from '../scripts/compare/current.js';
 import { compareKeys, diffProjections, same } from '../scripts/compare/diff.js';
-import type { LogFact } from '../scripts/compare/facts.js';
-import { currentFacts, currentProjection } from '../scripts/compare/facts.js';
 import type { Entry, Projection } from '../scripts/compare/project.js';
 import { canonical } from '../scripts/compare/project.js';
 import type { FileResult } from '../scripts/compare/report.js';
@@ -24,11 +23,18 @@ const log = [
   '09:00:00.008 (8100000)|EXECUTION_FINISHED',
 ].join('\n');
 
+/** The `log` record's fields these tests read. */
+interface LogRecord {
+  entryPoints: unknown;
+  namespaces: unknown;
+  truncation: { regions: unknown };
+}
+
 const records = (p: Projection): Map<string, Record<string, unknown>> =>
   new Map([...p].map(([k, v]) => [k, v as Record<string, unknown>]));
 
 const built = (text: string) => apexLog(nodeEngine.build(new TextEncoder().encode(text)));
-const facts = (text: string): Entry[] => [...currentFacts(built(text))];
+const projection = (text: string): Entry[] => [...currentProjection(built(text))];
 
 describe('canonical', () => {
   it('sorts keys, so field order does not count', () => {
@@ -108,9 +114,9 @@ describe('diffProjections', () => {
   });
 });
 
-describe('currentFacts', () => {
+describe('currentProjection', () => {
   it('gives one record per tree node, in pre-order, with no exit lines', () => {
-    const out = records(facts(log));
+    const out = records(projection(log));
     expect([...out.keys()]).toEqual(['log', '0', '0/0', '0/0/0', '0/0/0/0']);
     expect(out.get('0/0/0/0')).toMatchObject({
       type: 'SOQL_EXECUTE_BEGIN',
@@ -126,16 +132,16 @@ describe('currentFacts', () => {
       'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()',
       'METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.load()\n*** Skipped 1,024 bytes of detailed log',
     );
-    const fact = records(facts(skipped)).get('log') as unknown as LogFact;
-    expect(fact.entryPoints).toEqual([{ node: '0/0' }]);
-    expect(fact.truncation.regions).toEqual([
+    const record = records(projection(skipped)).get('log') as unknown as LogRecord;
+    expect(record.entryPoints).toEqual([{ node: '0/0' }]);
+    expect(record.truncation.regions).toEqual([
       expect.objectContaining({ at: { offTree: 'METHOD_EXIT', at: 7000000 }, skippedBytes: 1024 }),
     ]);
   });
 
   it('states an empty line-number field as null, and keeps a stated 0', () => {
     const out = records(
-      facts(
+      projection(
         [
           '64.0 APEX_CODE,FINE',
           '09:00:00.001 (1000000)|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex',
@@ -147,36 +153,15 @@ describe('currentFacts', () => {
     );
     expect(out.get('0/0')).toMatchObject({ lineNumber: 0, namespace: null });
     expect(out.get('0/1')).toMatchObject({ lineNumber: null, namespace: null });
-    expect((out.get('log') as unknown as LogFact).namespaces).toEqual([]);
+    expect((out.get('log') as unknown as LogRecord).namespaces).toEqual([]);
   });
-});
 
-describe('currentProjection', () => {
-  it('states each facts record, and adds each event its text figures', () => {
-    const parsed = built(log);
-    const stated = [...currentFacts(parsed)];
-    const full = [...currentProjection(parsed)];
-    const events = [...parsed.events];
-
-    expect(full.map(([key]) => key)).toEqual(stated.map(([key]) => key));
-    expect(full[0]).toEqual(stated[0]);
-    expect(full.slice(1)).toEqual(
-      stated.slice(1).map(([key, node], i) => {
-        const event = events[i];
-        return [
-          key,
-          {
-            ...(node as object),
-            text: event?.text,
-            logLine: event?.logLine,
-            suffix: event?.suffix,
-            cpuType: event?.cpuType,
-            hasValidSymbols: event?.hasValidSymbols,
-          },
-        ];
-      }),
-    );
-    expect(full).toHaveLength(parsed.eventCount + 1);
+  it('adds each event its text figures', () => {
+    expect(records(projection(log)).get('0/0/0')).toMatchObject({
+      text: 'ns.MyClass.load()',
+      suffix: null,
+      cpuType: 'method',
+    });
   });
 });
 
