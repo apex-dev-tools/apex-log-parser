@@ -104,8 +104,6 @@ export interface Built {
   readonly namespaces: readonly number[];
   /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
   readonly snapshots: readonly LimitSnapshot[];
-  /** Nanoseconds: the exit of the last top-level event that has one, or 0. */
-  readonly executionEndTime: number;
   /** Bytes of the source. */
   readonly size: number;
   /** Milliseconds since midnight, from the first event's line; null when it states none. */
@@ -276,7 +274,7 @@ export class LogBuilder {
     const len = this.bytes.length;
     const eventsStart = this.eventsStart;
     // settle set them
-    const { executionEndTime, first } = this.logTimes!;
+    const { first } = this.logTimes!;
     // With no timestamped line, the header is the whole text.
     const debug = debugSettings(this.source.text(0, eventsStart < 0 ? len : eventsStart));
     const { issues, parsingErrors, snapshots } = this.markers;
@@ -296,7 +294,6 @@ export class LogBuilder {
       truncated: this.truncated,
       namespaces: this.namespaces.order,
       snapshots,
-      executionEndTime,
       size: len,
       startTime: first === NONE ? null : wallClock(lineText(this.source, store.start[first]!)),
       debugLevels: debug.levels,
@@ -466,14 +463,7 @@ export class LogBuilder {
     if (top < 0) this.mergedTail = null;
     if (this.nextType !== ENTERING_MANAGED_PKG) id = this.take(parent, depth);
     else if (run !== NONE && store.namespace[run] === this.namespaceUnder(parent)) {
-      if (top < 0) {
-        // run is a row
-        this.mergedTail = {
-          timestamp: this.nextTimestamp,
-          kept: run,
-          keptExit: store.exitStamp[run]!,
-        };
-      }
+      if (top < 0) this.mergedTail = { timestamp: this.nextTimestamp };
       this.mergePackage(run);
     } else {
       id = this.take(parent, depth);

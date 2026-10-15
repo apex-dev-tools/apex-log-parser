@@ -1,13 +1,10 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import type { CpuType, LineFields } from './types.js';
+import type { LineFields } from './types.js';
 
 /** Builds an event's text from its line. Null when the line states no text. */
 export type TextRule = (f: LineFields) => string | null;
-
-/** Reads an event's cpuType from its line, for a type whose events differ. */
-export type CpuRule = (f: LineFields) => CpuType;
 
 /** Rewrites the text once the continuation lines are appended. */
 export type AfterRule = (text: string) => string;
@@ -18,14 +15,11 @@ export type FieldPosition<K extends string = string> = (name: K) => number;
 /** A text rule that reads the fields `K`; the catalog resolves the names once, at load. */
 export type TextSpec<K extends string = string> = (position: FieldPosition<K>) => TextRule;
 
-/** A cpu rule that reads the fields `K`, resolved as a text rule is. */
-export type CpuSpec<K extends string = string> = (position: FieldPosition<K>) => CpuRule;
-
 /** A line rule built from the positions of the named fields, in order. */
-export function rule<const K extends string, R extends TextRule | CpuRule = TextRule>(
+export function rule<const K extends string>(
   names: readonly K[],
-  build: (...positions: number[]) => R,
-): (position: FieldPosition<K>) => R {
+  build: (...positions: number[]) => TextRule,
+): (position: FieldPosition<K>) => TextRule {
   return (position) => build(...names.map(position));
 }
 
@@ -64,21 +58,6 @@ export const codeUnitText: TextSpec<'unit' | 'name' | 'typeRef'> = (position) =>
   const unit = position('unit');
   return (f) => f.at(name) || f.at(unit) || typeOf(f);
 };
-
-const CUSTOM_UNITS = new Set(['Validation', 'Workflow', 'Flow']);
-
-export const codeUnitCpu: CpuSpec<'unit' | 'name' | 'typeRef'> = (position) => {
-  const typeOf = codeUnitTypeText(position);
-  return (f) => (CUSTOM_UNITS.has(typeOf(f) ?? '') ? 'custom' : 'method');
-};
-
-// Class loading, which v0 assumed costs the org no CPU.
-export const methodEntryCpu: CpuSpec<'signature'> = rule(
-  ['signature'],
-  (signature): CpuRule =>
-    (f) =>
-      f.at(signature).startsWith('System.Type.forName(') ? 'loading' : 'method',
-);
 
 export const constructorText: TextSpec<'signature' | 'className'> = rule(
   ['signature', 'className'],

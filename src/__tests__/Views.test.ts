@@ -36,7 +36,11 @@ describe('events', () => {
     const log = logOf(...method);
     const run = frame(log.event(2));
     const query = frame(log.event(3));
-    expect([run.timestamp, run.exitStamp, run.duration]).toEqual([20, 90, { self: 50, total: 70 }]);
+    expect([run.startTimestamp, run.endTimestamp, run.duration]).toEqual([
+      20,
+      90,
+      { self: 50, total: 70 },
+    ]);
     expect([query.soqlCount, query.soqlRowCount]).toEqual([
       { self: 1, total: 1 },
       { self: 4, total: 4 },
@@ -48,12 +52,7 @@ describe('events', () => {
     ]);
     // The namespace rules give `ns.MyClass.run()` no namespace of its own, nor the code unit one.
     expect([run.lineNumber, run.namespace, run.isTruncated]).toEqual([1, null, false]);
-    expect([run.kind, run.category, run.debugCategory, run.debugLevel]).toEqual([
-      'method',
-      'Apex',
-      'apexCode',
-      'FINE',
-    ]);
+    expect([run.kind, run.debugCategory, run.debugLevel]).toEqual(['method', 'apexCode', 'FINE']);
     expect(log.event(1)?.lineNumber).toBe('EXTERNAL');
   });
 
@@ -76,13 +75,14 @@ describe('events', () => {
     expect(run.dmlCount).toEqual(run.dmlCount);
   });
 
-  it('makes a leaf with no exit, no children and no duration', () => {
+  it('makes a leaf that ends where it starts, with no children and no duration', () => {
     const leaf = logOf(...method).event(4);
     expect(leaf?.isFrame).toBe(false);
     expect(leaf?.children).toEqual([]);
     expect(Object.isFrozen(leaf?.children)).toBe(true);
-    expect([leaf?.exitStamp, leaf?.duration, leaf?.heapPeak]).toEqual([
-      null,
+    expect([leaf?.startTimestamp, leaf?.endTimestamp, leaf?.duration, leaf?.heapPeak]).toEqual([
+      60,
+      60,
       { self: 0, total: 0 },
       0,
     ]);

@@ -31,12 +31,15 @@ describe('ApexLog', () => {
 
   it('states its own time and rollups, as row 0', () => {
     const log = logOf(...method);
-    expect([log.timestamp, log.exitStamp, log.duration]).toEqual([10, 100, { self: 0, total: 90 }]);
+    expect([log.startTimestamp, log.endTimestamp, log.duration]).toEqual([
+      10,
+      100,
+      { self: 0, total: 90 },
+    ]);
     expect([log.soqlCount, log.soqlRowCount]).toEqual([
       { self: 0, total: 1 },
       { self: 0, total: 4 },
     ]);
-    expect(log.executionEndTime).toBe(100);
   });
 
   it('lists the events of the given types in id order, once each', () => {
@@ -51,7 +54,7 @@ describe('ApexLog', () => {
   it('finds the deepest frame running at a time, and never a leaf', () => {
     const log = logOf(...method, `${at(120)}|METHOD_ENTRY|[9]|01p000000000AAA|ns.MyClass.go()`);
     const at_ = (ns: number): number | null => log.at(ns)?.id ?? null;
-    // A frame runs from its timestamp up to, not including, its exitStamp.
+    // A frame runs from its startTimestamp up to, not including, its endTimestamp.
     expect([5, 10, 20, 35, 50, 60, 89, 90, 100, 110, 120].map(at_)).toEqual([
       null,
       1,
@@ -75,10 +78,10 @@ describe('ApexLog', () => {
       `${at(3)}|ENTERING_MANAGED_PKG|ns`,
       `${at(5)}|STATEMENT_EXECUTE|[2]`,
     );
-    expect(log.children.map((e) => [e.type, e.timestamp, e.exitStamp])).toEqual([
+    expect(log.children.map((e) => [e.type, e.startTimestamp, e.endTimestamp])).toEqual([
       ['ENTERING_MANAGED_PKG', 1, 5],
-      ['HEAP_ALLOCATE', 2, null],
-      ['STATEMENT_EXECUTE', 5, null],
+      ['HEAP_ALLOCATE', 2, 2],
+      ['STATEMENT_EXECUTE', 5, 5],
     ]);
     expect([2, 4, 5].map((ns) => log.at(ns)?.id ?? null)).toEqual([1, 1, null]);
   });
@@ -96,8 +99,9 @@ describe('ApexLog', () => {
         idOfType,
       ),
     );
-    expect([...columns.timestamp]).toEqual([10, 10, 20, 30, 60]);
-    expect([...columns.exitStamp].slice(1)).toEqual([100, 90, 50, Number.NaN]);
+    expect([...columns.startTimestamp]).toEqual([10, 10, 20, 30, 60]);
+    // The leaf, last, ends where it starts.
+    expect([...columns.endTimestamp].slice(1)).toEqual([100, 90, 50, 60]);
     expect([...columns.durationTotal]).toEqual([90, 90, 70, 20, 0]);
     expect([...columns.durationSelf]).toEqual([0, 20, 50, 20, 0]);
   });

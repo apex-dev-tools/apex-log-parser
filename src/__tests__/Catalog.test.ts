@@ -73,6 +73,22 @@ describe('type info', () => {
     expect(Object.isFrozen(EVENT_TYPES)).toBe(true);
   });
 
+  // The docs name the database time of DML, SOQL and SOSL, and the wait for a callout.
+  it('states these types as using no application server CPU of their own', () => {
+    expect(
+      EVENT_TYPES.filter((info) => !info.consumesCpuTime)
+        .map((info) => info.type)
+        .sort(),
+    ).toEqual([
+      'CALLOUT_REQUEST',
+      'CURSOR_CREATE_BEGIN',
+      'DML_BEGIN',
+      'QUERY_MORE_BEGIN',
+      'SOQL_EXECUTE_BEGIN',
+      'SOSL_EXECUTE_BEGIN',
+    ]);
+  });
+
   it('gives null for a type id no type has', () => {
     expect(eventType(-1)).toBeNull();
     expect(eventType(EVENT_TYPES.length)).toBeNull();

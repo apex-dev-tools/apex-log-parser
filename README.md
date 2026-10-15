@@ -21,8 +21,8 @@ VS Code extension and its [MCP server](https://github.com/certinia/debug-log-ana
   iterable.
 - **Node and browser builds**, with one API. An optional worker moves the parse off the main
   thread.
-- **Every documented event type**, each with its kind of work (`kind`), its timeline group, its
-  debug level and the values its line states (`details`).
+- **Every documented event type**, each with its kind of work (`kind`), its debug level and the
+  values its line states (`details`).
 - **An event tree** where each entry is matched to its exit, with self and total times in
   nanoseconds.
 - **Counts up the tree**: SOQL, DML and SOSL statements and rows, exceptions and heap.
@@ -91,7 +91,7 @@ Note the shape:
 - A frame (`isFrame: true`) spans time and has `children`. A leaf is one point in time, and its
   `children` is always empty.
 - `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not events of their own. Each closes its
-  matching entry and sets that event's `exitStamp` and `duration`.
+  matching entry and sets that event's `endTimestamp` and `duration`. A leaf's `endTimestamp` is its `startTimestamp`.
 - `text` is null when the line states nothing, as for `EXECUTION_STARTED`. Use `text ?? type` for
   a label.
 
@@ -198,10 +198,10 @@ For a flame chart or other work over every event, `columns` gives the tree links
 typed arrays indexed by id, with no object per event:
 
 ```typescript
-const { type, depth, timestamp, durationTotal } = log.columns;
+const { type, depth, startTimestamp, durationTotal } = log.columns;
 for (let id = 1; id <= log.eventCount; id++) {
-  // eventType(type[id]) gives the type's name, category and kind.
-  draw(type[id], depth[id], timestamp[id], durationTotal[id]);
+  // eventType(type[id]) gives the type's name and kind.
+  draw(type[id], depth[id], startTimestamp[id], durationTotal[id]);
 }
 ```
 
@@ -209,9 +209,9 @@ for (let id = 1; id <= log.eventCount; id++) {
 
 Everything comes from the package root: `parse`, `toBuffers`, `fromBuffers`, the event catalog
 (`EVENT_TYPES`, `eventType`), every type, and the const companions that go with them
-(`CATEGORY`, `CPU_TYPE`, `DEBUG_CATEGORY`, `EVENT_TYPE_NAMES`, `ISSUE_TYPE`, `KIND`, `LEVEL`,
-`LIMIT_UNIT`, `PARSE_PHASE`, `SHAPE`, `TRUNCATION_KIND`). `DEBUG_CATEGORY_TOKEN` gives the header
-token of each debug category, and `LIMIT_METRICS` gives the unit of each limit metric:
+(`DEBUG_CATEGORY`, `EVENT_TYPE_NAMES`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
+`SHAPE`, `TRUNCATION_KIND`). `DEBUG_CATEGORY_TOKEN` gives the header token of each debug category,
+and `LIMIT_METRICS` gives the unit of each limit metric:
 
 ```typescript
 import { eventType, parse, type ApexLog } from '@apexdevtools/apex-log-parser';

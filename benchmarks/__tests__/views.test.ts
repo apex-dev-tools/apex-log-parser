@@ -21,9 +21,9 @@ const log = apexLog(
 describe('readColumns', () => {
   it('reads every column of every event, and not the log', () => {
     const types = 2 * idOfType('METHOD_ENTRY') + idOfType('STATEMENT_EXECUTE');
-    // parent 0+1+1, depth 1+2+2, subtreeEnd 4+3+4, timestamp 1000+1500+2000,
-    // exitStamp 4000+2500 (the leaf has none), self 2500+0+500, total 3000+0+500.
-    expect(readColumns(log)).toBe(types + 2 + 5 + 11 + 4500 + 6500 + 3000 + 3500);
+    // parent 0+1+1, depth 1+2+2, subtreeEnd 4+3+4, startTimestamp 1000+1500+2000,
+    // endTimestamp 4000+1500 (the leaf ends where it starts)+2500, self 2500+0+500, total 3000+0+500.
+    expect(readColumns(log)).toBe(types + 2 + 5 + 11 + 4500 + 8000 + 3000 + 3500);
   });
 });
 

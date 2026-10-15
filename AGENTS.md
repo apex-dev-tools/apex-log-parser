@@ -52,7 +52,7 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   text and derives the whole-log figures.
   `views/events.ts` reads the store as events: one runtime class for every type, each event made
   on first read and then the same object for its id. Event ids start at 1; id 0 is the
-  log. `views/lines.ts` reads an event's text, raw line, fields, suffix and cpuType from the
+  log. `views/lines.ts` reads an event's text, raw line, fields from the
   source when a caller asks, through the catalog's rules; the flow interviews name, which needs the
   tree, is the one rule it holds itself. `views/details.ts` reads the values a line states beyond
   its text, as `aggregations` or a limit usage, one reader per type; `EventDetails` lists them,
@@ -149,8 +149,7 @@ than the test run. Run both.
 2. `src/catalog/catalog.ts` — add its entry, with its `fields`, to `ENTRIES`. A field named `line`
    makes the engine read a line number. An event that adds to a rollup or states a namespace
    declares it in the entry: `count`, `rows`, `heap`, `namespace`. Scan-time work no declaration
-   states is a `hook`, which the engine runs. Text, suffix and cpuType work is not: the views do
-   it.
+   states is a `hook`, which the engine runs. Text work is not: the views do it.
    An exit line states `shape: 'exit'`, its `fields` and its `text`. Its category, level and kind
    come from the frame that lists it in `exits`. A frame states `exits` or `closes`, not a shape.
    Omit `kind` when the debug category is also a kind, such as `callout`. State `kind: 'other'` to
@@ -177,7 +176,7 @@ ancestor itself.
   parent's.
 - `heapPeak` composes by max, not sum. `heapAllocated.self` and `heapGross.self` come from leaves
   only.
-- `id` is the stable id within one parse. `timestamp` is not unique.
+- `id` is the stable id within one parse. `startTimestamp` is not unique.
 
 ## Limits
 

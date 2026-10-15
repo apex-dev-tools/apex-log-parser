@@ -29,9 +29,9 @@ export interface Columns {
   /** One past the last id under each row, so its descendants are `id + 1` to `subtreeEnd[id] - 1`. */
   readonly subtreeEnd: Int32Array;
   /** Nanoseconds. */
-  readonly timestamp: Float64Array;
-  /** Nanoseconds; NaN for a leaf. */
-  readonly exitStamp: Float64Array;
+  readonly startTimestamp: Float64Array;
+  /** Nanoseconds; a leaf ends where it starts. */
+  readonly endTimestamp: Float64Array;
   /** Nanoseconds. */
   readonly durationSelf: Float64Array;
   /** Nanoseconds; 0 without an exit, or with one at 0, as `duration.total`. */
@@ -79,8 +79,6 @@ export interface LogTruncation {
  * the typed arrays in `columns` and the `Map` in `limits`, which JavaScript cannot freeze.
  */
 export interface ApexLog extends Rollups {
-  /** Where the log ends: the end of its last event at the top. Nanoseconds. */
-  readonly exitStamp: number;
   /** The events at the top of the log, in log order. Their `parent` is null. */
   readonly children: readonly ApexEvent[];
   /** Every event, in id order. */
@@ -91,7 +89,7 @@ export interface ApexLog extends Rollups {
   event(id: number): ApexEvent | null;
   /** Every event of the given types, in id order. Throws a RangeError for a name no type has. */
   ofType<T extends EventType>(...types: T[]): readonly EventOf<T>[];
-  /** The deepest frame running at `ns`: its timestamp ≤ ns < its exitStamp. Null when none is. */
+  /** The deepest frame running at `ns`: its startTimestamp ≤ ns < its endTimestamp. Null when none is. */
   at(ns: number): FrameEvent | null;
   /** Every event's tree links and times as arrays, made on first read. */
   readonly columns: Columns;
@@ -99,8 +97,6 @@ export interface ApexLog extends Rollups {
   readonly size: number;
   /** Milliseconds since midnight, from the first event's line; null when it states none. */
   readonly startTime: number | null;
-  /** Nanoseconds: the end of the last event at the top that has one, or 0. */
-  readonly executionEndTime: number;
   /** The platform did not write part of the log. A frame with no exit does not count. */
   readonly isTruncated: boolean;
   /** The parts of the log the platform did not write. */
@@ -186,11 +182,6 @@ class LogView extends RollupView implements ApexLog {
     return log.built;
   }
 
-  get exitStamp(): number {
-    // Row 0 is always a row
-    return this.store.exitStamp[0]!;
-  }
-
   get children(): readonly ApexEvent[] {
     return (this.memo.children ??= this.all.childrenOf(0));
   }
@@ -257,10 +248,6 @@ class LogView extends RollupView implements ApexLog {
 
   get startTime(): number | null {
     return this.built.startTime;
-  }
-
-  get executionEndTime(): number {
-    return this.built.executionEndTime;
   }
 
   get isTruncated(): boolean {
@@ -372,8 +359,8 @@ class LogView extends RollupView implements ApexLog {
       parent: store.parent,
       depth: store.depth,
       subtreeEnd: store.subtreeEnd,
-      timestamp: store.timestamp,
-      exitStamp: store.exitStamp,
+      startTimestamp: store.timestamp,
+      endTimestamp: store.exitStamp,
       durationSelf: store.durationSelf,
       durationTotal,
     });

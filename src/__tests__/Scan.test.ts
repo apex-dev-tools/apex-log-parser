@@ -50,7 +50,6 @@ function figures(built: Built): unknown {
     heap: pooled(store.heapSlot, store.heap, 5),
     issues: built.issues.list,
     truncation: built.truncation,
-    executionEndTime: built.executionEndTime,
   };
 }
 

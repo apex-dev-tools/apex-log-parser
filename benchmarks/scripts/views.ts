@@ -17,15 +17,22 @@ const GATE_LOG = 'parse_100mb';
 
 /** Reads every column of every event row once, as a caller that reads them all does. */
 export function readColumns(log: ApexLog): number {
-  const { type, parent, depth, subtreeEnd, timestamp, exitStamp, durationSelf, durationTotal } =
-    log.columns;
+  const {
+    type,
+    parent,
+    depth,
+    subtreeEnd,
+    startTimestamp,
+    endTimestamp,
+    durationSelf,
+    durationTotal,
+  } = log.columns;
   // A sum of every read, so none is dead code the compiler can drop.
   let sum = 0;
   // Row 0 is the log, not an event. Every index is a row, so in range.
   for (let id = 1; id < type.length; id++) {
     sum += type[id]! + parent[id]! + depth[id]! + subtreeEnd[id]!;
-    // A leaf's exitStamp is NaN, which would make the sum NaN.
-    sum += timestamp[id]! + (exitStamp[id]! || 0) + durationSelf[id]! + durationTotal[id]!;
+    sum += startTimestamp[id]! + endTimestamp[id]! + durationSelf[id]! + durationTotal[id]!;
   }
   return sum;
 }

@@ -88,7 +88,7 @@ export class Store {
   end: Int32Array = new Int32Array(0);
   /** Nanoseconds. */
   timestamp: Float64Array = new Float64Array(0);
-  /** Nanoseconds; NaN for a leaf. */
+  /** Nanoseconds; NaN for a leaf until `rollUp` sets it to the row's `timestamp`. */
   exitStamp: Float64Array = new Float64Array(0);
   parent: Int32Array = new Int32Array(0);
   /** One past the event's last descendant, so its children are `id + 1` to `subtreeEnd - 1`. */

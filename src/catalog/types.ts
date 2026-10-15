@@ -308,21 +308,6 @@ export const EVENT_TYPE_NAMES = [
 /** An event type name, such as `SOQL_EXECUTE_BEGIN`. */
 export type EventType = (typeof EVENT_TYPE_NAMES)[number];
 
-/** The timeline groups. */
-export const CATEGORY = {
-  Apex: 'Apex',
-  System: 'System',
-  CodeUnit: 'Code Unit',
-  Automation: 'Automation',
-  DML: 'DML',
-  SOQL: 'SOQL',
-  Validation: 'Validation',
-  Callout: 'Callout',
-} as const;
-
-/** The timeline group an event type belongs to. */
-export type Category = (typeof CATEGORY)[keyof typeof CATEGORY];
-
 /** The Salesforce debug log categories, keyed by the token the log header uses for each. */
 export const DEBUG_CATEGORY = {
   APEX_CODE: 'apexCode',
@@ -366,19 +351,6 @@ export const LEVEL = {
 
 /** A Salesforce debug level. */
 export type Level = (typeof LEVEL)[keyof typeof LEVEL];
-
-/** The ways a frame's CPU time is grouped. */
-export const CPU_TYPE = {
-  Loading: 'loading',
-  Custom: 'custom',
-  Method: 'method',
-  Free: 'free',
-  System: 'system',
-  Pkg: 'pkg',
-} as const;
-
-/** How a frame's CPU time is grouped. */
-export type CpuType = (typeof CPU_TYPE)[keyof typeof CPU_TYPE];
 
 /** The ways an event type sits in the tree. */
 export const SHAPE = {
@@ -430,12 +402,16 @@ export interface EventTypeInfo {
   readonly fields: readonly string[];
   readonly shape: Shape;
   readonly kind: Kind;
-  /** The timeline group. Null for a type outside the timeline, such as a leaf or an exit line. */
-  readonly category: Category | null;
   /** The Salesforce debug log category, which indexes `ApexLog.debugLevels`. */
   readonly debugCategory: DebugCategory;
   /** The debug level at which Salesforce writes this type. */
   readonly debugLevel: Level;
+  /**
+   * False when the event's own elapsed time, `duration.self`, uses no application server CPU: time
+   * in the database for DML, SOQL and SOSL, or waiting on a callout. The platform does not count it
+   * toward the Apex CPU limit. Its children count by their own type, as the triggers a DML runs do.
+   */
+  readonly consumesCpuTime: boolean;
   /**
    * The exit lines that close a frame of this type. Empty for a leaf, an exit line, and a frame
    * that the next line or the next event closes.

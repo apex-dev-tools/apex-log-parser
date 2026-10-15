@@ -109,7 +109,7 @@ describe('truncation', () => {
     const outer = firstChild(parse(log).children[0]);
 
     expect(outer?.isTruncated).toBe(true);
-    expect(outer?.exitStamp).toBe(900);
+    expect(outer?.endTimestamp).toBe(900);
     expect(outer?.duration).toMatchObject({ total: 700, self: 100 });
   });
 
@@ -137,7 +137,7 @@ describe('truncation', () => {
       null,
     ]);
     expect(apexLog.children[1]?.isTruncated).toBe(false);
-    expect(apexLog.truncatedEvents.map((event) => event.exitStamp)).toEqual([300, 300, 300]);
+    expect(apexLog.truncatedEvents.map((event) => event.endTimestamp)).toEqual([300, 300, 300]);
   });
 
   it('never ends an open frame before a child that closes on the next execution', () => {
@@ -150,7 +150,7 @@ describe('truncation', () => {
 
     const unit = firstChild(parse(log).children[0]);
 
-    expect(unit?.exitStamp).toBe(5000);
+    expect(unit?.endTimestamp).toBe(5000);
     expect(unit?.duration.self).toBe(100);
   });
 
@@ -171,7 +171,7 @@ describe('truncation', () => {
     const second = apexLog.children[1];
 
     expect(second?.isTruncated).toBe(false);
-    expect(second?.exitStamp).toBe(460);
+    expect(second?.endTimestamp).toBe(460);
     expect(apexLog.issues.map((issue) => issue.summary)).toContain('Unexpected-Exit');
   });
 

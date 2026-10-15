@@ -4,8 +4,7 @@
 import type { ApexLog } from '../views/log.js';
 import { at, HEADER, logOf, parse } from './helpers.js';
 
-const pick = (log: ApexLog, key: 'text' | 'suffix' | 'cpuType' | 'hasValidSymbols') =>
-  [...log.events].map((e) => e[key]);
+const pick = (log: ApexLog, key: 'text' | 'isApexCall') => [...log.events].map((e) => e[key]);
 
 describe('event text', () => {
   it('reads the text by its type rule, with continuation lines, and null when it states none', () => {
@@ -64,39 +63,23 @@ describe('event text', () => {
     expect(() => typed?.field('rows')).toThrow(RangeError);
     expect(typed?.isFrame).toBe(true);
     if (typed?.isFrame) {
-      // Fails the typecheck if isFrame no longer narrows exitStamp to a number.
-      const exitStamp: number = typed.exitStamp;
-      expect(exitStamp).toBe(2);
+      // Fails the typecheck if isFrame no longer narrows to a frame, which has children.
+      const children: readonly unknown[] = typed.children;
+      expect(children).toHaveLength(0);
     }
   });
 
-  it('states the suffix and cpuType of the type, or of the line when its events differ', () => {
-    const log = logOf(
-      `${at(1)}|CODE_UNIT_STARTED|[EXTERNAL]|Workflow:Account`,
-      `${at(2)}|CODE_UNIT_FINISHED|Workflow:Account`,
-      `${at(3)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
-      `${at(4)}|METHOD_ENTRY|[1]|01p000000000AAA|System.Type.forName(String)`,
-      `${at(5)}|METHOD_EXIT|[1]|01p000000000AAA|System.Type.forName(String)`,
-      `${at(6)}|METHOD_ENTRY|[2]|01p000000000AAA|ns.MyClass.run()`,
-      `${at(7)}|STATEMENT_EXECUTE|[3]`,
-      `${at(8)}|METHOD_EXIT|[2]|01p000000000AAA|ns.MyClass.run()`,
-      `${at(9)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
-    );
-    expect(pick(log, 'cpuType')).toEqual(['custom', 'method', 'loading', 'method', null]);
-    expect(pick(log, 'suffix')).toEqual([' (code unit)', ' (code unit)', null, null, null]);
-  });
-
-  it('has valid symbols for an Apex frame, and not for a VF call the line made a leaf', () => {
+  it('is an Apex call for an Apex frame, and not for a VF call the line made a leaf', () => {
     const log = logOf(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(2)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(3)}|VF_APEX_CALL_START|[1]|ns.MyController|`,
       `${at(4)}|STATEMENT_EXECUTE|[2]`,
     );
-    expect(pick(log, 'hasValidSymbols')).toEqual([true, false, false]);
+    expect(pick(log, 'isApexCall')).toEqual([true, false, false]);
   });
 
-  it('names flow interviews by their first interview, and by what started them', () => {
+  it('names flow interviews by their first interview', () => {
     const interviews = (from: number, name: string): string[] => [
       `${at(from)}|FLOW_START_INTERVIEWS_BEGIN|1`,
       `${at(from + 1)}|FLOW_START_INTERVIEWS_ERROR|x|01I000000000AAA|${name}`,
@@ -117,11 +100,11 @@ describe('event text', () => {
       `${at(21)}|FLOW_START_INTERVIEW_BEGIN|01I000000000AAA|Cut`,
     );
     const frames = log.ofType('FLOW_START_INTERVIEWS_BEGIN');
-    expect(frames.map((e) => [e.text, e.suffix, e.isTruncated])).toEqual([
-      ['MyFlow', ' (Flow)', false],
-      ['MyProcess', ' (Process Builder)', false],
-      ['Alone', null, false],
-      ['Cut', null, true],
+    expect(frames.map((e) => [e.text, e.isTruncated])).toEqual([
+      ['MyFlow', false],
+      ['MyProcess', false],
+      ['Alone', false],
+      ['Cut', true],
     ]);
   });
 });

@@ -3,15 +3,7 @@
  */
 import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
 import type { EventFields } from '../catalog/fields.js';
-import type {
-  Category,
-  CpuType,
-  DebugCategory,
-  EventType,
-  EventTypeInfo,
-  Kind,
-  Level,
-} from '../catalog/types.js';
+import type { DebugCategory, EventType, EventTypeInfo, Kind, Level } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import { FLAG, isFrameRow } from '../engine/tables.js';
 import type { Store } from '../store/store.js';
@@ -28,7 +20,13 @@ export interface SelfTotal {
 
 /** The time and rollups the log and every event state. Times are nanoseconds, heap bytes. */
 export interface Rollups {
-  readonly timestamp: number;
+  /** Where the line is in the log. For the log, its first event. */
+  readonly startTimestamp: number;
+  /**
+   * Where the event ends: a frame's exit line, or where the log stops when it never closes. A leaf
+   * ends where it starts. For the log, the end of its last event at the top.
+   */
+  readonly endTimestamp: number;
   readonly duration: SelfTotal;
   readonly dmlCount: SelfTotal;
   readonly soqlCount: SelfTotal;
@@ -49,8 +47,6 @@ interface EventBase extends Rollups {
   readonly id: number;
   readonly type: EventType;
   readonly kind: Kind;
-  /** The timeline group. Null for a type outside the timeline. */
-  readonly category: Category | null;
   readonly debugCategory: DebugCategory;
   readonly debugLevel: Level;
   /** 1 for an event at the top of the log, which is depth 0, as `columns.depth` states. */
@@ -70,12 +66,12 @@ interface EventBase extends Rollups {
   readonly text: string | null;
   /** The event's first line as the log states it, without its line ending. */
   readonly logLine: string;
-  /** A label for the kind of code, as ` (code unit)`, for a type that has one; else null. */
-  readonly suffix: string | null;
-  /** What the event's time is spent on, as `method` or `custom`. Null for a type that states none. */
-  readonly cpuType: CpuType | null;
-  /** `text` names Apex code that a symbol lookup can find. */
-  readonly hasValidSymbols: boolean;
+  /**
+   * A call into Apex code: `text` names a class and, for a method, the method. True for
+   * `METHOD_ENTRY`, `CONSTRUCTOR_ENTRY` and a `VF_APEX_CALL_START` that opens a frame; false for
+   * system code, code units, and a Visualforce call that names no method.
+   */
+  readonly isApexCall: boolean;
   /**
    * Field `name` of the event's first line, as stated: one of `eventType(type).fields`. The type's
    * last field runs to the line's end, `|` and all. Null when the line has no such field, or it is
@@ -92,8 +88,6 @@ interface EventBase extends Rollups {
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
 export interface FrameEvent extends EventBase {
   readonly isFrame: true;
-  /** Where the frame ends: its exit line, or where the log stops when it never closes. */
-  readonly exitStamp: number;
   /** In log order. */
   readonly children: readonly ApexEvent[];
 }
@@ -101,7 +95,6 @@ export interface FrameEvent extends EventBase {
 /** An event at one point in time, with no children. */
 export interface LeafEvent extends EventBase {
   readonly isFrame: false;
-  readonly exitStamp: null;
   /** Always empty, so a walk of the tree reads `children` on any event. */
   readonly children: readonly [];
 }
@@ -179,8 +172,12 @@ export class RollupView implements Rollups {
     this.id = id;
   }
 
-  get timestamp(): number {
+  get startTimestamp(): number {
     return this.store.timestamp[this.id]!;
+  }
+
+  get endTimestamp(): number {
+    return this.store.exitStamp[this.id]!;
   }
 
   get duration(): SelfTotal {
@@ -272,10 +269,6 @@ class EventView extends RollupView {
     return this.info.kind;
   }
 
-  get category(): Category | null {
-    return this.info.category;
-  }
-
   get debugCategory(): DebugCategory {
     return this.info.debugCategory;
   }
@@ -302,11 +295,6 @@ class EventView extends RollupView {
     return (this.kids ??= this.events.childrenOf(this.id));
   }
 
-  get exitStamp(): number | null {
-    if (!this.isFrame) return null;
-    return this.store.exitStamp[this.id]!;
-  }
-
   get lineNumber(): number | 'EXTERNAL' | null {
     const line = this.store.lineNumber[this.id]!;
     return line === NO_LINE ? null : line === EXTERNAL_LINE ? 'EXTERNAL' : line;
@@ -330,21 +318,11 @@ class EventView extends RollupView {
     return this.events.lines.logLine(this.id);
   }
 
-  get suffix(): string | null {
-    return this.events.lines.suffix(this.id);
-  }
-
-  get cpuType(): CpuType | null {
-    return this.events.lines.cpuType(this.id);
-  }
-
   /** The type's, unless the line made the event a leaf, as a VF call with no method. */
-  get hasValidSymbols(): boolean {
+  get isApexCall(): boolean {
     const store = this.store;
     // id is a row, so its type is a type id
-    return (
-      GRAMMAR[store.type[this.id]!]!.hasValidSymbols && !(store.flags[this.id]! & FLAG.notEntry)
-    );
+    return GRAMMAR[store.type[this.id]!]!.isApexCall && !(store.flags[this.id]! & FLAG.notEntry);
   }
 
   field(name: string): string | null {

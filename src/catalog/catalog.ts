@@ -2,9 +2,8 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { EventFields } from './fields.js';
-import type { AfterRule, CpuRule, CpuSpec, FieldPosition, TextRule, TextSpec } from './text.js';
+import type { AfterRule, FieldPosition, TextRule, TextSpec } from './text.js';
 import {
-  codeUnitCpu,
   codeUnitText,
   codeUnitTypeText,
   constructorText,
@@ -15,7 +14,6 @@ import {
   limitsForNamespaceAfter,
   lineText,
   managedPackageText,
-  methodEntryCpu,
   methodExitText,
   rule,
   validationFormulaAfter,
@@ -23,8 +21,6 @@ import {
   wfFormulaAfter,
 } from './text.js';
 import type {
-  Category,
-  CpuType,
   DebugCategory,
   EventType,
   EventTypeInfo,
@@ -59,7 +55,7 @@ export type NamespaceRule =
 
 /**
  * Scan-time work for one type that no declaration states. Each hook reads `HOOK_FIELDS`. Work on
- * text, suffix or cpuType is not a hook: the views do it when a caller reads them.
+ * text is not a hook: the views do it when a caller reads it.
  */
 export type Hook = 'limitSnapshot' | 'limitException' | 'fatal' | 'flowTotal' | 'vfApexCall';
 
@@ -94,19 +90,18 @@ interface CommonDef {
   readonly kind?: Kind;
   readonly debugCategory: DebugCategory;
   readonly level: Level;
-  readonly symbols?: boolean;
+  readonly apexCall?: boolean;
   readonly acceptsText?: boolean;
   readonly discontinuity?: boolean;
   readonly after?: AfterRule;
+  /** False for a type whose own time the platform does not count toward the Apex CPU limit. */
+  readonly consumesCpuTime?: false;
 }
 
 /** A frame states `exits` or `closes`, which is what makes its shape a frame. */
 interface FrameDef extends CommonDef {
   /** Not stated: a frame states `exits` or `closes`, which make its shape. */
   readonly shape?: never;
-  readonly category: Category;
-  readonly cpu: CpuType;
-  readonly suffix?: string;
 }
 
 /** A frame that an exit line of one of `exits` closes. */
@@ -123,10 +118,6 @@ interface OtherClosedDef extends FrameDef {
 
 interface PointDef extends CommonDef {
   readonly shape?: Exclude<Shape, 'frame' | 'exit'>;
-  /** Only a frame states a category. A frame also states `exits` or `closes`. */
-  readonly category?: never;
-  readonly cpu?: never;
-  readonly suffix?: never;
   readonly exits?: never;
   readonly closes?: never;
 }
@@ -138,9 +129,6 @@ interface ExitDef extends Omit<CommonDef, 'debugCategory' | 'level' | 'kind'> {
   readonly debugCategory?: never;
   readonly level?: never;
   readonly kind?: never;
-  readonly category?: never;
-  readonly cpu?: never;
-  readonly suffix?: never;
   readonly exits?: never;
   readonly closes?: never;
 }
@@ -152,8 +140,6 @@ type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef | Exi
   /** The line's fields from field 2 on, in order. */
   readonly fields?: readonly FieldName<T>[];
   readonly text?: TextSpec<FieldName<T>>;
-  /** The cpuType, read from the line, for a type whose events differ; else `cpu` holds. */
-  readonly cpuOf?: CpuSpec<FieldName<T>>;
   readonly count?: Count;
   /** The row count the line states, credited to the frame the line opens or closes. */
   readonly rows?: { readonly field: FieldName<T>; readonly of: RowsOf };
@@ -164,8 +150,8 @@ type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef | Exi
 };
 
 /**
- * The engine's half of an entry. Every key is present, so reads stay monomorphic. `cpuType`,
- * `suffix` and `hasValidSymbols` are the type's defaults; an event can state its own.
+ * The engine's half of an entry. Every key is present, so reads stay monomorphic.
+ * `isApexCall` is the type's default; an event can state its own.
  */
 export interface Grammar {
   readonly closes: Closes | null;
@@ -174,9 +160,7 @@ export interface Grammar {
   /** A line after this type's line that starts no event is its text, not an `Invalid log line`. */
   readonly acceptsText: boolean;
   readonly discontinuity: boolean;
-  readonly cpuType: CpuType | null;
-  readonly suffix: string | null;
-  readonly hasValidSymbols: boolean;
+  readonly isApexCall: boolean;
   readonly count: Count | null;
   readonly rowsField: number;
   readonly rowsOf: RowsOf | null;
@@ -274,10 +258,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CALLOUT_REQUEST: {
     fields: ['line', 'request'],
     exits: ['CALLOUT_RESPONSE'],
-    category: 'Callout',
     debugCategory: 'callout',
     level: 'INFO',
-    cpu: 'free',
+    consumesCpuTime: false,
     text: at('request'),
   },
   CALLOUT_REQUEST_FINALIZE: {
@@ -305,12 +288,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'unit', 'name', 'typeRef'],
     kind: 'code-unit',
     exits: ['CODE_UNIT_FINISHED'],
-    category: 'Code Unit',
     debugCategory: 'apexCode',
     level: 'ERROR',
-    cpu: 'method',
-    cpuOf: codeUnitCpu,
-    suffix: ' (code unit)',
     text: codeUnitText,
   },
   CONSTRUCTOR_ENTRY: {
@@ -318,12 +297,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'classId', 'signature', 'className'],
     kind: 'method',
     exits: ['CONSTRUCTOR_EXIT'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINE',
-    cpu: 'method',
-    suffix: ' (constructor)',
-    symbols: true,
+    apexCall: true,
     text: constructorText,
   },
   CONSTRUCTOR_EXIT: {
@@ -334,10 +310,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     namespace: 'none',
     kind: 'limits',
     exits: ['CUMULATIVE_LIMIT_USAGE_END'],
-    category: 'System',
     debugCategory: 'apexProfiling',
     level: 'INFO',
-    cpu: 'system',
   },
   CUMULATIVE_LIMIT_USAGE_END: {
     shape: 'exit',
@@ -353,20 +327,17 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   CUMULATIVE_PROFILING_BEGIN: {
     namespace: 'none',
     exits: ['CUMULATIVE_PROFILING_END'],
-    category: 'System',
     debugCategory: 'apexProfiling',
     level: 'FINE',
-    cpu: 'custom',
   },
   CUMULATIVE_PROFILING_END: { shape: 'exit' },
   CURSOR_CREATE_BEGIN: {
     fields: ['line', 'soqlQuery'],
     kind: 'soql',
     exits: ['CURSOR_CREATE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
-    cpu: 'method',
+    consumesCpuTime: false,
   },
   CURSOR_CREATE_END: {
     fields: ['line', 'queryId', 'numberRowsResult'],
@@ -402,10 +373,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'operation', 'objectType', 'rows'],
     kind: 'dml',
     exits: ['DML_END'],
-    category: 'DML',
     debugCategory: 'database',
     level: 'INFO',
-    cpu: 'free',
+    consumesCpuTime: false,
     text: rule(['operation', 'objectType'], (op, type) => (f) => `DML ${f.at(op)} ${f.at(type)}`),
   },
   DML_END: {
@@ -414,10 +384,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   DUPLICATE_DETECTION_BEGIN: {
     exits: ['DUPLICATE_DETECTION_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'INFO',
-    cpu: 'custom',
   },
   DUPLICATE_DETECTION_END: { shape: 'exit' },
   DUPLICATE_DETECTION_MATCH_INVOCATION_DETAILS: {
@@ -458,20 +426,15 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['namespace'],
     kind: 'package',
     closes: 'next-event',
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINE',
-    cpu: 'pkg',
-    suffix: ' (managed package)',
     text: managedPackageText,
   },
   EVENT_SERVICE_PUB_BEGIN: {
     fields: ['eventType'],
     exits: ['EVENT_SERVICE_PUB_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: at('eventType'),
   },
   EVENT_SERVICE_PUB_DETAIL: {
@@ -488,10 +451,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   EVENT_SERVICE_SUB_BEGIN: {
     fields: ['eventType', 'action'],
     exits: ['EVENT_SERVICE_SUB_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: join(' ', 'eventType', 'action'),
   },
   EVENT_SERVICE_SUB_DETAIL: {
@@ -536,10 +497,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     namespace: 'none',
     kind: 'execution',
     exits: ['EXECUTION_FINISHED'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'ERROR',
-    cpu: 'method',
   },
   EXTERNAL_SERVICE_CALLBACK: { debugCategory: 'callout', level: 'INFO' },
   EXTERNAL_SERVICE_REQUEST: {
@@ -580,10 +539,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['interviewId', 'elementType'],
     kind: 'flow',
     exits: ['FLOW_BULK_ELEMENT_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'FINE',
-    cpu: 'custom',
     text: join(' - ', 'interviewId', 'elementType'),
   },
   FLOW_BULK_ELEMENT_DETAIL: {
@@ -641,10 +598,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['interviewId', 'elementType', 'elementName'],
     kind: 'flow',
     exits: ['FLOW_ELEMENT_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'FINE',
-    cpu: 'custom',
     text: join(' ', 'elementType', 'elementName'),
   },
   FLOW_ELEMENT_DEFERRED: {
@@ -735,11 +690,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['interviewId', 'flowName'],
     kind: 'flow',
     exits: ['FLOW_START_INTERVIEW_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
-    suffix: ' (flow)',
     text: at('flowName'),
   },
   FLOW_START_INTERVIEW_END: {
@@ -753,15 +705,13 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'limits',
     text: at('usage'),
   },
-  // Text and suffix come from its first interview and what started it: `views/lines.ts`.
+  // Its text comes from its first interview: `views/lines.ts`.
   FLOW_START_INTERVIEWS_BEGIN: {
     fields: ['requests'],
     kind: 'flow',
     exits: ['FLOW_START_INTERVIEWS_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
   },
   FLOW_START_INTERVIEWS_END: {
     fields: ['requests'],
@@ -830,10 +780,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   FORMULA_BUILD: { debugCategory: 'apexCode', level: 'DEBUG' },
   FORMULA_EVALUATE_BEGIN: {
     exits: ['FORMULA_EVALUATE_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINER',
-    cpu: 'method',
   },
   FORMULA_EVALUATE_END: { shape: 'exit' },
   FUNCTION_INVOCATION_REQUEST: {
@@ -906,10 +854,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   MATCH_ENGINE_BEGIN: {
     exits: ['MATCH_ENGINE_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'INFO',
-    cpu: 'method',
   },
   MATCH_ENGINE_END: { shape: 'exit' },
   MATCH_ENGINE_INVOCATION: {
@@ -922,12 +868,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'classId', 'signature'],
     kind: 'method',
     exits: ['METHOD_EXIT'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'FINE',
-    cpu: 'method',
-    cpuOf: methodEntryCpu,
-    symbols: true,
+    apexCall: true,
     text: at('signature'),
   },
   METHOD_EXIT: {
@@ -986,10 +929,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   NBA_NODE_BEGIN: {
     fields: ['elementName', 'elementType'],
     exits: ['NBA_NODE_END'],
-    category: 'Automation',
     debugCategory: 'nba',
     level: 'FINE',
-    cpu: 'method',
     text: from('elementName', ' | '),
   },
   NBA_NODE_DETAIL: {
@@ -1018,10 +959,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   NBA_STRATEGY_BEGIN: {
     fields: ['strategyName'],
     exits: ['NBA_STRATEGY_END'],
-    category: 'Automation',
     debugCategory: 'nba',
     level: 'FINE',
-    cpu: 'method',
     text: from('strategyName', ' | '),
   },
   NBA_STRATEGY_END: {
@@ -1041,10 +980,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['ORG_CACHE_GET_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
-    cpu: 'method',
   },
   ORG_CACHE_GET_CAPACITY: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   ORG_CACHE_GET_END: {
@@ -1063,10 +1000,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['ORG_CACHE_PUT_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
-    cpu: 'method',
   },
   ORG_CACHE_PUT_END: { shape: 'exit' },
   ORG_CACHE_REMOVE: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
@@ -1074,10 +1009,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['ORG_CACHE_REMOVE_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
-    cpu: 'method',
   },
   ORG_CACHE_REMOVE_END: { shape: 'exit' },
   PLAY_PROMPT: { debugCategory: 'workflow', level: 'INFO', kind: 'other' },
@@ -1166,10 +1099,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line'],
     kind: 'soql',
     exits: ['QUERY_MORE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
-    cpu: 'custom',
+    consumesCpuTime: false,
     text: queryMoreText,
   },
   QUERY_MORE_END: {
@@ -1195,20 +1127,16 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   RLM_CONFIGURATOR_BEGIN: {
     exits: ['RLM_CONFIGURATOR_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
-    cpu: 'method',
   },
   RLM_CONFIGURATOR_DEPLOY: { debugCategory: 'system', level: 'FINE' },
   RLM_CONFIGURATOR_END: { shape: 'exit' },
   RLM_CONFIGURATOR_STATS: { debugCategory: 'system', level: 'FINE' },
   RLM_PRICING_BEGIN: {
     exits: ['RLM_PRICING_END'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
-    cpu: 'method',
   },
   RLM_PRICING_END: { shape: 'exit' },
   ROUTE_WORK_ACTION: { debugCategory: 'workflow', level: 'INFO', kind: 'other' },
@@ -1236,10 +1164,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['SESSION_CACHE_GET_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
-    cpu: 'method',
   },
   SESSION_CACHE_GET_CAPACITY: { debugCategory: 'apexCode', level: 'INFO', kind: 'cache' },
   SESSION_CACHE_GET_END: {
@@ -1258,10 +1184,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['SESSION_CACHE_PUT_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
-    cpu: 'method',
   },
   SESSION_CACHE_PUT_END: {
     shape: 'exit',
@@ -1271,10 +1195,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['key'],
     kind: 'cache',
     exits: ['SESSION_CACHE_REMOVE_END'],
-    category: 'Apex',
     debugCategory: 'apexCode',
     level: 'INFO',
-    cpu: 'method',
   },
   SESSION_CACHE_REMOVE_END: {
     shape: 'exit',
@@ -1304,10 +1226,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'aggregations', 'query'],
     kind: 'soql',
     exits: ['SOQL_EXECUTE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
-    cpu: 'free',
+    consumesCpuTime: false,
     text: at('query'),
   },
   SOQL_EXECUTE_END: {
@@ -1327,10 +1248,9 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'query'],
     kind: 'sosl',
     exits: ['SOSL_EXECUTE_END'],
-    category: 'SOQL',
     debugCategory: 'database',
     level: 'INFO',
-    cpu: 'free',
+    consumesCpuTime: false,
     text: rule(['query'], (query) => (f) => `SOSL: ${f.at(query)}`),
   },
   SOSL_EXECUTE_END: {
@@ -1362,11 +1282,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'signature'],
     kind: 'method',
     exits: ['SYSTEM_CONSTRUCTOR_EXIT'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
-    cpu: 'method',
-    suffix: ' (system constructor)',
     text: at('signature'),
   },
   SYSTEM_CONSTRUCTOR_EXIT: {
@@ -1377,10 +1294,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'signature'],
     kind: 'method',
     exits: ['SYSTEM_METHOD_EXIT'],
-    category: 'System',
     debugCategory: 'system',
     level: 'FINE',
-    cpu: 'method',
     text: at('signature'),
   },
   SYSTEM_METHOD_EXIT: {
@@ -1511,20 +1426,15 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'element', 'method', 'controller'],
     kind: 'method',
     exits: ['VF_APEX_CALL_END'],
-    category: 'Apex',
     debugCategory: 'visualforce',
     level: 'FINE',
-    cpu: 'method',
-    suffix: ' (VF APEX)',
-    symbols: true,
+    apexCall: true,
     text: vfApexCallText,
   },
   VF_DESERIALIZE_CONTINUATION_STATE_BEGIN: {
     exits: ['VF_DESERIALIZE_CONTINUATION_STATE_END'],
-    category: 'Apex',
     debugCategory: 'visualforce',
     level: 'INFO',
-    cpu: 'method',
   },
   VF_DESERIALIZE_CONTINUATION_STATE_END: {
     shape: 'exit',
@@ -1532,10 +1442,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_DESERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
     exits: ['VF_DESERIALIZE_VIEWSTATE_END'],
-    category: 'System',
     debugCategory: 'visualforce',
     level: 'INFO',
-    cpu: 'method',
   },
   VF_DESERIALIZE_VIEWSTATE_END: {
     shape: 'exit',
@@ -1543,11 +1451,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_EVALUATE_FORMULA_BEGIN: {
     fields: ['viewStateId', 'formula'],
     exits: ['VF_EVALUATE_FORMULA_END'],
-    category: 'System',
     debugCategory: 'visualforce',
     level: 'FINER',
-    cpu: 'custom',
-    suffix: ' (VF FORMULA)',
     text: at('formula'),
   },
   VF_EVALUATE_FORMULA_END: {
@@ -1563,10 +1468,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   },
   VF_SERIALIZE_CONTINUATION_STATE_BEGIN: {
     exits: ['VF_SERIALIZE_CONTINUATION_STATE_END'],
-    category: 'Apex',
     debugCategory: 'visualforce',
     level: 'INFO',
-    cpu: 'method',
   },
   VF_SERIALIZE_CONTINUATION_STATE_END: {
     shape: 'exit',
@@ -1574,10 +1477,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   VF_SERIALIZE_VIEWSTATE_BEGIN: {
     fields: ['viewStateId'],
     exits: ['VF_SERIALIZE_VIEWSTATE_END'],
-    category: 'System',
     debugCategory: 'visualforce',
     level: 'INFO',
-    cpu: 'method',
   },
   VF_SERIALIZE_VIEWSTATE_END: {
     shape: 'exit',
@@ -1605,10 +1506,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_APPROVAL: {
     fields: ['transitionType', 'record', 'nodeName'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: join(' : ', 'transitionType', 'record', 'nodeName'),
   },
   WF_APPROVAL_REMOVE: {
@@ -1620,10 +1519,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_APPROVAL_SUBMIT: {
     fields: ['submissionDetails'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: at('submissionDetails'),
   },
   WF_APPROVAL_SUBMITTER: {
@@ -1646,10 +1543,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_CRITERIA_BEGIN: {
     fields: ['record', 'ruleName', 'ruleId', 'triggerType', 'recursiveCount'],
     exits: ['WF_CRITERIA_END', 'WF_RULE_NOT_EVALUATED'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: joinPresent(' : ', 'triggerType', 'ruleName'),
   },
   WF_CRITERIA_END: {
@@ -1659,19 +1554,15 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_EMAIL_ALERT: {
     fields: ['alert'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: at('alert'),
   },
   WF_EMAIL_SENT: {
     fields: ['template', 'recipients', 'ccEmails'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: join(' : ', 'template', 'recipients', 'ccEmails'),
   },
   WF_ENQUEUE_ACTIONS: {
@@ -1690,19 +1581,15 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_EVAL_ENTRY_CRITERIA: {
     fields: ['processName', 'emailTemplateId', 'result'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: join(' : ', 'processName', 'emailTemplateId', 'result'),
   },
   WF_FIELD_UPDATE: {
     fields: ['record', 'field', 'value', 'detail', 'currentRule'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: join(' ', 'record', 'field', 'value', 'detail', 'currentRule'),
   },
   WF_FLOW_ACTION_BEGIN: {
@@ -1738,10 +1625,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_FORMULA: {
     fields: ['formula', 'values'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     acceptsText: true,
     text: from('formula', '|'),
     after: wfFormulaAfter,
@@ -1755,10 +1640,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_NEXT_APPROVER: {
     fields: ['owner', 'nextOwnerType', 'field'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: join(' : ', 'owner', 'nextOwnerType', 'field'),
   },
   WF_NO_PROCESS_FOUND: { debugCategory: 'workflow', level: 'INFO' },
@@ -1771,19 +1654,15 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_PROCESS_FOUND: {
     fields: ['process', 'label'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: join(' : ', 'process', 'label'),
   },
   WF_PROCESS_NODE: {
     fields: ['processName'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: at('processName'),
   },
   WF_QUICK_CREATE: { debugCategory: 'workflow', level: 'INFO' },
@@ -1808,10 +1687,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_RULE_EVAL_BEGIN: {
     fields: ['ruleType'],
     exits: ['WF_RULE_EVAL_END'],
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: at('ruleType'),
   },
   WF_RULE_EVAL_END: { shape: 'exit' },
@@ -1831,10 +1708,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
   WF_RULE_INVOCATION: {
     fields: ['rule'],
     closes: 'next-line',
-    category: 'Automation',
     debugCategory: 'workflow',
     level: 'INFO',
-    cpu: 'custom',
     text: at('rule'),
   },
   WF_RULE_NOT_EVALUATED: {
@@ -1947,18 +1822,17 @@ function infoOf(type: EventType, typeId: number): EventTypeInfo {
     fields: Object.freeze(fieldNamesOf(type)),
     shape: def.exits || def.closes ? 'frame' : (def.shape ?? 'leaf'),
     kind: kind ?? (KINDS.has(debugCategory) ? (debugCategory as Kind) : 'other'),
-    category: def.category ?? null,
+    consumesCpuTime: def.consumesCpuTime ?? true,
     debugCategory,
     debugLevel: level,
     exitTypes: def.exits ? Object.freeze(def.exits) : NO_TYPES,
   });
 }
 
-/** How `eventText` and `eventCpuType` read one type's line. Private, so each has one seam. */
+/** How `eventText` reads one type's line. Private, so it has one seam. */
 interface LineRules {
   readonly rule: TextRule | null;
   readonly after: AfterRule | null;
-  readonly cpu: CpuRule | null;
 }
 
 const fieldNamesOf = (type: EventType): readonly string[] =>
@@ -1978,9 +1852,7 @@ function grammarOf(type: EventType): Grammar {
     lineField: line < 0 ? -1 : line + FIRST_FIELD,
     acceptsText: def.acceptsText ?? false,
     discontinuity: def.discontinuity ?? false,
-    cpuType: def.cpu ?? null,
-    suffix: def.suffix ?? null,
-    hasValidSymbols: def.symbols ?? false,
+    isApexCall: def.apexCall ?? false,
     count: def.count ?? null,
     rowsField: def.rows ? fact(def.rows.field) : -1,
     rowsOf: def.rows?.of ?? null,
@@ -2011,7 +1883,6 @@ function lineRulesOf(type: EventType): LineRules {
   return {
     rule: def.text?.(positionIn(type, 'a text rule')) ?? null,
     after: def.after ?? null,
-    cpu: def.cpuOf?.(positionIn(type, 'a cpu rule')) ?? null,
   };
 }
 
@@ -2051,15 +1922,6 @@ export function eventText(typeId: number, f: Fields): string | null {
   const joined = base === null ? more : more ? `${base}\n${more}` : base;
   if (!joined) return null;
   return text.after ? text.after(joined) : joined;
-}
-
-/**
- * An event's cpuType: its type's rule, which reads the line, or the type's own. Null for none.
- * `line` is called only for a type with a rule, so most reads touch no bytes.
- */
-export function eventCpuType(typeId: number, line: () => LineFields): CpuType | null {
-  const rule = LINE_RULES[typeId]?.cpu;
-  return rule ? rule(line()) : (GRAMMAR[typeId]?.cpuType ?? null);
 }
 
 /**

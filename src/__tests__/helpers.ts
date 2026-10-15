@@ -35,11 +35,11 @@ export const method: readonly string[] = [
   `${at(100)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
 ];
 
-/** Each event as `depth type@timestamp-exitStamp`, with `!` for a frame the log does not close. */
+/** Each event as `depth type@start-end`, a leaf with no end, and `!` for a frame the log does not close. */
 export const outline = (log: ApexLog): string[] =>
   [...log.events].map(
     (e) =>
-      `${'  '.repeat(e.depth - 1)}${e.type}@${e.timestamp}${e.isFrame ? `-${e.exitStamp}` : ''}${e.isTruncated ? '!' : ''}`,
+      `${'  '.repeat(e.depth - 1)}${e.type}@${e.startTimestamp}${e.isFrame ? `-${e.endTimestamp}` : ''}${e.isTruncated ? '!' : ''}`,
   );
 
 const INTEGER = /^-?\d+$/;
