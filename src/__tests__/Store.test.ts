@@ -24,6 +24,32 @@ describe('Store', () => {
     ]).toEqual([NO_LINE, NONE, NONE, NONE]);
   });
 
+  it('states its columns in the order restore reads them', () => {
+    const store = new Store(0);
+    store.add(1, 2, 3, 4, NONE, 0);
+    store.finish(2);
+    // The order is the buffer format: a column moved here reads as another after a restore.
+    const order = [
+      store.type,
+      store.start,
+      store.end,
+      store.timestamp,
+      store.exitStamp,
+      store.parent,
+      store.subtreeEnd,
+      store.depth,
+      store.lineNumber,
+      store.namespace,
+      store.flags,
+      store.durationSelf,
+      store.countSlot,
+      store.heapSlot,
+    ];
+    const { columns } = store.state();
+    expect(columns).toHaveLength(order.length);
+    for (const [i, column] of order.entries()) expect(columns[i]).toBe(column);
+  });
+
   it('grows past its first size and keeps every row', () => {
     const store = new Store(0);
     for (let i = 0; i < 1000; i++) store.add(i % 5, i, i + 1, i * 10, i - 1, i % 3);
