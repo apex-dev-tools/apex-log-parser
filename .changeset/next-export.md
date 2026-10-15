@@ -2,7 +2,7 @@
 '@apexdevtools/apex-log-parser': minor
 ---
 
-Add a new, experimental parser at `@apexdevtools/apex-log-parser/next`. It replaces today's parser in v1, and its API can change before then. Today's `parse` does not change.
+**New parser (opt-in):** add a new, experimental parser at `@apexdevtools/apex-log-parser/next`. It replaces today's parser in v1, and its API can change before then. Today's `parse` does not change.
 
 **6–9× faster and 8× less memory used vs v0.2.0**, on logs of 8 to 100 MB. A 100 MB log parse was measured at 182 ms instead of 1,646 ms, with 141 MB memory held instead of 1,100 MB.
 
