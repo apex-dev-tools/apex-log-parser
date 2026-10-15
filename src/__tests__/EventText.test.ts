@@ -4,7 +4,7 @@
 import type { ApexLog } from '../views/log.js';
 import { at, HEADER, logOf, parse } from './helpers.js';
 
-const pick = (log: ApexLog, key: 'text' | 'hasValidSymbols') => [...log.events].map((e) => e[key]);
+const pick = (log: ApexLog, key: 'text' | 'isApexCall') => [...log.events].map((e) => e[key]);
 
 describe('event text', () => {
   it('reads the text by its type rule, with continuation lines, and null when it states none', () => {
@@ -69,14 +69,14 @@ describe('event text', () => {
     }
   });
 
-  it('has valid symbols for an Apex frame, and not for a VF call the line made a leaf', () => {
+  it('is an Apex call for an Apex frame, and not for a VF call the line made a leaf', () => {
     const log = logOf(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(2)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(3)}|VF_APEX_CALL_START|[1]|ns.MyController|`,
       `${at(4)}|STATEMENT_EXECUTE|[2]`,
     );
-    expect(pick(log, 'hasValidSymbols')).toEqual([true, false, false]);
+    expect(pick(log, 'isApexCall')).toEqual([true, false, false]);
   });
 
   it('names flow interviews by their first interview', () => {

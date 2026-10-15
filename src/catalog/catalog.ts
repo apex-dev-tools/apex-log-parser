@@ -90,7 +90,7 @@ interface CommonDef {
   readonly kind?: Kind;
   readonly debugCategory: DebugCategory;
   readonly level: Level;
-  readonly symbols?: boolean;
+  readonly apexCall?: boolean;
   readonly acceptsText?: boolean;
   readonly discontinuity?: boolean;
   readonly after?: AfterRule;
@@ -151,7 +151,7 @@ type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef | Exi
 
 /**
  * The engine's half of an entry. Every key is present, so reads stay monomorphic.
- * `hasValidSymbols` is the type's default; an event can state its own.
+ * `isApexCall` is the type's default; an event can state its own.
  */
 export interface Grammar {
   readonly closes: Closes | null;
@@ -160,7 +160,7 @@ export interface Grammar {
   /** A line after this type's line that starts no event is its text, not an `Invalid log line`. */
   readonly acceptsText: boolean;
   readonly discontinuity: boolean;
-  readonly hasValidSymbols: boolean;
+  readonly isApexCall: boolean;
   readonly count: Count | null;
   readonly rowsField: number;
   readonly rowsOf: RowsOf | null;
@@ -299,7 +299,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     exits: ['CONSTRUCTOR_EXIT'],
     debugCategory: 'apexCode',
     level: 'FINE',
-    symbols: true,
+    apexCall: true,
     text: constructorText,
   },
   CONSTRUCTOR_EXIT: {
@@ -870,7 +870,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     exits: ['METHOD_EXIT'],
     debugCategory: 'apexCode',
     level: 'FINE',
-    symbols: true,
+    apexCall: true,
     text: at('signature'),
   },
   METHOD_EXIT: {
@@ -1428,7 +1428,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     exits: ['VF_APEX_CALL_END'],
     debugCategory: 'visualforce',
     level: 'FINE',
-    symbols: true,
+    apexCall: true,
     text: vfApexCallText,
   },
   VF_DESERIALIZE_CONTINUATION_STATE_BEGIN: {
@@ -1852,7 +1852,7 @@ function grammarOf(type: EventType): Grammar {
     lineField: line < 0 ? -1 : line + FIRST_FIELD,
     acceptsText: def.acceptsText ?? false,
     discontinuity: def.discontinuity ?? false,
-    hasValidSymbols: def.symbols ?? false,
+    isApexCall: def.apexCall ?? false,
     count: def.count ?? null,
     rowsField: def.rows ? fact(def.rows.field) : -1,
     rowsOf: def.rows?.of ?? null,

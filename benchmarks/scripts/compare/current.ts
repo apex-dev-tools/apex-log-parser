@@ -115,7 +115,7 @@ const nodeOf = (event: ApexEvent) => ({
   counts: countsOf(event),
   text: event.text,
   logLine: event.logLine,
-  hasValidSymbols: event.hasValidSymbols,
+  isApexCall: event.isApexCall,
 });
 
 /** Each event's path of child positions; index 0 is the log. */

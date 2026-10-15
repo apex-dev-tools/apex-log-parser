@@ -60,8 +60,12 @@ interface EventBase extends Rollups {
   readonly text: string | null;
   /** The event's first line as the log states it, without its line ending. */
   readonly logLine: string;
-  /** `text` names Apex code that a symbol lookup can find. */
-  readonly hasValidSymbols: boolean;
+  /**
+   * A call into Apex code: `text` names a class and, for a method, the method. True for
+   * `METHOD_ENTRY`, `CONSTRUCTOR_ENTRY` and a `VF_APEX_CALL_START` that opens a frame; false for
+   * system code, code units, and a Visualforce call that names no method.
+   */
+  readonly isApexCall: boolean;
   /**
    * Field `name` of the event's first line, as stated: one of `eventType(type).fields`. The type's
    * last field runs to the line's end, `|` and all. Null when the line has no such field, or it is
@@ -313,12 +317,10 @@ class EventView extends RollupView {
   }
 
   /** The type's, unless the line made the event a leaf, as a VF call with no method. */
-  get hasValidSymbols(): boolean {
+  get isApexCall(): boolean {
     const store = this.store;
     // id is a row, so its type is a type id
-    return (
-      GRAMMAR[store.type[this.id]!]!.hasValidSymbols && !(store.flags[this.id]! & FLAG.notEntry)
-    );
+    return GRAMMAR[store.type[this.id]!]!.isApexCall && !(store.flags[this.id]! & FLAG.notEntry);
   }
 
   field(name: string): string | null {
