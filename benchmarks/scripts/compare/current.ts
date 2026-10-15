@@ -115,7 +115,6 @@ const nodeOf = (event: ApexEvent) => ({
   counts: countsOf(event),
   text: event.text,
   logLine: event.logLine,
-  cpuType: event.cpuType,
   hasValidSymbols: event.hasValidSymbols,
 });
 

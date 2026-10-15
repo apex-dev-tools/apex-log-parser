@@ -352,19 +352,6 @@ export const LEVEL = {
 /** A Salesforce debug level. */
 export type Level = (typeof LEVEL)[keyof typeof LEVEL];
 
-/** The ways a frame's CPU time is grouped. */
-export const CPU_TYPE = {
-  Loading: 'loading',
-  Custom: 'custom',
-  Method: 'method',
-  Free: 'free',
-  System: 'system',
-  Pkg: 'pkg',
-} as const;
-
-/** How a frame's CPU time is grouped. */
-export type CpuType = (typeof CPU_TYPE)[keyof typeof CPU_TYPE];
-
 /** The ways an event type sits in the tree. */
 export const SHAPE = {
   Frame: 'frame',
@@ -419,6 +406,12 @@ export interface EventTypeInfo {
   readonly debugCategory: DebugCategory;
   /** The debug level at which Salesforce writes this type. */
   readonly debugLevel: Level;
+  /**
+   * False when the event's own elapsed time, `duration.self`, uses no application server CPU: time
+   * in the database for DML, SOQL and SOSL, or waiting on a callout. The platform does not count it
+   * toward the Apex CPU limit. Its children count by their own type, as the triggers a DML runs do.
+   */
+  readonly consumesCpuTime: boolean;
   /**
    * The exit lines that close a frame of this type. Empty for a leaf, an exit line, and a frame
    * that the next line or the next event closes.

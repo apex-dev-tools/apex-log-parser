@@ -69,7 +69,8 @@ An event type's number, the same in every parse and every release. Not an event'
 _Avoid_: id (alone), type index
 
 **Type info**:
-What is true of every event of one type: its debug category, level, kind and exit types.
+What is true of every event of one type: its debug category, level, kind, exit types and whether its
+own time uses application server CPU.
 It belongs to the type, never to one event.
 _Avoid_: event metadata
 

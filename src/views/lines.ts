@@ -3,14 +3,7 @@
  */
 import { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
-import {
-  EVENT_TYPES,
-  eventCpuType,
-  eventText,
-  fieldPosition,
-  idOfType,
-} from '../catalog/catalog.js';
-import type { CpuType } from '../catalog/types.js';
+import { EVENT_TYPES, eventText, fieldPosition, idOfType } from '../catalog/catalog.js';
 import type { Store } from '../store/store.js';
 import type { AnyDetails } from './details.js';
 import { eventDetails } from './details.js';
@@ -20,8 +13,8 @@ const INTERVIEW = idOfType('FLOW_START_INTERVIEW_BEGIN');
 const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
 
 /**
- * Reads each row's line from the source, on demand: its text, raw line, fields and cpuType. One
- * cursor serves every read, so each result is taken before the next read starts.
+ * Reads each row's line from the source, on demand: its text, raw line and fields. One cursor
+ * serves every read, so each result is taken before the next read starts.
  */
 export class EventLines {
   private readonly store: Store;
@@ -59,11 +52,6 @@ export class EventLines {
       throw new RangeError(`${EVENT_TYPES[type]?.type ?? 'The log'} has no field ${name}`);
     const f = this.at(id);
     return (last ? f.from(at, '|') : f.at(at)) || null;
-  }
-
-  /** The type's cpuType, or the line's for a type whose events differ. */
-  cpuType(id: number): CpuType | null {
-    return eventCpuType(this.typeOf(id), () => this.at(id));
   }
 
   /** The values the row's line states beyond its text; null for a type with none. */

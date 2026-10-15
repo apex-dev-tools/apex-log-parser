@@ -4,8 +4,7 @@
 import type { ApexLog } from '../views/log.js';
 import { at, HEADER, logOf, parse } from './helpers.js';
 
-const pick = (log: ApexLog, key: 'text' | 'cpuType' | 'hasValidSymbols') =>
-  [...log.events].map((e) => e[key]);
+const pick = (log: ApexLog, key: 'text' | 'hasValidSymbols') => [...log.events].map((e) => e[key]);
 
 describe('event text', () => {
   it('reads the text by its type rule, with continuation lines, and null when it states none', () => {
@@ -68,21 +67,6 @@ describe('event text', () => {
       const exitStamp: number = typed.exitStamp;
       expect(exitStamp).toBe(2);
     }
-  });
-
-  it('states the cpuType of the type, or of the line when its events differ', () => {
-    const log = logOf(
-      `${at(1)}|CODE_UNIT_STARTED|[EXTERNAL]|Workflow:Account`,
-      `${at(2)}|CODE_UNIT_FINISHED|Workflow:Account`,
-      `${at(3)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
-      `${at(4)}|METHOD_ENTRY|[1]|01p000000000AAA|System.Type.forName(String)`,
-      `${at(5)}|METHOD_EXIT|[1]|01p000000000AAA|System.Type.forName(String)`,
-      `${at(6)}|METHOD_ENTRY|[2]|01p000000000AAA|ns.MyClass.run()`,
-      `${at(7)}|STATEMENT_EXECUTE|[3]`,
-      `${at(8)}|METHOD_EXIT|[2]|01p000000000AAA|ns.MyClass.run()`,
-      `${at(9)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
-    );
-    expect(pick(log, 'cpuType')).toEqual(['custom', 'method', 'loading', 'method', null]);
   });
 
   it('has valid symbols for an Apex frame, and not for a VF call the line made a leaf', () => {

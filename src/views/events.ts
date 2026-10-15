@@ -3,14 +3,7 @@
  */
 import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
 import type { EventFields } from '../catalog/fields.js';
-import type {
-  CpuType,
-  DebugCategory,
-  EventType,
-  EventTypeInfo,
-  Kind,
-  Level,
-} from '../catalog/types.js';
+import type { DebugCategory, EventType, EventTypeInfo, Kind, Level } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import { FLAG, isFrameRow } from '../engine/tables.js';
 import type { Store } from '../store/store.js';
@@ -67,8 +60,6 @@ interface EventBase extends Rollups {
   readonly text: string | null;
   /** The event's first line as the log states it, without its line ending. */
   readonly logLine: string;
-  /** What the event's time is spent on, as `method` or `custom`. Null for a type that states none. */
-  readonly cpuType: CpuType | null;
   /** `text` names Apex code that a symbol lookup can find. */
   readonly hasValidSymbols: boolean;
   /**
@@ -319,10 +310,6 @@ class EventView extends RollupView {
 
   get logLine(): string {
     return this.events.lines.logLine(this.id);
-  }
-
-  get cpuType(): CpuType | null {
-    return this.events.lines.cpuType(this.id);
   }
 
   /** The type's, unless the line made the event a leaf, as a VF call with no method. */
