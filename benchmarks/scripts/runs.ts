@@ -30,18 +30,18 @@ let _held: unknown = null;
 export async function timedRuns(
   runs: number,
   once: () => unknown,
-): Promise<{ ms: number; bytes: number }> {
+): Promise<{ ms: number; heapBytes: number }> {
   once();
   const times: number[] = [];
-  const bytes: number[] = [];
+  const heaps: number[] = [];
   for (let run = 0; run < runs; run++) {
     _held = null;
     const before = await liveBytes();
     const start = performance.now();
     _held = once();
     times.push(performance.now() - start);
-    bytes.push((await liveBytes()) - before);
+    heaps.push((await liveBytes()) - before);
   }
   _held = null;
-  return { ms: median(times), bytes: median(bytes) };
+  return { ms: median(times), heapBytes: median(heaps) };
 }

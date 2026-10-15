@@ -56,7 +56,7 @@ async function main(): Promise<void> {
     const build = await timedRuns(runs, () => nodeEngine.build(bytes));
     const built = nodeEngine.build(bytes);
     const rows = built.store.count - 1;
-    console.log(`${name}: ${rows} events, build ${ms(build.ms)}, keeps ${mb(build.bytes)}`);
+    console.log(`${name}: ${rows} events, build ${ms(build.ms)}, keeps ${mb(build.heapBytes)}`);
 
     const work: [keyof typeof GATES, (log: ApexLog) => unknown][] = [
       ['columns', readColumns],
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
         gate === null ? '' : `, gate < ${gate} ms: ${result.ms < gate ? 'pass' : 'FAIL'}`;
       if (gate !== null && result.ms >= gate) failed = true;
       console.log(
-        `  ${what}: +${ms(result.ms)} over the build, ${versus(build.ms, build.ms + result.ms, 'time')}; keeps +${mb(result.bytes)}, ${versus(build.bytes, build.bytes + result.bytes, 'memory')}${verdict}`,
+        `  ${what}: +${ms(result.ms)} over the build, ${versus(build.ms, build.ms + result.ms, 'time')}; keeps +${mb(result.heapBytes)}, ${versus(build.heapBytes, build.heapBytes + result.heapBytes, 'memory')}${verdict}`,
       );
     }
   }

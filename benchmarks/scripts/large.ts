@@ -65,8 +65,7 @@ export async function measureLog(
   runs: number,
 ): Promise<{ ms: number; heapBytes: number }> {
   const bytes = new TextEncoder().encode(log);
-  const { ms, bytes: heapBytes } = await timedRuns(runs, () => nodeEngine.build(bytes));
-  return { ms, heapBytes };
+  return timedRuns(runs, () => nodeEngine.build(bytes));
 }
 
 async function main(): Promise<void> {
