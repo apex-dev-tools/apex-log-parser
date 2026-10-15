@@ -70,8 +70,6 @@ interface EventBase extends Rollups {
   readonly text: string | null;
   /** The event's first line as the log states it, without its line ending. */
   readonly logLine: string;
-  /** A label for the kind of code, as ` (code unit)`, for a type that has one; else null. */
-  readonly suffix: string | null;
   /** What the event's time is spent on, as `method` or `custom`. Null for a type that states none. */
   readonly cpuType: CpuType | null;
   /** `text` names Apex code that a symbol lookup can find. */
@@ -328,10 +326,6 @@ class EventView extends RollupView {
 
   get logLine(): string {
     return this.events.lines.logLine(this.id);
-  }
-
-  get suffix(): string | null {
-    return this.events.lines.suffix(this.id);
   }
 
   get cpuType(): CpuType | null {

@@ -159,7 +159,6 @@ describe('currentProjection', () => {
   it('adds each event its text figures', () => {
     expect(records(projection(log)).get('0/0/0')).toMatchObject({
       text: 'ns.MyClass.load()',
-      suffix: null,
       cpuType: 'method',
     });
   });

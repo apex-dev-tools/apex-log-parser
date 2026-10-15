@@ -4,12 +4,10 @@
 import { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
 import {
-  codeUnitType,
   EVENT_TYPES,
   eventCpuType,
   eventText,
   fieldPosition,
-  GRAMMAR,
   idOfType,
 } from '../catalog/catalog.js';
 import type { CpuType } from '../catalog/types.js';
@@ -17,14 +15,13 @@ import type { Store } from '../store/store.js';
 import type { AnyDetails } from './details.js';
 import { eventDetails } from './details.js';
 
-const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
 const INTERVIEWS = idOfType('FLOW_START_INTERVIEWS_BEGIN');
 const INTERVIEW = idOfType('FLOW_START_INTERVIEW_BEGIN');
 const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
 
 /**
- * Reads each row's line from the source, on demand: its text, raw line, fields, suffix and
- * cpuType. One cursor serves every read, so each result is taken before the next read starts.
+ * Reads each row's line from the source, on demand: its text, raw line, fields and cpuType. One
+ * cursor serves every read, so each result is taken before the next read starts.
  */
 export class EventLines {
   private readonly store: Store;
@@ -64,12 +61,6 @@ export class EventLines {
     return (last ? f.from(at, '|') : f.at(at)) || null;
   }
 
-  /** The type's suffix; for flow interviews, what started them. Null when there is none. */
-  suffix(id: number): string | null {
-    const type = this.typeOf(id);
-    return type === INTERVIEWS ? this.flowSuffix(id) : (GRAMMAR[type]?.suffix ?? null);
-  }
-
   /** The type's cpuType, or the line's for a type whose events differ. */
   cpuType(id: number): CpuType | null {
     return eventCpuType(this.typeOf(id), () => this.at(id));
@@ -107,18 +98,5 @@ export class EventLines {
       if (this.typeOf(child) === type) return child;
     }
     return -1;
-  }
-
-  /** What started the interviews: the nearest code unit or interviews frame above it. */
-  private flowSuffix(id: number): string | null {
-    const { parent } = this.store;
-    // Every parent is a row; row 0, the log, ends the walk.
-    for (let up = parent[id]!; up > 0; up = parent[up]!) {
-      const type = this.typeOf(up);
-      if (type === INTERVIEWS) return ' (Flow)';
-      if (type === CODE_UNIT_STARTED)
-        return codeUnitType(this.at(up)) === 'Flow' ? ' (Flow)' : ' (Process Builder)';
-    }
-    return null;
   }
 }

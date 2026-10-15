@@ -4,7 +4,7 @@
 import type { ApexLog } from '../views/log.js';
 import { at, HEADER, logOf, parse } from './helpers.js';
 
-const pick = (log: ApexLog, key: 'text' | 'suffix' | 'cpuType' | 'hasValidSymbols') =>
+const pick = (log: ApexLog, key: 'text' | 'cpuType' | 'hasValidSymbols') =>
   [...log.events].map((e) => e[key]);
 
 describe('event text', () => {
@@ -70,7 +70,7 @@ describe('event text', () => {
     }
   });
 
-  it('states the suffix and cpuType of the type, or of the line when its events differ', () => {
+  it('states the cpuType of the type, or of the line when its events differ', () => {
     const log = logOf(
       `${at(1)}|CODE_UNIT_STARTED|[EXTERNAL]|Workflow:Account`,
       `${at(2)}|CODE_UNIT_FINISHED|Workflow:Account`,
@@ -83,7 +83,6 @@ describe('event text', () => {
       `${at(9)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
     );
     expect(pick(log, 'cpuType')).toEqual(['custom', 'method', 'loading', 'method', null]);
-    expect(pick(log, 'suffix')).toEqual([' (code unit)', ' (code unit)', null, null, null]);
   });
 
   it('has valid symbols for an Apex frame, and not for a VF call the line made a leaf', () => {
@@ -96,7 +95,7 @@ describe('event text', () => {
     expect(pick(log, 'hasValidSymbols')).toEqual([true, false, false]);
   });
 
-  it('names flow interviews by their first interview, and by what started them', () => {
+  it('names flow interviews by their first interview', () => {
     const interviews = (from: number, name: string): string[] => [
       `${at(from)}|FLOW_START_INTERVIEWS_BEGIN|1`,
       `${at(from + 1)}|FLOW_START_INTERVIEWS_ERROR|x|01I000000000AAA|${name}`,
@@ -117,11 +116,11 @@ describe('event text', () => {
       `${at(21)}|FLOW_START_INTERVIEW_BEGIN|01I000000000AAA|Cut`,
     );
     const frames = log.ofType('FLOW_START_INTERVIEWS_BEGIN');
-    expect(frames.map((e) => [e.text, e.suffix, e.isTruncated])).toEqual([
-      ['MyFlow', ' (Flow)', false],
-      ['MyProcess', ' (Process Builder)', false],
-      ['Alone', null, false],
-      ['Cut', null, true],
+    expect(frames.map((e) => [e.text, e.isTruncated])).toEqual([
+      ['MyFlow', false],
+      ['MyProcess', false],
+      ['Alone', false],
+      ['Cut', true],
     ]);
   });
 });

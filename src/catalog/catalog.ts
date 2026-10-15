@@ -59,7 +59,7 @@ export type NamespaceRule =
 
 /**
  * Scan-time work for one type that no declaration states. Each hook reads `HOOK_FIELDS`. Work on
- * text, suffix or cpuType is not a hook: the views do it when a caller reads them.
+ * text or cpuType is not a hook: the views do it when a caller reads them.
  */
 export type Hook = 'limitSnapshot' | 'limitException' | 'fatal' | 'flowTotal' | 'vfApexCall';
 
@@ -106,7 +106,6 @@ interface FrameDef extends CommonDef {
   readonly shape?: never;
   readonly category: Category;
   readonly cpu: CpuType;
-  readonly suffix?: string;
 }
 
 /** A frame that an exit line of one of `exits` closes. */
@@ -126,7 +125,6 @@ interface PointDef extends CommonDef {
   /** Only a frame states a category. A frame also states `exits` or `closes`. */
   readonly category?: never;
   readonly cpu?: never;
-  readonly suffix?: never;
   readonly exits?: never;
   readonly closes?: never;
 }
@@ -140,7 +138,6 @@ interface ExitDef extends Omit<CommonDef, 'debugCategory' | 'level' | 'kind'> {
   readonly kind?: never;
   readonly category?: never;
   readonly cpu?: never;
-  readonly suffix?: never;
   readonly exits?: never;
   readonly closes?: never;
 }
@@ -164,8 +161,8 @@ type Def<T extends EventType> = (ExitClosedDef | OtherClosedDef | PointDef | Exi
 };
 
 /**
- * The engine's half of an entry. Every key is present, so reads stay monomorphic. `cpuType`,
- * `suffix` and `hasValidSymbols` are the type's defaults; an event can state its own.
+ * The engine's half of an entry. Every key is present, so reads stay monomorphic. `cpuType`
+ * and `hasValidSymbols` are the type's defaults; an event can state its own.
  */
 export interface Grammar {
   readonly closes: Closes | null;
@@ -175,7 +172,6 @@ export interface Grammar {
   readonly acceptsText: boolean;
   readonly discontinuity: boolean;
   readonly cpuType: CpuType | null;
-  readonly suffix: string | null;
   readonly hasValidSymbols: boolean;
   readonly count: Count | null;
   readonly rowsField: number;
@@ -310,7 +306,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     level: 'ERROR',
     cpu: 'method',
     cpuOf: codeUnitCpu,
-    suffix: ' (code unit)',
     text: codeUnitText,
   },
   CONSTRUCTOR_ENTRY: {
@@ -322,7 +317,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'apexCode',
     level: 'FINE',
     cpu: 'method',
-    suffix: ' (constructor)',
     symbols: true,
     text: constructorText,
   },
@@ -462,7 +456,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'apexCode',
     level: 'FINE',
     cpu: 'pkg',
-    suffix: ' (managed package)',
     text: managedPackageText,
   },
   EVENT_SERVICE_PUB_BEGIN: {
@@ -739,7 +732,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'workflow',
     level: 'INFO',
     cpu: 'custom',
-    suffix: ' (flow)',
     text: at('flowName'),
   },
   FLOW_START_INTERVIEW_END: {
@@ -753,7 +745,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'limits',
     text: at('usage'),
   },
-  // Text and suffix come from its first interview and what started it: `views/lines.ts`.
+  // Its text comes from its first interview: `views/lines.ts`.
   FLOW_START_INTERVIEWS_BEGIN: {
     fields: ['requests'],
     kind: 'flow',
@@ -1366,7 +1358,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'system',
     level: 'FINE',
     cpu: 'method',
-    suffix: ' (system constructor)',
     text: at('signature'),
   },
   SYSTEM_CONSTRUCTOR_EXIT: {
@@ -1515,7 +1506,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'visualforce',
     level: 'FINE',
     cpu: 'method',
-    suffix: ' (VF APEX)',
     symbols: true,
     text: vfApexCallText,
   },
@@ -1547,7 +1537,6 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     debugCategory: 'visualforce',
     level: 'FINER',
     cpu: 'custom',
-    suffix: ' (VF FORMULA)',
     text: at('formula'),
   },
   VF_EVALUATE_FORMULA_END: {
@@ -1979,7 +1968,6 @@ function grammarOf(type: EventType): Grammar {
     acceptsText: def.acceptsText ?? false,
     discontinuity: def.discontinuity ?? false,
     cpuType: def.cpu ?? null,
-    suffix: def.suffix ?? null,
     hasValidSymbols: def.symbols ?? false,
     count: def.count ?? null,
     rowsField: def.rows ? fact(def.rows.field) : -1,

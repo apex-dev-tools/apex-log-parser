@@ -108,26 +108,6 @@ describe('where the log starts', () => {
   });
 });
 
-describe('suffixes', () => {
-  it('names the frames whose text cannot say what they are', () => {
-    const log = parse(
-      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
-        '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|01q000000000AAA|__sfdc_trigger/ns/Invoice\n' +
-        '09:18:22.6 (300)|ENTERING_MANAGED_PKG|ns\n' +
-        '09:18:22.6 (400)|FLOW_START_INTERVIEW_BEGIN|91080693a3c1|Account Before Save LC\n' +
-        '09:18:22.6 (500)|FLOW_START_INTERVIEW_END|91080693a3c1|Account Before Save LC\n' +
-        '09:18:22.6 (600)|CODE_UNIT_FINISHED|__sfdc_trigger/ns/Invoice\n' +
-        '09:18:22.6 (700)|EXECUTION_FINISHED\n',
-    );
-    expect([...log.events].map((e) => [e.type, e.suffix])).toEqual([
-      ['EXECUTION_STARTED', null],
-      ['CODE_UNIT_STARTED', ' (code unit)'],
-      ['ENTERING_MANAGED_PKG', ' (managed package)'],
-      ['FLOW_START_INTERVIEW_BEGIN', ' (flow)'],
-    ]);
-  });
-});
-
 describe('issues from exceptions', () => {
   it('reports a limit exception and a fatal error, but no other exception', () => {
     const log = logOf(
@@ -246,12 +226,7 @@ describe('flows', () => {
   it('names a flow a process builder started as a flow, with its own times', () => {
     const log = parse(PROCESS_BUILDER);
     const [builder, flow] = log.ofType('FLOW_START_INTERVIEWS_BEGIN');
-    expect([builder?.text, builder?.suffix, flow?.text, flow?.suffix]).toEqual([
-      'Example Process Builder',
-      ' (Process Builder)',
-      'Example Flow',
-      ' (Flow)',
-    ]);
+    expect([builder?.text, flow?.text]).toEqual(['Example Process Builder', 'Example Flow']);
     expect(flow?.parent?.type).toBe('FLOW_START_INTERVIEW_BEGIN');
     expect([flow?.duration, kids(flow)[0]?.duration]).toEqual([
       { self: 2, total: 3 },

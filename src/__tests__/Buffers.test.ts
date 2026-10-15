@@ -58,7 +58,6 @@ function summary(log: ApexLog): unknown {
       lineNumber: e.lineNumber,
       namespace: e.namespace,
       details: e.details,
-      suffix: e.suffix,
       cpuType: e.cpuType,
       duration: e.duration,
       soqlRowCount: e.soqlRowCount,
