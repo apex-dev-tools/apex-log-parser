@@ -63,9 +63,9 @@ describe('event text', () => {
     expect(() => typed?.field('rows')).toThrow(RangeError);
     expect(typed?.isFrame).toBe(true);
     if (typed?.isFrame) {
-      // Fails the typecheck if isFrame no longer narrows exitStamp to a number.
-      const exitStamp: number = typed.exitStamp;
-      expect(exitStamp).toBe(2);
+      // Fails the typecheck if isFrame no longer narrows to a frame, which has children.
+      const children: readonly unknown[] = typed.children;
+      expect(children).toHaveLength(0);
     }
   });
 

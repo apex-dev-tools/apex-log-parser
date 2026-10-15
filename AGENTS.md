@@ -176,7 +176,7 @@ ancestor itself.
   parent's.
 - `heapPeak` composes by max, not sum. `heapAllocated.self` and `heapGross.self` come from leaves
   only.
-- `id` is the stable id within one parse. `timestamp` is not unique.
+- `id` is the stable id within one parse. `startTimestamp` is not unique.
 
 ## Limits
 

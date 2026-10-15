@@ -51,14 +51,14 @@ export function* currentProjection(log: ApexLog): Projection {
       ? ref(place.event)
       : {
           offTree: place.exitType,
-          at: place.event?.isFrame ? place.event.exitStamp : log.exitStamp,
+          at: place.event?.isFrame ? place.event.endTimestamp : log.endTimestamp,
         };
 
   const limits = log.limits;
   const record = {
     size: log.size,
-    timestamp: log.timestamp,
-    exitStamp: log.exitStamp,
+    timestamp: log.startTimestamp,
+    exitStamp: log.endTimestamp,
     duration: log.duration,
     startTime: log.startTime,
     isTruncated: log.isTruncated,
@@ -106,8 +106,9 @@ export function* currentProjection(log: ApexLog): Projection {
 
 const nodeOf = (event: ApexEvent) => ({
   type: event.type,
-  timestamp: event.timestamp,
-  exitStamp: event.exitStamp,
+  timestamp: event.startTimestamp,
+  // The facts state no exit for a leaf, as the old parser did.
+  exitStamp: event.isFrame ? event.endTimestamp : null,
   duration: event.duration,
   lineNumber: event.lineNumber,
   namespace: event.namespace,

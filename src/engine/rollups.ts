@@ -67,6 +67,8 @@ export function rollUp(store: Store, isFrame: Uint8Array, from: number, deadline
     // id > 0, so it has a parent row
     const parent = store.parent[id]!;
     const time = store.durationTotal(id);
+    // A leaf has no exit, so it ends where it starts: callers then never read a NaN.
+    if (Number.isNaN(store.exitStamp[id]!)) store.exitStamp[id] = store.timestamp[id]!;
     store.durationSelf[id]! += time;
     store.durationSelf[parent]! -= time;
     if (store.countSlot[id] !== NONE) {

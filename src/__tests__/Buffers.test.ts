@@ -64,7 +64,7 @@ function summary(log: ApexLog): unknown {
       heapAllocated: e.heapAllocated,
       heapPeak: e.heapPeak,
       isTruncated: e.isTruncated,
-      exitStamp: e.exitStamp,
+      endTimestamp: e.endTimestamp,
     })),
     columns: Object.fromEntries(Object.entries(log.columns).map(([k, v]) => [k, [...v]])),
     size: log.size,

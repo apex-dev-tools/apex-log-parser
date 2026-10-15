@@ -6,7 +6,7 @@ import { at, HEADER, logOf, outline, parse } from './helpers.js';
 
 const kids = (event: ApexEvent | undefined): readonly ApexEvent[] =>
   event?.isFrame ? event.children : [];
-const span = (e: ApexEvent | undefined) => [e?.type, e?.timestamp, e?.exitStamp];
+const span = (e: ApexEvent | undefined) => [e?.type, e?.startTimestamp, e?.endTimestamp];
 
 describe('frames the next line closes', () => {
   it('ends each at the next line, and the last, with no line after it, where it starts', () => {
@@ -17,12 +17,14 @@ describe('frames the next line closes', () => {
         '00:00:00.757 (4)|WF_PROCESS_FOUND|ProcessDefinitionNameOrId:<processId>|Applicable process was found.',
     );
     expect(log.duration).toEqual({ self: 0, total: 3 });
-    expect(log.children.map((e) => [e.type, e.timestamp, e.duration.total, e.parent])).toEqual([
-      ['WF_APPROVAL_SUBMIT', 1, 1, null],
-      ['WF_PROCESS_FOUND', 2, 1, null],
-      ['WF_APPROVAL_SUBMIT', 3, 1, null],
-      ['WF_PROCESS_FOUND', 4, 0, null],
-    ]);
+    expect(log.children.map((e) => [e.type, e.startTimestamp, e.duration.total, e.parent])).toEqual(
+      [
+        ['WF_APPROVAL_SUBMIT', 1, 1, null],
+        ['WF_PROCESS_FOUND', 2, 1, null],
+        ['WF_APPROVAL_SUBMIT', 3, 1, null],
+        ['WF_PROCESS_FOUND', 4, 0, null],
+      ],
+    );
   });
 
   it('ends each at the next event, whether that opens a frame or closes the parent', () => {
@@ -69,7 +71,7 @@ describe('where the log starts', () => {
     );
     expect(log.children.map((e) => e.type)).toEqual(['USER_INFO', 'EXECUTION_STARTED']);
     expect(kids(log.children[1]).map((e) => e.type)).toEqual(['CODE_UNIT_STARTED']);
-    expect([log.timestamp, log.parsingErrors]).toEqual([6508409, []]);
+    expect([log.startTimestamp, log.parsingErrors]).toEqual([6508409, []]);
   });
 
   it('reads the settings line from the header only', () => {
@@ -243,7 +245,7 @@ describe("the log's times", () => {
         '17:52:36.320 (1520000000)|FLOW_START_INTERVIEWS_END|2\n' +
         '17:52:36.321 (1530000000)|FLOW_INTERVIEW_FINISHED_LIMIT_USAGE|SOQL queries: 0 out of 100',
     );
-    expect(log.exitStamp).toBe(1530000000);
+    expect(log.endTimestamp).toBe(1530000000);
   });
 
   it('ends the log at its last line for a log of leaves only', () => {
@@ -255,7 +257,7 @@ describe("the log's times", () => {
         )
         .join('\n'),
     );
-    expect(log.exitStamp).toBe(1530000000);
+    expect(log.endTimestamp).toBe(1530000000);
   });
 });
 
@@ -277,9 +279,9 @@ describe('package entries', () => {
         '11:52:06.13 (1000)|ENTERING_MANAGED_PKG|ns2\n' +
         '11:52:06.13 (1100)|ENTERING_MANAGED_PKG|ns2\n',
     );
-    expect([log.children.length, log.exitStamp]).toEqual([1, 1100]);
+    expect([log.children.length, log.endTimestamp]).toEqual([1, 1100]);
     const top = kids(log.children[0]);
-    expect(top.map((e) => [e.type, e.timestamp, e.exitStamp, e.namespace])).toEqual([
+    expect(top.map((e) => [e.type, e.startTimestamp, e.endTimestamp, e.namespace])).toEqual([
       // A three-part name states a namespace only once the log has stated it.
       ['METHOD_ENTRY', 200, 300, null],
       ['ENTERING_MANAGED_PKG', 400, 700, 'ns'],
@@ -345,7 +347,7 @@ describe('the end of the log', () => {
         '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p000000000AAA|MyClass.run()\n' +
         '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********\n',
     );
-    expect(log.children[0]?.exitStamp).toBe(1000);
+    expect(log.children[0]?.endTimestamp).toBe(1000);
     expect(log.issues.map((i) => i.summary)).toEqual(['Max-Size-reached', 'Unexpected-End']);
     expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
       ['max-size', 1000, 1000],
@@ -393,7 +395,7 @@ describe('the tree', () => {
       `${at(3)}|ENTERING_MANAGED_PKG|ns`,
     );
     expect(outline(log)).toEqual(['ENTERING_MANAGED_PKG@1-3', 'STATEMENT_EXECUTE@2']);
-    expect(log.exitStamp).toBe(3);
+    expect(log.endTimestamp).toBe(3);
   });
 
   it('reads a CRLF log as an LF log, and starts at the first timestamped line', () => {

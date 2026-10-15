@@ -83,7 +83,7 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
   });
 
   it('times every event after its opening slow call past 2^31 ns', () => {
-    const early = [...apexLog.events].filter((event) => event.timestamp < 2 ** 31);
+    const early = [...apexLog.events].filter((event) => event.startTimestamp < 2 ** 31);
     expect(early.map((event) => event.type)).toEqual([
       'USER_INFO',
       'EXECUTION_STARTED',

@@ -20,7 +20,13 @@ export interface SelfTotal {
 
 /** The time and rollups the log and every event state. Times are nanoseconds, heap bytes. */
 export interface Rollups {
-  readonly timestamp: number;
+  /** Where the line is in the log. For the log, its first event. */
+  readonly startTimestamp: number;
+  /**
+   * Where the event ends: a frame's exit line, or where the log stops when it never closes. A leaf
+   * ends where it starts. For the log, the end of its last event at the top.
+   */
+  readonly endTimestamp: number;
   readonly duration: SelfTotal;
   readonly dmlCount: SelfTotal;
   readonly soqlCount: SelfTotal;
@@ -82,8 +88,6 @@ interface EventBase extends Rollups {
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
 export interface FrameEvent extends EventBase {
   readonly isFrame: true;
-  /** Where the frame ends: its exit line, or where the log stops when it never closes. */
-  readonly exitStamp: number;
   /** In log order. */
   readonly children: readonly ApexEvent[];
 }
@@ -91,7 +95,6 @@ export interface FrameEvent extends EventBase {
 /** An event at one point in time, with no children. */
 export interface LeafEvent extends EventBase {
   readonly isFrame: false;
-  readonly exitStamp: null;
   /** Always empty, so a walk of the tree reads `children` on any event. */
   readonly children: readonly [];
 }
@@ -169,8 +172,12 @@ export class RollupView implements Rollups {
     this.id = id;
   }
 
-  get timestamp(): number {
+  get startTimestamp(): number {
     return this.store.timestamp[this.id]!;
+  }
+
+  get endTimestamp(): number {
+    return this.store.exitStamp[this.id]!;
   }
 
   get duration(): SelfTotal {
@@ -286,11 +293,6 @@ class EventView extends RollupView {
   get children(): readonly ApexEvent[] {
     if (!this.isFrame) return NO_CHILDREN;
     return (this.kids ??= this.events.childrenOf(this.id));
-  }
-
-  get exitStamp(): number | null {
-    if (!this.isFrame) return null;
-    return this.store.exitStamp[this.id]!;
   }
 
   get lineNumber(): number | 'EXTERNAL' | null {
