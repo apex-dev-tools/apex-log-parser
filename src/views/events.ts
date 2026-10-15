@@ -145,7 +145,7 @@ export class LogEvents {
   /** The event with `id`, or null when no event has it. */
   event(id: number): ApexEvent | null {
     if (!(id >= 1 && id < this.store.count && Number.isInteger(id))) return null;
-    // One runtime class serves both shapes; `isFrame` tells them apart (ADR 0002).
+    // One runtime class serves both shapes; `isFrame` tells them apart.
     return (this.views[id] ??= new EventView(
       this,
       this.store,

@@ -3,7 +3,7 @@
  */
 
 /**
- * One log's bytes, with the two reads that differ between the node and browser builds (ADR 0005).
+ * One log's bytes, with the two reads that differ between the node and browser builds.
  * The engine holds one source per parse, so each build's call sites see one class.
  */
 export interface Source {
