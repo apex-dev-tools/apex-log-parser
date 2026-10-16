@@ -26,7 +26,6 @@ const WRITE_NAME = fieldPosition(ASSIGNMENT, 'name').at;
 const WRITE_VALUE = fieldPosition(ASSIGNMENT, 'value').at;
 const DECLARED_NAME = fieldPosition(DECLARATION, 'name').at;
 const DECLARED_TYPE = fieldPosition(DECLARATION, 'type').at;
-const DECLARED_STATIC = fieldPosition(DECLARATION, 'isStatic').at;
 const METHOD = idOfType('METHOD_ENTRY');
 const CONSTRUCTOR = idOfType('CONSTRUCTOR_ENTRY');
 const SIGNATURE = fieldPosition(METHOD, 'signature').at;
@@ -63,7 +62,7 @@ export interface FoundVariables {
 export interface FoundStaticClass {
   /** The class's place among the log's static classes, to pass to `staticsOf`. */
   readonly key: number;
-  /** The name before the statics' last `.`, as a string id, or `NONE` when they have none. */
+  /** The name before the statics' last `.`, as a string id. */
   readonly className: number;
   /** Equal for two events that see the same statics of the class. */
   readonly version: number;
@@ -171,8 +170,10 @@ export class VariableIndex {
         }
         nameKind[id] = kindOf(bytes, s, e);
         if (nameKind[id] === NAME_KIND.this) thisName = id;
-        const dot = nameKind[id] === NAME_KIND.static ? lastIndexOfByte(bytes, DOT, s, e) : -1;
-        nameClass[id] = dot > s ? strings.intern(s, dot) : NONE;
+        nameClass[id] =
+          nameKind[id] === NAME_KIND.static
+            ? strings.intern(s, lastIndexOfByte(bytes, DOT, s, e))
+            : NONE;
       }
       return id;
     };
@@ -198,7 +199,6 @@ export class VariableIndex {
 
     const declaredName = new Int32Array(S).fill(NONE);
     const declaredType = new Int32Array(S).fill(NONE);
-    const declaredStatic = new Uint8Array(S);
     for (let s = 0; s < S; s++) {
       // Every entry of rowsOfType is a row
       const row = declarations[s]!;
@@ -210,11 +210,6 @@ export class VariableIndex {
       const typeEnd = fields.endOf(DECLARED_TYPE);
       if (typeStart >= 0 && typeStart < typeEnd)
         declaredType[s] = strings.intern(typeStart, typeEnd);
-      const staticStart = fields.startOf(DECLARED_STATIC);
-      declaredStatic[s] =
-        staticStart >= 0 && spellsAscii(bytes, staticStart, fields.endOf(DECLARED_STATIC), 'true')
-          ? 1
-          : 0;
     }
 
     // Each frame's lines, merged from the two lists in log order.
@@ -234,8 +229,7 @@ export class VariableIndex {
     // By frame, then name, declarations first, so one binary search finds a name's line by a cut.
     const scoped = lines.filter((line) => {
       const name = lineName(line);
-      if (name === NONE || nameKind[name] === NAME_KIND.static) return false;
-      return line < W || !declaredStatic[line - W];
+      return name !== NONE && nameKind[name] !== NAME_KIND.static;
     });
     const byKind = grouped(2, scoped, (line) => (line < W ? 1 : 0)).items;
     const byLineName = grouped(strings.size, byKind, lineName).items;
@@ -301,7 +295,7 @@ export class VariableIndex {
       const frame = parent[row]!;
       if (line >= W) {
         const d = line - W;
-        if (declaredName[d] === thisName && declaredType[d] !== NONE && !declaredStatic[d])
+        if (declaredName[d] === thisName && declaredType[d] !== NONE)
           declaredThis.set(frame, declaredType[d]!);
         continue;
       }
@@ -330,7 +324,8 @@ export class VariableIndex {
     }
     for (let s = 0; s < S; s++) {
       const name = declaredName[s]!;
-      if (name !== NONE && declaredStatic[s] && staticOf[name] === NONE) staticOf[name] = statics++;
+      if (name !== NONE && nameKind[name] === NAME_KIND.static && staticOf[name] === NONE)
+        staticOf[name] = statics++;
     }
     const staticNames = new Int32Array(statics);
     for (let name = 0; name < staticOf.length; name++) {
@@ -351,7 +346,11 @@ export class VariableIndex {
     for (let s = 0; s < S; s++) {
       const name = declaredName[s]!;
       // In log order, so the first kept is the earliest: the line from which events see the static.
-      if (name !== NONE && declaredStatic[s] && staticDeclaration[staticOf[name]!] === NONE)
+      if (
+        name !== NONE &&
+        nameKind[name] === NAME_KIND.static &&
+        staticDeclaration[staticOf[name]!] === NONE
+      )
         staticDeclaration[staticOf[name]!] = s;
     }
     const staticWriteOrder = staticLines.slice(0, staticCount);
@@ -777,5 +776,6 @@ function lastBy(ids: Int32Array, lo: number, hi: number, rows: Int32Array, cut: 
 function kindOf(bytes: Uint8Array, start: number, end: number): number {
   if (spellsAscii(bytes, start, end, 'this')) return NAME_KIND.this;
   if (startsWithAscii(bytes, start, end, 'this.')) return NAME_KIND.field;
-  return indexOfByte(bytes, DOT, start, end) < 0 ? NAME_KIND.local : NAME_KIND.static;
+  // The log writes a static after its class, so the name has a dot after its first character.
+  return indexOfByte(bytes, DOT, start, end) > start ? NAME_KIND.static : NAME_KIND.local;
 }

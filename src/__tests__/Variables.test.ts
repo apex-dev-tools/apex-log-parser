@@ -245,7 +245,7 @@ describe('variables', () => {
     expect(statics?.[0]?.variables.map((v) => v.type)).toEqual(['Integer']);
   });
 
-  it('gives a static whose name holds no class a null class, sorted first', () => {
+  it('reads a name with no class before a dot as a local, whatever its declaration says', () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
       `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|ns.MyClass.count|1`,
@@ -253,15 +253,9 @@ describe('variables', () => {
       `${at(1300)}|VARIABLE_SCOPE_BEGIN|[4]|bare|Integer|false|true`,
       `${at(1400)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
     );
-    expect(
-      eventWith(log, 'ns.First.run()').variables?.statics.map((c) => [
-        c.className,
-        c.variables.map((v) => v.name),
-      ]),
-    ).toEqual([
-      [null, ['bare', 'dotted']],
-      ['ns.MyClass', ['count']],
-    ]);
+    const first = eventWith(log, 'ns.First.run()').variables;
+    expect(first?.statics.map((c) => c.className)).toEqual(['ns.MyClass']);
+    expect(first?.locals.map((v) => v.name)).toEqual(['.dotted', 'bare']);
   });
 
   it('shares the statics between events with no static line between them', () => {
