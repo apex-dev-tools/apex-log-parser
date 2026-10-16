@@ -78,8 +78,9 @@ interface EventBase extends Rollups {
   readonly isApexCall: boolean;
   /**
    * Field `name` of the event's first line, as stated: one of `eventType(type).fields`. The type's
-   * last field runs to the line's end, `|` and all. Null when the line has no such field, or it is
-   * empty. Throws a RangeError for a name the type does not list.
+   * last field runs to the line's end, `|` and all. A `VARIABLE_ASSIGNMENT` value is the exception:
+   * it stops before a trailing address. Null when the line has no such field, or it is empty.
+   * Throws a RangeError for a name the type does not list.
    */
   field(name: string): string | null;
   /**
@@ -90,15 +91,16 @@ interface EventBase extends Rollups {
   readonly details: AnyDetails | null;
   /**
    * The variables the event could see, as the log recorded them: a frame as it finished, a leaf as
-   * the log reached it. The first read of any event indexes the log's variable lines. Null when the
-   * event is in no frame, or the log has no variable lines, as below the `FINEST` Apex level.
+   * the log reached it. Each list is sorted by name, in code-unit order. The first read of any event
+   * indexes the log's variable lines. Null when the event is in no frame, or the log has no
+   * variable lines, as below the `FINEST` Apex level.
    */
   readonly variables: Variables | null;
   /**
-   * What the log holds for the object at `address`, as `0x` and hex, as the event stood, as
-   * `variables` reads: its class, its value and its fields. The address is the platform's, and it
-   * reuses one once its object is gone, so each object at an address is read apart. Null when the
-   * log holds nothing for the address.
+   * The object at `address` when the event ran: its class, its value and its fields. Give the
+   * address exactly as the log writes it, as `Variable.address` does; case counts. The platform
+   * reuses an address after its object is gone, so this reads only the object that lived there at
+   * the event. Null when the log holds nothing for the address anywhere.
    */
   objectAt(address: string): ObjectState | null;
 }

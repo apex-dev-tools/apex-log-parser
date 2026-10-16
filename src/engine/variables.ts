@@ -354,7 +354,7 @@ export class VariableIndex {
     const staticDeclaration = new Int32Array(statics).fill(NONE);
     for (let s = 0; s < S; s++) {
       const name = declaredName[s]!;
-      // In log order, so the first kept is the earliest: where the static comes into scope.
+      // In log order, so the first kept is the earliest: the line from which events see the static.
       if (name !== NONE && declaredStatic[s] && staticDeclaration[staticOf[name]!] === NONE)
         staticDeclaration[staticOf[name]!] = s;
     }

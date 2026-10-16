@@ -36,20 +36,21 @@ export interface StaticClass {
 export interface Variables {
   /**
    * The frame they belong to: the nearest frame at or above the event with a variable line of its
-   * own by then, so a query answers from the Apex frame that issued it.
+   * own by then, so a query answers from the Apex frame that issued it. The frame the event is in
+   * when no frame has one.
    */
   readonly frame: FrameEvent;
-  /** The frame's own: its last write to each name, and each name it declared and never wrote. */
+  /** The frame's own: its last write to each name, and each name it declared and never wrote. By name. */
   readonly locals: readonly Variable[];
   /** The object the frame runs on, as its last write to `this` states it; null when it wrote none. */
   readonly this: Variable | null;
   /**
    * The fields of that object: the last write to each, by name without `this.`, from any frame on
    * the object, or a constructor that set them and returned. The log names no class hierarchy, so a
-   * subclass's field can be listed in a superclass frame.
+   * subclass's field can be listed in a superclass frame. By name.
    */
   readonly fields: readonly Variable[];
-  /** Every static written or declared anywhere by then, by class, as a static lives for the transaction. */
+  /** Every static written or declared anywhere by then, as a static lives for the transaction. By class name. */
   readonly statics: readonly StaticClass[];
 }
 
@@ -57,11 +58,11 @@ export interface Variables {
 export interface ObjectState {
   /** The class of the object living there by then, as its own frame declared `this`; null when the log names none. */
   readonly className: string | null;
-  /** The object's value as the last write by then that states it wrote it; null when none does. */
+  /** The value from the last write by then that states it. Null when no write does. */
   readonly value: string | null;
   /** The first write after the event that states the value, when none does by then; else null. */
   readonly laterWrite: EventOf<'VARIABLE_ASSIGNMENT'> | null;
-  /** The last write by then to each of its fields, by name without `this.`. */
+  /** The last write by then to each of its fields, without `this.`. By name. */
   readonly fields: readonly Variable[];
 }
 
