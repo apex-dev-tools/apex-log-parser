@@ -37,11 +37,11 @@ describe('variables', () => {
         type: 'Integer',
         value: '2',
         address: null,
-        id: eventWith(log, '|total|2').id,
+        write: eventWith(log, '|total|2'),
       },
     ]);
     expect(eventWith(log, '"deep"').variables?.locals).toEqual([
-      { name: 'inner', type: null, value: '"deep"', address: '0x1a', id: 5 },
+      { name: 'inner', type: null, value: '"deep"', address: '0x1a', write: log.event(5) },
     ]);
   });
 
@@ -79,8 +79,8 @@ describe('variables', () => {
       `${at(1300)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
     );
     expect(eventWith(log, 'ns.Outer.run()').variables?.locals).toEqual([
-      { name: 'never', type: 'Boolean', value: null, address: null, id: null },
-      { name: 'written', type: null, value: '1', address: null, id: 3 },
+      { name: 'never', type: 'Boolean', value: null, address: null, write: null },
+      { name: 'written', type: null, value: '1', address: null, write: log.event(3) },
     ]);
   });
 
@@ -114,11 +114,15 @@ describe('variables', () => {
     expect(statics('ns.First.run()')).toEqual([
       {
         className: 'ns.Cache',
-        variables: [{ name: 'hits', type: 'Integer', value: '1', address: null, id: 3 }],
+        variables: [
+          { name: 'hits', type: 'Integer', value: '1', address: null, write: log.event(3) },
+        ],
       },
       {
         className: 'ns.Other',
-        variables: [{ name: 'flag', type: null, value: 'true', address: '0x2b', id: 4 }],
+        variables: [
+          { name: 'flag', type: null, value: 'true', address: '0x2b', write: log.event(4) },
+        ],
       },
     ]);
     // A write after the event is not in its statics; the latest by then is.
@@ -141,7 +145,7 @@ describe('variables', () => {
     expect(eventWith(log, 'ns.Second.run()').variables?.statics).toEqual([
       {
         className: 'ns.Late',
-        variables: [{ name: 'field', type: 'Integer', value: null, address: null, id: null }],
+        variables: [{ name: 'field', type: 'Integer', value: null, address: null, write: null }],
       },
     ]);
   });
@@ -198,12 +202,12 @@ describe('variables', () => {
       type: 'ns.Outer',
       value: '{}',
       address: '0xbbb',
-      id: 3,
+      write: log.event(3),
     });
     // A field line's address is its owner's, so a field's address is its value's, if any.
     expect(outer?.fields).toEqual([
-      { name: 'child', type: null, value: '0xccc', address: '0xccc', id: 5 },
-      { name: 'total', type: null, value: '42', address: null, id: 4 },
+      { name: 'child', type: null, value: '0xccc', address: '0xccc', write: log.event(5) },
+      { name: 'total', type: null, value: '42', address: null, write: log.event(4) },
     ]);
   });
 
@@ -315,13 +319,13 @@ describe('objectAt', () => {
     expect(eventWith(log, 'ns.First.run()').objectAt('0xaaa')).toEqual({
       className: null,
       value: null,
-      laterAt: eventWith(log, '{"n":1}').id,
+      laterWrite: eventWith(log, '{"n":1}'),
       fields: [],
     });
     expect(eventWith(log, '{"n":1}').objectAt('0xaaa')?.value).toBe('{"n":1}');
     expect(eventWith(log, 'ns.Second.run()').objectAt('0xaaa')).toMatchObject({
       value: '{"n":2}',
-      laterAt: null,
+      laterWrite: null,
     });
   });
 
@@ -337,8 +341,8 @@ describe('objectAt', () => {
     expect(outer.objectAt('0xf1e')).toEqual({
       className: null,
       value: null,
-      laterAt: null,
-      fields: [{ name: 'sortDir', type: null, value: '"asc"', address: null, id: 2 }],
+      laterWrite: null,
+      fields: [{ name: 'sortDir', type: null, value: '"asc"', address: null, write: log.event(2) }],
     });
     expect(outer.objectAt('0xaaa')?.value).toBe('{"sortDir":"asc"}');
     // The log never wrote what is at 0xbbb.

@@ -6,7 +6,9 @@ import type { FoundStaticClass, FoundVariable } from '../engine/variables.js';
 import { VariableIndex } from '../engine/variables.js';
 import type { Store } from '../store/store.js';
 import { NONE } from '../store/store.js';
-import type { FrameEvent, LogEvents } from './events.js';
+import type { EventOf, FrameEvent, LogEvents } from './events.js';
+
+type Write = EventOf<'VARIABLE_ASSIGNMENT'>;
 
 /** One variable, as it stood at an event. */
 export interface Variable {
@@ -18,8 +20,8 @@ export interface Variable {
   readonly value: string | null;
   /** The address of the object the value is; null when the log states none. */
   readonly address: string | null;
-  /** The id of the event that wrote the value; null for a variable never written. */
-  readonly id: number | null;
+  /** The write that set the value; null for a variable never written. */
+  readonly write: EventOf<'VARIABLE_ASSIGNMENT'> | null;
 }
 
 /** The statics of one class, which the log names before each static's own name. */
@@ -57,8 +59,8 @@ export interface ObjectState {
   readonly className: string | null;
   /** The object's value as the last write by then that states it wrote it; null when none does. */
   readonly value: string | null;
-  /** The id of the first event that states the value, when none does by then; else null. */
-  readonly laterAt: number | null;
+  /** The first write after the event that states the value, when none does by then; else null. */
+  readonly laterWrite: EventOf<'VARIABLE_ASSIGNMENT'> | null;
   /** The last write by then to each of its fields, by name without `this.`. */
   readonly fields: readonly Variable[];
 }
@@ -113,7 +115,7 @@ export class LogVariables {
     return Object.freeze({
       className: text(index, found.className),
       value: found.valueRow === NONE ? null : this.events.lines.field(found.valueRow, 'value'),
-      laterAt: found.laterRow === NONE ? null : found.laterRow,
+      laterWrite: this.write(found.laterRow),
       fields: Object.freeze(found.fields.map((f) => this.field(index, f)).sort(byName)),
     });
   }
@@ -214,8 +216,13 @@ export class LogVariables {
       type: text(index, found.type),
       value: row === NONE ? null : this.events.lines.field(row, 'value'),
       address: text(index, found.address),
-      id: row === NONE ? null : row,
+      write: this.write(row),
     });
+  }
+
+  private write(row: number): Write | null {
+    // A write's row is a VARIABLE_ASSIGNMENT event
+    return row === NONE ? null : (this.events.event(row) as Write);
   }
 }
 

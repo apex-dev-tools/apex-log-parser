@@ -6,6 +6,7 @@ import { toBuffers } from '../api/buffers.js';
 import { fromBuffers as browserFromBuffers } from '../browser.js';
 import { fromBuffers as nodeFromBuffers, parse } from '../node.js';
 import type { ApexLog } from '../views/log.js';
+import type { Variable } from '../views/variables.js';
 import { encode } from './helpers.js';
 
 declare function structuredClone<T>(value: T, options?: { transfer: ArrayBuffer[] }): T;
@@ -53,6 +54,7 @@ const LOG = [
 /** Everything a log states through the views, as plain values. */
 function summary(log: ApexLog): unknown {
   const ids = (events: readonly { id: number }[]) => events.map((e) => e.id);
+  const plain = (v: Variable) => ({ ...v, write: v.write?.id ?? null });
   return {
     events: [...log.events].map((e) => ({
       id: e.id,
@@ -63,7 +65,13 @@ function summary(log: ApexLog): unknown {
       lineNumber: e.lineNumber,
       namespace: e.namespace,
       details: e.details,
-      variables: e.variables && { ...e.variables, frame: e.variables.frame.id },
+      variables: e.variables && {
+        frame: e.variables.frame.id,
+        locals: e.variables.locals.map(plain),
+        this: e.variables.this && plain(e.variables.this),
+        fields: e.variables.fields.map(plain),
+        statics: e.variables.statics.map((c) => ({ ...c, variables: c.variables.map(plain) })),
+      },
       duration: e.duration,
       soqlRowCount: e.soqlRowCount,
       dmlCount: e.dmlCount,
