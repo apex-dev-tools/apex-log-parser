@@ -459,15 +459,15 @@ export class VariableIndex {
     const lo = describedStart[at]!;
     const hi = describedStart[at + 1]!;
     const cut = this.cutOf(id);
-    const last = upperBound(describedWrites, lo, hi, writes, cut) - 1;
+    const value = lastBy(describedWrites, lo, hi, writes, cut);
     const run = this.runOf(at, cut);
     const fields: FoundVariable[] = [];
     this.ownerFields(at, cut, (w) => fields.push(this.found(this.writeName[w]!, w, NONE)));
-    const laterRow = last < lo && lo < hi ? writes[describedWrites[lo]!]! : NONE;
-    if (run === NONE && last < lo && laterRow === NONE && !fields.length) return null;
+    const laterRow = value === NONE && lo < hi ? writes[describedWrites[lo]!]! : NONE;
+    if (run === NONE && value === NONE && laterRow === NONE && !fields.length) return null;
     return {
       className: run === NONE ? NONE : this.runClass[run]!,
-      valueRow: last >= lo ? writes[describedWrites[last]!]! : NONE,
+      valueRow: value === NONE ? NONE : writes[value]!,
       laterRow,
       fields,
     };
@@ -505,10 +505,9 @@ export class VariableIndex {
     for (let k = this.classStart[key]!; k < this.classStart[key + 1]!; k++) {
       // k is inside the class's list, and each entry is a static ordinal
       const p = this.classStatics[k]!;
-      const lo = upperBound(staticWrites, staticStart[p]!, staticStart[p + 1]!, writes, cut);
+      const write = lastBy(staticWrites, staticStart[p]!, staticStart[p + 1]!, writes, cut);
       const earliest = staticDeclaration[p]!;
       const declaration = earliest !== NONE && declarations[earliest]! <= cut ? earliest : NONE;
-      const write = lo > staticStart[p]! ? staticWrites[lo - 1]! : NONE;
       if (write === NONE && declaration === NONE) continue;
       out.push(this.found(staticNames[p]!, write, declaration));
     }
@@ -559,8 +558,7 @@ export class VariableIndex {
       const write = this.lastWrite(r, cut);
       const first = this.nameRunStart[r]!;
       // A block can declare the name again with another type.
-      const last = upperBound(nameLines, first, this.nameRunWrites[r]!, declarations, cut) - 1;
-      const declaration = last >= first ? nameLines[last]! : NONE;
+      const declaration = lastBy(nameLines, first, this.nameRunWrites[r]!, declarations, cut);
       if (kind === NAME_KIND.this) {
         if (write !== NONE) self = this.found(name, write, declaration);
       } else if (write !== NONE || declaration !== NONE) {
@@ -629,8 +627,8 @@ export class VariableIndex {
       const name = writeName[ownerWrites[lo]!]!;
       let hi = lo + 1;
       while (hi < end && writeName[ownerWrites[hi]!] === name) hi++;
-      const last = upperBound(ownerWrites, lo, hi, writes, cut) - 1;
-      if (last >= lo && writes[ownerWrites[last]!]! >= from) take(ownerWrites[last]!);
+      const w = lastBy(ownerWrites, lo, hi, writes, cut);
+      if (w !== NONE && writes[w]! >= from) take(w);
       lo = hi;
     }
   }
@@ -638,9 +636,7 @@ export class VariableIndex {
   /** The run of the object living at `address` by `cut`, or `NONE` before the log names one. */
   private runOf(address: number, cut: number): number {
     const { runStart, runs, runAt } = this;
-    const lo = runStart[address]!;
-    const after = upperBound(runs, lo, runStart[address + 1]!, runAt, cut);
-    return after > lo ? runs[after - 1]! : NONE;
+    return lastBy(runs, runStart[address]!, runStart[address + 1]!, runAt, cut);
   }
 
   /** How many static lines by `cut` change the statics: equal for two cuts that see the same. */
@@ -672,10 +668,14 @@ export class VariableIndex {
 
   /** Name run `r`'s last write by `cut`, or `NONE`. */
   private lastWrite(r: number, cut: number): number {
-    const split = this.nameRunWrites[r]!;
     // r is a run, and nameRunStart has an entry past the last run
-    const last = upperBound(this.nameLines, split, this.nameRunStart[r + 1]!, this.writes, cut) - 1;
-    return last >= split ? this.nameLines[last]! : NONE;
+    return lastBy(
+      this.nameLines,
+      this.nameRunWrites[r]!,
+      this.nameRunStart[r + 1]!,
+      this.writes,
+      cut,
+    );
   }
 
   /** The object the frame runs on by `cut`: the address its last `this` or field write reports. */
@@ -765,6 +765,13 @@ function upperBound(
     else hi = mid;
   }
   return lo;
+}
+
+/** The last id in `ids[lo..hi)`, ordinals in log order, whose row is by `cut`, or `NONE`. */
+function lastBy(ids: Int32Array, lo: number, hi: number, rows: Int32Array, cut: number): number {
+  const after = upperBound(ids, lo, hi, rows, cut);
+  // after is above lo, so after - 1 is inside the run
+  return after > lo ? ids[after - 1]! : NONE;
 }
 
 function kindOf(bytes: Uint8Array, start: number, end: number): number {
