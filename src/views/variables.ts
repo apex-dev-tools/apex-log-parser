@@ -101,12 +101,7 @@ export class LogVariables {
 
   /** The variables event `id` could see; null when it is in no frame or the log states none. */
   at(id: number): Variables | null {
-    let held = this.read.get(id);
-    if (held === undefined) {
-      held = this.make(id);
-      this.read.set(id, held);
-    }
-    return held;
+    return cached(this.read, id, () => this.make(id));
   }
 
   /** The object at `address` as event `id` stood; null when the log holds nothing for it. */
@@ -118,7 +113,7 @@ export class LogVariables {
       className: text(index, found.className),
       value: found.valueRow === NONE ? null : this.events.lines.field(found.valueRow, 'value'),
       laterWrite: this.write(found.laterRow),
-      fields: Object.freeze(found.fields.map((f) => this.field(index, f)).sort(byName)),
+      fields: Object.freeze(found.fields.map((f) => this.shared(index, f, fieldName)).sort(byName)),
     });
   }
 
@@ -133,19 +128,11 @@ export class LogVariables {
     if (!index || !found) return null;
     return Object.freeze({
       frame: this.events.event(found.frame) as FrameEvent,
-      locals: Object.freeze(found.locals.map((v) => this.local(index, v)).sort(byName)),
-      this: found.this && this.local(index, found.this),
-      fields: Object.freeze(found.fields.map((f) => this.field(index, f)).sort(byName)),
+      locals: Object.freeze(found.locals.map((v) => this.shared(index, v, whole)).sort(byName)),
+      this: found.this && this.shared(index, found.this, whole),
+      fields: Object.freeze(found.fields.map((f) => this.shared(index, f, fieldName)).sort(byName)),
       statics: this.statics(index, id, found.staticsVersion),
     });
-  }
-
-  private local(index: VariableIndex, found: FoundVariable): Variable {
-    return this.shared(index, found, whole);
-  }
-
-  private field(index: VariableIndex, found: FoundVariable): Variable {
-    return this.shared(index, found, fieldName);
   }
 
   /** The one `Variable` for `found`'s line, named by `short` of the name the log writes. */
@@ -165,39 +152,23 @@ export class LogVariables {
   }
 
   private statics(index: VariableIndex, id: number, version: number): readonly StaticClass[] {
-    let held = this.staticsRead.get(version);
-    if (!held) {
-      held = this.staticsAt(index, id);
-      this.staticsRead.set(version, held);
-    }
-    return held;
-  }
-
-  private staticsAt(index: VariableIndex, id: number): readonly StaticClass[] {
-    const classes = index.staticClasses(id).map((c) => this.staticClass(index, id, c));
-    return Object.freeze(classes.sort((a, b) => order(a.className, b.className)));
+    return cached(this.staticsRead, version, () => {
+      const classes = index.staticClasses(id).map((c) => this.staticClass(index, id, c));
+      return Object.freeze(classes.sort((a, b) => order(a.className, b.className)));
+    });
   }
 
   private staticClass(index: VariableIndex, id: number, found: FoundStaticClass): StaticClass {
-    let byVersion = this.classRead.get(found.key);
-    if (!byVersion) {
-      byVersion = new Map();
-      this.classRead.set(found.key, byVersion);
-    }
-    let held = byVersion.get(found.version);
-    if (!held) {
-      const variables = index.staticsOf(found.key, id).map((v) => this.static(index, v));
-      held = Object.freeze({
+    const byVersion = cached(this.classRead, found.key, () => new Map<number, StaticClass>());
+    return cached(byVersion, found.version, () => {
+      const variables = index
+        .staticsOf(found.key, id)
+        .map((v) => this.shared(index, v, staticName));
+      return Object.freeze({
         className: index.strings.text(found.className),
         variables: Object.freeze(variables.sort(byName)),
       });
-      byVersion.set(found.version, held);
-    }
-    return held;
-  }
-
-  private static(index: VariableIndex, found: FoundVariable): Variable {
-    return this.shared(index, found, staticName);
+    });
   }
 
   private variable(index: VariableIndex, found: FoundVariable, name: string): Variable {
@@ -215,6 +186,15 @@ export class LogVariables {
     // A write's row is a VARIABLE_ASSIGNMENT event
     return row === NONE ? null : (this.events.event(row) as Write);
   }
+}
+
+/** `map`'s value for `key`, made by `make` and kept on the first ask. */
+function cached<K, V>(map: Map<K, V>, key: K, make: () => V): V {
+  const held = map.get(key);
+  if (held !== undefined) return held;
+  const made = make();
+  map.set(key, made);
+  return made;
 }
 
 /** String `id`'s text, or null for `NONE`. */
