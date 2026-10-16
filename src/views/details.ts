@@ -30,8 +30,9 @@ export interface ExplainPlan {
 }
 
 /**
- * The values each type's line states beyond its text, by type. A value is null when the line does
- * not state it, or states it malformed; `field()` still gives the raw text.
+ * The values each type's line states beyond its text, or derives from the rows after it, by type. A
+ * value is null when the log does not state it, or states it malformed; `field()` still gives the
+ * raw text.
  */
 export interface EventDetails {
   readonly SOQL_EXECUTE_BEGIN: {
@@ -58,6 +59,17 @@ export interface EventDetails {
     readonly elementType: string | null;
     readonly elementName: string | null;
   };
+  readonly EXCEPTION_THROWN: {
+    /**
+     * The parser's reading of the row after the throw; the log does not state it. False when a
+     * `FATAL_ERROR` follows, true when any other row does, so a `finally` block that logs before a
+     * `FATAL_ERROR` reads true. Throws with only exit lines between them share one answer, so a
+     * throw that a catch block wraps and throws again is false too. Null when the log cannot tell:
+     * it ends, a limit block starts, or it drops lines before the next event. A merged
+     * `ENTERING_MANAGED_PKG` has no row, so the code it ran is not seen.
+     */
+    readonly isCaught: boolean | null;
+  };
 }
 
 /** The details of an event of type `T`: null for a type that states none. */
@@ -67,8 +79,11 @@ export type DetailsOf<T extends EventType> = T extends keyof EventDetails ? Even
 export type AnyDetails = EventDetails[keyof EventDetails];
 
 type Read<T> = (f: Fields) => T;
-/** Reads a line's details; `explain` gives a query's explain line, or null when it has none. */
-type Reader<T> = (f: Fields, explain: () => Fields | null) => T;
+/**
+ * Reads a line's details; `explain` gives a query's explain line, or null when it has none, and
+ * `isCaught` the reading of a throw.
+ */
+type Reader<T> = (f: Fields, explain: () => Fields | null, isCaught: () => boolean | null) => T;
 
 /** Field `name`'s position in `typeId`'s line; throws at load for a name the entry does not list. */
 function position(typeId: number, name: string): { at: number; last: boolean } {
@@ -193,13 +208,16 @@ reader('FLOW_ELEMENT_ERROR', (t) => (f) => {
   return { elementType: split?.[1] || null, elementName: split?.[2] || null };
 });
 
+reader('EXCEPTION_THROWN', () => (_f, _explain, isCaught) => ({ isCaught: isCaught() }));
+
 /** The details `typeId`'s line states, or null for a type that has none. Frozen: views share them. */
 export function eventDetails(
   typeId: number,
   f: () => Fields,
   explain: () => Fields | null,
+  isCaught: () => boolean | null,
 ): AnyDetails | null {
   const read = READERS[typeId];
-  const details = read ? read(f(), explain) : null;
+  const details = read ? read(f(), explain, isCaught) : null;
   return details && Object.freeze(details);
 }
