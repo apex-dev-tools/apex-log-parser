@@ -87,12 +87,15 @@ export function isAddress(bytes: Uint8Array, start: number, end: number): boolea
   return true;
 }
 
+const MAX_ADDRESS = 18;
+
 /**
  * Where the `|` before a trailing address is in bytes `start` to `end`, or -1 when the last field
  * is not one. An empty last field counts: the log writes `|` and no address for a null value.
  */
 export function addressPipe(bytes: Uint8Array, start: number, end: number): number {
-  const pipe = lastIndexOfByte(bytes, PIPE, start, end);
+  // An address is at most `0x` and 16 hex digits, so its pipe is in the last 19 bytes.
+  const pipe = lastIndexOfByte(bytes, PIPE, Math.max(start, end - MAX_ADDRESS - 1), end);
   return pipe >= 0 && (pipe + 1 === end || isAddress(bytes, pipe + 1, end)) ? pipe : -1;
 }
 

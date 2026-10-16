@@ -76,9 +76,10 @@ describe('event text', () => {
       `${at(3)}|VARIABLE_ASSIGNMENT|[3]|label|"a|b"`,
       `${at(4)}|VARIABLE_ASSIGNMENT|[4]|ns.MyClass.NAME|"x"`,
       `${at(5)}|VARIABLE_ASSIGNMENT|[5]|count|0x1f`,
+      `${at(6)}|VARIABLE_ASSIGNMENT|[6]|big|"${'y'.repeat(200)}"|0x0123456789abcdef`,
     );
     const read = (id: number) => ['value', 'address'].map((name) => log.event(id)?.field(name));
-    expect([1, 2, 3, 4, 5].map(read)).toEqual([
+    expect([1, 2, 3, 4, 5, 6].map(read)).toEqual([
       ['"a|b"', '0x1A2b'],
       ['null', null],
       // The last field is not an address, so the value runs to the line's end.
@@ -86,6 +87,8 @@ describe('event text', () => {
       ['"x"', null],
       // With no `|` after the value, a value that looks like an address is still the value.
       ['0x1f', null],
+      // The widest address, after a long value.
+      [`"${'y'.repeat(200)}"`, '0x0123456789abcdef'],
     ]);
   });
 
