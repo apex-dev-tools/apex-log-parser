@@ -146,6 +146,16 @@ describe('variables', () => {
     ]);
   });
 
+  it('keeps every local of a log with more names than the first table holds', () => {
+    // Each write holds a value address and an owner too, so name ids step past the table's end.
+    const writes = Array.from(
+      { length: 100 },
+      (_, i) => `${at(1100 + i)}|VARIABLE_ASSIGNMENT|[2]|v${i}|0x${i}a|0x${i}b`,
+    );
+    const log = logOf(`${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`, ...writes);
+    expect(log.event(1)?.variables?.locals).toHaveLength(100);
+  });
+
   it('is the same object on each read', () => {
     const log = logOf(...OUTER);
     const outer = eventWith(log, 'ns.Outer.run()');

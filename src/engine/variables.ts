@@ -87,7 +87,9 @@ export class VariableIndex {
       const before = strings.size;
       const id = strings.intern(s, e);
       if (id === before) {
-        if (id === nameKind.length) nameKind = resized(nameKind, id * 2);
+        // Addresses and types share the table, so a new name can skip ids past the end.
+        if (id >= nameKind.length)
+          nameKind = resized(nameKind, Math.max(id + 1, nameKind.length * 2));
         nameKind[id] = kindOf(bytes, s, e);
       }
       return id;
