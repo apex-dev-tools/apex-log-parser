@@ -272,7 +272,6 @@ export class VariableIndex {
     const declaredThis = new Map<number, number>();
     const lastUntil = new Int32Array(strings.size).fill(NONE);
     const runWrite: number[] = [];
-    const runUntil: number[] = [];
     const runType: number[] = [];
     for (const line of lines) {
       const row = lineRow(line);
@@ -291,7 +290,6 @@ export class VariableIndex {
       if (last !== NONE && (row <= last || type[frame] !== CONSTRUCTOR)) continue;
       lastUntil[owner] = subtreeEnd[frame]! - 1;
       runWrite.push(line);
-      runUntil.push(subtreeEnd[frame]! - 1);
       runType.push(cls);
     }
     const runIds = Int32Array.from(runWrite.keys());
