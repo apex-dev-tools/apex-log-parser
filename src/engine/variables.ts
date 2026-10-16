@@ -76,22 +76,22 @@ export class VariableIndex {
   /** The value, where the log wrote an address in place of a value it could not serialise. */
   private readonly writeValueAddress: Int32Array;
   private readonly declarations: Int32Array;
-  private readonly declaredName: Int32Array;
   private readonly declaredType: Int32Array;
-  private readonly declaredStatic: Uint8Array;
   private readonly nameKind: Uint8Array;
-  /** The id of the name `this`, or `NONE` when no line names it. */
-  private readonly thisName: number;
   private readonly bytes: Uint8Array;
   private readonly fields: ByteFields;
   /** Each frame's class, by frame row, read on first ask. */
   private readonly classes = new Map<number, number>();
-  /** Each frame's own lines, by frame row: a write's ordinal, or a declaration's plus the write count. */
-  private readonly ownStart: Int32Array;
-  private readonly own: Int32Array;
-  /** Each frame's writes to `this` and its fields, by frame row. */
-  private readonly objectStart: Int32Array;
-  private readonly objectWrites: Int32Array;
+  /** The row of each frame's first variable line, by frame row, or `NONE`. */
+  private readonly frameFirst: Int32Array;
+  /** Where each frame's name runs start, by frame row; a frame's runs are sorted by name. */
+  private readonly frameNames: Int32Array;
+  /** Each name run's name, where its lines start, and where its writes start. */
+  private readonly nameRunName: Int32Array;
+  private readonly nameRunStart: Int32Array;
+  private readonly nameRunWrites: Int32Array;
+  /** A frame's lines for one name: its declarations, as ordinals past the writes, then its writes. */
+  private readonly nameLines: Int32Array;
   /** Field writes by the object they report, then by field name, each in log order. */
   private readonly ownerStart: Int32Array;
   private readonly ownerWrites: Int32Array;
@@ -112,11 +112,6 @@ export class VariableIndex {
   private readonly staticWrites: Int32Array;
   /** Each static's earliest declaration, by static ordinal, or `NONE`. */
   private readonly staticDeclaration: Int32Array;
-  /** Per-query marks by string id: equal to `query` once seen in the current query. */
-  private readonly written: Int32Array;
-  private readonly declared: Int32Array;
-  private readonly declaredAt: Int32Array;
-  private query = 0;
 
   private constructor(store: Store, source: Source) {
     const { start, end, parent, count } = store;
@@ -189,25 +184,58 @@ export class VariableIndex {
       lines[w + s] = takeWrite ? w++ : W + s++;
     }
     const lineRow = (line: number): number => (line < W ? writes[line]! : declarations[line - W]!);
-    const own = grouped(count, lines, (line) => parent[lineRow(line)]!);
-    // Each frame's writes to its own object, apart, so a caller frame is read without its locals.
-    const objectLines = new Int32Array(W);
-    let objectCount = 0;
-    for (let w = 0; w < W; w++) {
-      const kind = writeName[w] === NONE ? NONE : nameKind[writeName[w]!]!;
-      if (kind === NAME_KIND.this || kind === NAME_KIND.field) objectLines[objectCount++] = w;
+    const lineName = (line: number): number =>
+      line < W ? writeName[line]! : declaredName[line - W]!;
+    const frameFirst = new Int32Array(count).fill(NONE);
+    for (const line of lines) {
+      const frame = parent[lineRow(line)]!;
+      if (frameFirst[frame] === NONE) frameFirst[frame] = lineRow(line);
     }
-    const objects = grouped(
-      count,
-      objectLines.subarray(0, objectCount),
-      (w) => parent[writes[w]!]!,
-    );
+    // Each frame's lines by name, declarations then writes, each in log order: so a name's earliest
+    // declaration and its last write by a cut are one read each, however many lines the frame holds.
+    // A static is read log-wide instead.
+    const scoped = lines.filter((line) => {
+      const name = lineName(line);
+      if (name === NONE || nameKind[name] === NAME_KIND.static) return false;
+      return line < W || !declaredStatic[line - W];
+    });
+    const byKind = grouped(2, scoped, (line) => (line < W ? 1 : 0)).items;
+    const byLineName = grouped(strings.size, byKind, lineName).items;
+    const nameLines = grouped(count, byLineName, (line) => parent[lineRow(line)]!).items;
+    const runName: number[] = [];
+    const runFirst: number[] = [];
+    const runWrites: number[] = [];
+    const frameNames = new Int32Array(count + 1);
+    for (let k = 0; k < nameLines.length; k++) {
+      // k is inside nameLines
+      const line = nameLines[k]!;
+      const frame = parent[lineRow(line)]!;
+      const name = lineName(line);
+      const prev = k > 0 ? nameLines[k - 1]! : NONE;
+      if (prev === NONE || parent[lineRow(prev)] !== frame || lineName(prev) !== name) {
+        runName.push(name);
+        runFirst.push(k);
+        runWrites.push(NONE);
+        frameNames[frame + 1]!++;
+      }
+      if (line < W && runWrites[runWrites.length - 1] === NONE) runWrites[runWrites.length - 1] = k;
+    }
+    runFirst.push(nameLines.length);
+    for (let r = 0; r < runWrites.length; r++) {
+      // A run with no write has its writes start at its end
+      if (runWrites[r] === NONE) runWrites[r] = runFirst[r + 1]!;
+    }
+    for (let frame = 0; frame < count; frame++) frameNames[frame + 1]! += frameNames[frame]!;
     // A field write reports the object the field belongs to: its writes by object, then by name.
-    const fieldLines = objectLines
-      .subarray(0, objectCount)
-      .filter((w) => nameKind[writeName[w]!] === NAME_KIND.field && writeOwner[w] !== NONE);
-    const byName = grouped(strings.size, fieldLines, (w) => writeName[w]!).items;
-    const owners = grouped(strings.size, byName, (w) => writeOwner[w]!);
+    const fieldLines = new Int32Array(W);
+    let fieldCount = 0;
+    for (let w = 0; w < W; w++) {
+      const name = writeName[w]!;
+      if (name !== NONE && nameKind[name] === NAME_KIND.field && writeOwner[w] !== NONE)
+        fieldLines[fieldCount++] = w;
+    }
+    const byName = grouped(strings.size, fieldLines.subarray(0, fieldCount), (w) => writeName[w]!);
+    const owners = grouped(strings.size, byName.items, (w) => writeOwner[w]!);
     // Any other write that reports an address states that object's value, unless the value is itself one.
     const describing = new Int32Array(W);
     let describingCount = 0;
@@ -300,17 +328,16 @@ export class VariableIndex {
     this.writeOwner = writeOwner;
     this.writeValueAddress = writeValueAddress;
     this.declarations = declarations;
-    this.declaredName = declaredName;
     this.declaredType = declaredType;
-    this.declaredStatic = declaredStatic;
     this.nameKind = nameKind;
-    this.thisName = thisName;
     this.bytes = bytes;
     this.fields = fields;
-    this.ownStart = own.start;
-    this.own = own.items;
-    this.objectStart = objects.start;
-    this.objectWrites = objects.items;
+    this.frameFirst = frameFirst;
+    this.frameNames = frameNames;
+    this.nameRunName = Int32Array.from(runName);
+    this.nameRunStart = Int32Array.from(runFirst);
+    this.nameRunWrites = Int32Array.from(runWrites);
+    this.nameLines = nameLines;
     this.ownerStart = owners.start;
     this.ownerWrites = owners.items;
     this.describedStart = described.start;
@@ -323,9 +350,6 @@ export class VariableIndex {
     this.staticStart = staticWrites.start;
     this.staticWrites = staticWrites.items;
     this.staticDeclaration = staticDeclaration;
-    this.written = new Int32Array(strings.size);
-    this.declared = new Int32Array(strings.size);
-    this.declaredAt = new Int32Array(strings.size);
   }
 
   /** The index of the log's variable lines; null when the log has none, so states no variables. */
@@ -356,8 +380,8 @@ export class VariableIndex {
     const innermost = this.innermostFrame(id);
     // Each parent but the log's is a row
     for (let frame = innermost; frame > 0; frame = parent[frame]!) {
-      const first = this.ownStart[frame]!;
-      if (first < this.ownStart[frame + 1]! && this.lineRow(this.own[first]!) <= cut) return frame;
+      const first = this.frameFirst[frame]!;
+      if (first !== NONE && first <= cut) return frame;
     }
     return innermost > 0 ? innermost : NONE;
   }
@@ -368,58 +392,26 @@ export class VariableIndex {
    * hold a `.`. And its last write to `this`, with the type it declared `this` as.
    */
   scope(frame: number, cut: number): FrameScope {
-    const mark = ++this.query;
-    const { written, declared, declaredAt, nameKind, writeName, declaredName } = this;
-    const W = this.writes.length;
-    const lo = this.ownStart[frame]!;
-    const found: number[] = [];
-    const names: number[] = [];
-    // Backwards from the cut, so a name's first write seen is its last.
-    for (let k = this.ownBefore(frame, cut) - 1; k >= lo; k--) {
-      // k is inside the frame's run
-      const line = this.own[k]!;
-      if (line < W) {
-        const name = writeName[line]!;
-        if (name === NONE || nameKind[name] !== NAME_KIND.local || written[name] === mark) continue;
-        written[name] = mark;
-        found.push(name, line);
-      } else {
-        const s = line - W;
-        const name = declaredName[s]!;
-        if (name === NONE || this.declaredStatic[s] || nameKind[name] === NAME_KIND.static)
-          continue;
-        if (nameKind[name] === NAME_KIND.field) continue;
-        if (declared[name] !== mark && name !== this.thisName) names.push(name);
-        declared[name] = mark;
-        // Backwards, so the earliest declaration is the one left.
-        declaredAt[name] = s;
+    const { nameKind, nameRunName, nameLines, writes, declarations, frameNames } = this;
+    const W = writes.length;
+    const locals: FoundVariable[] = [];
+    let self: FoundVariable | null = null;
+    for (let r = frameNames[frame]!; r < frameNames[frame + 1]!; r++) {
+      // r is one of the frame's runs, so every per-run array holds it
+      const name = nameRunName[r]!;
+      const kind = nameKind[name];
+      if (kind === NAME_KIND.field) continue;
+      const write = this.lastWrite(r, cut);
+      const first = this.nameRunStart[r]!;
+      const declared = first < this.nameRunWrites[r]! ? nameLines[first]! - W : NONE;
+      const declaration = declared !== NONE && declarations[declared]! <= cut ? declared : NONE;
+      if (kind === NAME_KIND.this) {
+        if (write !== NONE) self = { name, write, declaration };
+      } else if (write !== NONE || declaration !== NONE) {
+        locals.push({ name, write, declaration });
       }
     }
-    const out: FoundVariable[] = [];
-    for (let i = 0; i < found.length; i += 2) {
-      const name = found[i]!;
-      out.push({
-        name,
-        write: found[i + 1]!,
-        declaration: declared[name] === mark ? declaredAt[name]! : NONE,
-      });
-    }
-    for (const name of names) {
-      if (written[name] !== mark) out.push({ name, write: NONE, declaration: declaredAt[name]! });
-    }
-    const thisWrite = this.lastObjectWrite(frame, cut, NAME_KIND.this);
-    const thisName = this.thisName;
-    return {
-      locals: out,
-      this:
-        thisWrite === NONE
-          ? null
-          : {
-              name: thisName,
-              write: thisWrite,
-              declaration: declared[thisName] === mark ? declaredAt[thisName]! : NONE,
-            },
-    };
+    return { locals, this: self };
   }
 
   /**
@@ -430,7 +422,7 @@ export class VariableIndex {
    */
   objectFields(innermost: number, frame: number, cut: number): FoundVariable[] {
     const { parent } = this.store;
-    const { writes, writeName, nameKind, objectStart, objectWrites } = this;
+    const { writes, writeName, nameKind, frameNames, nameRunName } = this;
     const latest = new Map<number, number>();
     const take = (w: number): void => {
       // A field write has a name
@@ -444,15 +436,11 @@ export class VariableIndex {
       if (f !== frame && (cls === NONE || this.classOf(f) !== cls)) continue;
       const theirs = f === frame ? object : this.objectOf(f, cut);
       if (object !== NONE && theirs !== NONE && object !== theirs) continue;
-      const lo = objectStart[f]!;
-      for (
-        let k = upperBound(objectWrites, lo, objectStart[f + 1]!, writes, cut) - 1;
-        k >= lo;
-        k--
-      ) {
-        // k is inside the frame's run
-        const w = objectWrites[k]!;
-        if (nameKind[writeName[w]!] === NAME_KIND.field) take(w);
+      for (let r = frameNames[f]!; r < frameNames[f + 1]!; r++) {
+        // r is one of the frame's runs
+        if (nameKind[nameRunName[r]!] !== NAME_KIND.field) continue;
+        const w = this.lastWrite(r, cut);
+        if (w !== NONE) take(w);
       }
     }
     if (object !== NONE) this.ownerFields(object, cut, take);
@@ -573,36 +561,38 @@ export class VariableIndex {
     return this.declaredType[s]!;
   }
 
-  /** The frame's last write by `cut` to `this`, or to a field if `kind` says so, or `NONE`. */
-  private lastObjectWrite(frame: number, cut: number, kind: number): number {
-    const { objectStart, objectWrites, writes, writeName, nameKind } = this;
-    const lo = objectStart[frame]!;
-    for (
-      let k = upperBound(objectWrites, lo, objectStart[frame + 1]!, writes, cut) - 1;
-      k >= lo;
-      k--
-    ) {
-      // k is inside the frame's run
-      const w = objectWrites[k]!;
-      if (nameKind[writeName[w]!] === kind) return w;
-    }
-    return NONE;
+  /** Name run `r`'s last write by `cut`, or `NONE`. */
+  private lastWrite(r: number, cut: number): number {
+    const split = this.nameRunWrites[r]!;
+    // r is a run, and nameRunStart has an entry past the last run
+    const last = upperBound(this.nameLines, split, this.nameRunStart[r + 1]!, this.writes, cut) - 1;
+    return last >= split ? this.nameLines[last]! : NONE;
   }
 
   /** The object the frame runs on by `cut`: the address its latest `this` or field write reports. */
   private objectOf(frame: number, cut: number): number {
-    const { objectStart, objectWrites, writes, writeOwner } = this;
-    const lo = objectStart[frame]!;
-    for (
-      let k = upperBound(objectWrites, lo, objectStart[frame + 1]!, writes, cut) - 1;
-      k >= lo;
-      k--
-    ) {
-      // k is inside the frame's run
-      const owner = writeOwner[objectWrites[k]!]!;
-      if (owner !== NONE) return owner;
+    const { frameNames, nameRunName, nameRunWrites, nameLines, nameKind, writes, writeOwner } =
+      this;
+    let object = NONE;
+    let latest = -1;
+    for (let r = frameNames[frame]!; r < frameNames[frame + 1]!; r++) {
+      // r is one of the frame's runs
+      const kind = nameKind[nameRunName[r]!];
+      if (kind !== NAME_KIND.this && kind !== NAME_KIND.field) continue;
+      const split = nameRunWrites[r]!;
+      const end = upperBound(nameLines, split, this.nameRunStart[r + 1]!, writes, cut);
+      // A field write can report no address, so the run's last write that does.
+      for (let k = end - 1; k >= split; k--) {
+        const w = nameLines[k]!;
+        if (writeOwner[w] === NONE) continue;
+        if (writes[w]! > latest) {
+          latest = writes[w]!;
+          object = writeOwner[w]!;
+        }
+        break;
+      }
     }
-    return NONE;
+    return object;
   }
 
   /**
@@ -632,25 +622,6 @@ export class VariableIndex {
       this.classes.set(frame, cls);
     }
     return cls;
-  }
-
-  /** Where in the frame's run its lines after `cut` start. */
-  private ownBefore(frame: number, cut: number): number {
-    let lo = this.ownStart[frame]!;
-    let hi = this.ownStart[frame + 1]!;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      // mid is inside the frame's run
-      if (this.lineRow(this.own[mid]!) <= cut) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo;
-  }
-
-  private lineRow(line: number): number {
-    const W = this.writes.length;
-    // A line is a write ordinal, or a declaration ordinal past the writes
-    return line < W ? this.writes[line]! : this.declarations[line - W]!;
   }
 }
 
