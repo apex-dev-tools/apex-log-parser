@@ -111,7 +111,7 @@ export class VariableIndex {
   private readonly nameRunName: Int32Array;
   private readonly nameRunStart: Int32Array;
   private readonly nameRunWrites: Int32Array;
-  /** A frame's lines for one name: its declarations, as ordinals past the writes, then its writes. */
+  /** A frame's lines for one name: its declarations, then its writes, each by ordinal in log order. */
   private readonly nameLines: Int32Array;
   /** Field writes by the object they report, then by field name, each in log order. */
   private readonly ownerStart: Int32Array;
@@ -264,6 +264,8 @@ export class VariableIndex {
     for (let r = 0; r < runWrites.length; r++) {
       // A run with no write has its writes start at its end
       if (runWrites[r] === NONE) runWrites[r] = runFirst[r + 1]!;
+      // A run's declarations sit before its writes, so each can be its own ordinal again
+      for (let k = runFirst[r]!; k < runWrites[r]!; k++) nameLines[k]! -= W;
     }
     for (let frame = 0; frame < count; frame++) frameNames[frame + 1]! += frameNames[frame]!;
     // A field write reports the object the field belongs to: its writes by object, then by name.
@@ -548,12 +550,11 @@ export class VariableIndex {
 
   /**
    * What the frame holds by `cut`. Its locals: each name's last write, and each name it declared and
-   * never wrote, with its earliest declaration; not `this`, and not a field or static, whose names
-   * hold a `.`. And its last write to `this`, with the type it declared `this` as.
+   * never wrote, with its latest declaration by then; not `this`, and not a field or static, whose
+   * names hold a `.`. And its last write to `this`, with the type it declared `this` as.
    */
   private own(frame: number, cut: number): { locals: FoundVariable[]; self: FoundVariable | null } {
-    const { nameKind, nameRunName, nameLines, writes, declarations, frameNames } = this;
-    const W = writes.length;
+    const { nameKind, nameRunName, nameLines, declarations, frameNames } = this;
     const locals: FoundVariable[] = [];
     let self: FoundVariable | null = null;
     for (let r = frameNames[frame]!; r < frameNames[frame + 1]!; r++) {
@@ -563,8 +564,9 @@ export class VariableIndex {
       if (kind === NAME_KIND.field) continue;
       const write = this.lastWrite(r, cut);
       const first = this.nameRunStart[r]!;
-      const declared = first < this.nameRunWrites[r]! ? nameLines[first]! - W : NONE;
-      const declaration = declared !== NONE && declarations[declared]! <= cut ? declared : NONE;
+      // A block can declare the name again with another type.
+      const last = upperBound(nameLines, first, this.nameRunWrites[r]!, declarations, cut) - 1;
+      const declaration = last >= first ? nameLines[last]! : NONE;
       if (kind === NAME_KIND.this) {
         if (write !== NONE) self = this.found(name, write, declaration);
       } else if (write !== NONE || declaration !== NONE) {

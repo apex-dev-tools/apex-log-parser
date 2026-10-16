@@ -121,6 +121,21 @@ describe('variables', () => {
     expect(eventWith(log, 'ns.Outer.run()').variables?.locals[0]?.type).toBe('Integer');
   });
 
+  it('gives a local the type of its latest declaration by then, when a block declares it again', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_SCOPE_BEGIN|[2]|x|Integer|false|false`,
+      `${at(1150)}|VARIABLE_ASSIGNMENT|[2]|x|1`,
+      `${at(1200)}|VARIABLE_SCOPE_BEGIN|[5]|x|String|false|false`,
+      `${at(1250)}|VARIABLE_ASSIGNMENT|[5]|x|"s"`,
+      `${at(1300)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const typed = (text: string) =>
+      eventWith(log, text).variables?.locals.map((v) => [v.type, v.value]);
+    expect(typed('|x|1')).toEqual([['Integer', '1']]);
+    expect(typed('ns.Outer.run()')).toEqual([['String', '"s"']]);
+  });
+
   it('answers from the caller when the called frame writes only after the event', () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
