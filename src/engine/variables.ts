@@ -111,7 +111,7 @@ export class VariableIndex {
   private readonly nameRunName: Int32Array;
   private readonly nameRunStart: Int32Array;
   private readonly nameRunWrites: Int32Array;
-  /** A frame's lines for one name: its declarations, then its writes, each by ordinal in log order. */
+  /** A frame's lines for one name: its declarations, then its writes, by ordinal in log order. */
   private readonly nameLines: Int32Array;
   /** Field writes by the object they report, then by field name, each in log order. */
   private readonly ownerStart: Int32Array;
@@ -119,7 +119,7 @@ export class VariableIndex {
   /** Writes that state an object's value, by the address the line reports, each in log order. */
   private readonly describedStart: Int32Array;
   private readonly describedWrites: Int32Array;
-  /** Each address's runs, one per object that lived there, in log order: where each starts and its class. */
+  /** Each address's runs, one per object that lived there, in log order: start and class. */
   private readonly runStart: Int32Array;
   private readonly runs: Int32Array;
   private readonly runAt: Int32Array;
@@ -133,7 +133,7 @@ export class VariableIndex {
   private readonly staticWrites: Int32Array;
   /** Each static's earliest declaration, by static ordinal, or `NONE`. */
   private readonly staticDeclaration: Int32Array;
-  /** Every static write, then every static's earliest declaration, each in log order: each changes what the statics are. */
+  /** Each static write, then each static's first declaration, in log order. */
   private readonly staticWriteOrder: Int32Array;
   private readonly staticDeclarationOrder: Int32Array;
   /** Each static class's name id, or `NONE`, by class key. */
@@ -231,9 +231,7 @@ export class VariableIndex {
       const frame = parent[lineRow(line)]!;
       if (frameFirst[frame] === NONE) frameFirst[frame] = lineRow(line);
     }
-    // Each frame's lines by name, declarations then writes, each in log order: so a name's earliest
-    // declaration and its last write by a cut are one read each, however many lines the frame holds.
-    // A static is read log-wide instead.
+    // By frame, then name, declarations first, so one binary search finds a name's line by a cut.
     const scoped = lines.filter((line) => {
       const name = lineName(line);
       if (name === NONE || nameKind[name] === NAME_KIND.static) return false;
@@ -278,7 +276,7 @@ export class VariableIndex {
     }
     const byName = grouped(strings.size, fieldLines.subarray(0, fieldCount), (w) => writeName[w]!);
     const owners = grouped(strings.size, byName.items, (w) => writeOwner[w]!);
-    // Any other write that reports an address states that object's value, unless the value is itself one.
+    // Any other write that reports an address states that object's value, unless the value is one.
     const describing = new Int32Array(W);
     let describingCount = 0;
     for (let w = 0; w < W; w++) {
@@ -291,11 +289,7 @@ export class VariableIndex {
       // Every describing write reports an address
       return writeOwner[w]!;
     });
-    // A `this` write in a frame that declared `this` names the class of the object at its address.
-    // An address is reused once its object is gone, so each object is a run, from that write to the
-    // end of its frame. A write inside the last run adds none: a superclass constructor runs on the
-    // object inside the subclass's. Only a construction starts a later run, as a method declares
-    // `this` as the type it was compiled against.
+    // A new object starts only at a construction, as superclass frames name the base class.
     const { subtreeEnd, type } = store;
     const declaredThis = new Map<number, number>();
     const lastUntil = new Int32Array(strings.size).fill(NONE);
@@ -362,8 +356,7 @@ export class VariableIndex {
     }
     const staticWriteOrder = staticLines.slice(0, staticCount);
     const staticDeclarationOrder = staticDeclaration.filter((d) => d !== NONE).sort();
-    // A static's class lists its statics and the lines that change them, so a read rebuilds a class
-    // only when one of its own statics changed.
+    // Per class, so a read rebuilds only the class whose static changed.
     const keyOf = new Map<number, number>();
     const classNames: number[] = [];
     const staticClass = new Int32Array(statics);
@@ -522,7 +515,7 @@ export class VariableIndex {
     return out;
   }
 
-  /** The last row an event's variables read: a frame reads as it finished, a leaf as the log reached it. */
+  /** The last row an event's variables read: a frame's last row, or a leaf's own. */
   private cutOf(id: number): number {
     // id is a row
     return isFrameRow(this.store, id) ? this.store.subtreeEnd[id]! - 1 : id;
@@ -550,9 +543,9 @@ export class VariableIndex {
   }
 
   /**
-   * What the frame holds by `cut`. Its locals: each name's last write, and each name it declared and
-   * never wrote, with its latest declaration by then; not `this`, and not a field or static, whose
-   * names hold a `.`. And its last write to `this`, with the type it declared `this` as.
+   * What the frame holds by `cut`. Its locals: each name's last write, and each name it declared
+   * and never wrote, with its latest declaration by then; not `this`, and not a field or static,
+   * whose names hold a `.`. And its last write to `this`, with the type it declared `this` as.
    */
   private own(frame: number, cut: number): { locals: FoundVariable[]; self: FoundVariable | null } {
     const { nameKind, nameRunName, nameLines, declarations, frameNames } = this;
@@ -578,10 +571,10 @@ export class VariableIndex {
   }
 
   /**
-   * The fields of the object `frame` runs on, by `cut`: the last write to each. From every frame from
-   * `innermost` up of the same class, as one object's methods share its fields, and from writes the
-   * log grouped under the object's address, as a constructor that returned set them. A frame on
-   * another object of the class is left out. The latest write wins.
+   * The fields of the object `frame` runs on, by `cut`: the last write to each. From every frame
+   * from `innermost` up of the same class, as one object's methods share its fields, and from
+   * writes the log grouped under the object's address, as a constructor that returned set them. A
+   * frame on another object of the class is left out. The latest write wins.
    */
   private objectFields(innermost: number, frame: number, cut: number): FoundVariable[] {
     const { parent } = this.store;
@@ -623,8 +616,8 @@ export class VariableIndex {
   }
 
   /**
-   * Hands `take` the last write by `cut` to each field of the object at `address`. Where the address
-   * held an earlier object, only writes from this object's run on count.
+   * Hands `take` the last write by `cut` to each field of the object at `address`. Where the
+   * address held an earlier object, only writes from this object's run on count.
    */
   private ownerFields(address: number, cut: number, take: (w: number) => void): void {
     const { ownerStart, ownerWrites, writeName, writes, runStart, runs } = this;
@@ -650,7 +643,7 @@ export class VariableIndex {
     return after > lo ? runs[after - 1]! : NONE;
   }
 
-  /** How many static lines by `cut` change what `statics` returns: two cuts with the same count get the same statics. */
+  /** How many static lines by `cut` change the statics: equal for two cuts that see the same. */
   private staticsVersion(cut: number): number {
     const { staticWriteOrder, staticDeclarationOrder } = this;
     return (
@@ -659,7 +652,7 @@ export class VariableIndex {
     );
   }
 
-  /** Name `name` with write `write` and declaration `declaration`, by ordinal, as rows and string ids. */
+  /** Name `name` with write `write` and declaration `declaration`, by ordinal, as rows and ids. */
   private found(name: number, write: number, declaration: number): FoundVariable {
     let address = NONE;
     if (write !== NONE) {
@@ -685,7 +678,7 @@ export class VariableIndex {
     return last >= split ? this.nameLines[last]! : NONE;
   }
 
-  /** The object the frame runs on by `cut`: the address its latest `this` or field write reports. */
+  /** The object the frame runs on by `cut`: the address its last `this` or field write reports. */
   private objectOf(frame: number, cut: number): number {
     const { frameNames, nameRunName, nameRunWrites, nameLines, nameKind, writes, writeOwner } =
       this;

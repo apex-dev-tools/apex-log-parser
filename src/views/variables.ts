@@ -16,7 +16,7 @@ export interface Variable {
   readonly name: string;
   /** The type the log declared it as; null when it declared none. */
   readonly type: string | null;
-  /** The value as the log wrote it; null when it wrote none, as for a variable declared and never written. */
+  /** The value as the log wrote it; null when it wrote none, as for a variable never written. */
   readonly value: string | null;
   /** The address of the object the value is; null when the log states none. */
   readonly address: string | null;
@@ -26,7 +26,7 @@ export interface Variable {
 
 /** The statics of one class, which the log names before each static's own name. */
 export interface StaticClass {
-  /** As the log names it, with its namespace, as `ns.MyClass`; null when the name holds no class. */
+  /** As the log names it, with its namespace, as `ns.MyClass`; null when the name has no class. */
   readonly className: string | null;
   /** By name, without the class. */
   readonly variables: readonly Variable[];
@@ -40,9 +40,9 @@ export interface Variables {
    * when no frame has one.
    */
   readonly frame: FrameEvent;
-  /** The frame's own: its last write to each name, and each name it declared and never wrote. By name. */
+  /** The frame's own: its last write to each name, and each name it declared and never wrote. */
   readonly locals: readonly Variable[];
-  /** The object the frame runs on, as its last write to `this` states it; null when it wrote none. */
+  /** The object the frame runs on, as its last write to `this` states it; null for none. */
   readonly this: Variable | null;
   /**
    * The fields of that object: the last write to each, by name without `this.`, from any frame on
@@ -50,13 +50,19 @@ export interface Variables {
    * subclass's field can be listed in a superclass frame. By name.
    */
   readonly fields: readonly Variable[];
-  /** Every static written or declared anywhere by then, as a static lives for the transaction. By class name. */
+  /**
+   * Every static written or declared anywhere by then, as a static lives for the transaction. By
+   * class name.
+   */
   readonly statics: readonly StaticClass[];
 }
 
 /** What the log holds for the object at one address, as it stood at an event. */
 export interface ObjectState {
-  /** The class of the object living there by then, as its own frame declared `this`; null when the log names none. */
+  /**
+   * The class of the object living there by then, as its own frame declared `this`; null when the
+   * log names none.
+   */
   readonly className: string | null;
   /** The value from the last write by then that states it. Null when no write does. */
   readonly value: string | null;
@@ -84,7 +90,7 @@ export class LogVariables {
   private readonly staticsRead = new Map<number, readonly StaticClass[]>();
   // By class key, then the class's version, so a new version rebuilds only the class that changed.
   private readonly classRead = new Map<number, Map<number, StaticClass>>();
-  // One line names one variable, so its row keys it; a write's type depends on the cut, so it is checked.
+  // By row, as one line names one variable; the type is checked, as it depends on the cut.
   private readonly written = new Map<number, { type: number; variable: Variable }>();
   private readonly declared = new Map<number, Variable>();
 
