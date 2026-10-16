@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+
+import type { Source } from '../bytes/source.js';
 import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
 import type { EventFields } from '../catalog/fields.js';
 import type { DebugCategory, EventType, EventTypeInfo, Kind, Level } from '../catalog/types.js';
@@ -11,6 +13,8 @@ import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../sto
 import type { StringTable } from '../store/strings.js';
 import type { AnyDetails, DetailsOf } from './details.js';
 import { EventLines } from './lines.js';
+import type { Variables } from './variables.js';
+import { LogVariables } from './variables.js';
 
 /** A rollup: the own part, and the part with every descendant. */
 export interface SelfTotal {
@@ -84,6 +88,12 @@ interface EventBase extends Rollups {
    * type. Null for a type that has none.
    */
   readonly details: AnyDetails | null;
+  /**
+   * The variables the event could see, as the log recorded them: a frame as it finished, a leaf as
+   * the log reached it. The first read of any event indexes the log's variable lines. Null when the
+   * event is in no frame, or the log has no variable lines, as below the `FINEST` Apex level.
+   */
+  readonly variables: Variables | null;
 }
 
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
@@ -125,15 +135,23 @@ const NO_CHILDREN: readonly ApexEvent[] = Object.freeze([]);
 export class LogEvents {
   private readonly store: Store;
   private readonly strings: StringTable;
+  private readonly source: Source;
   /** Shared by every event of the build, so no event holds its own. */
   readonly lines: EventLines;
   private readonly views: (ApexEvent | undefined)[];
+  private vars: LogVariables | null = null;
 
   constructor({ store, strings, source, issues }: Built) {
     this.store = store;
     this.strings = strings;
+    this.source = source;
     this.lines = new EventLines(store, source, issues);
     this.views = new Array(store.count);
+  }
+
+  /** Each event's variables, shared like `lines`; made on first read. */
+  get variables(): LogVariables {
+    return (this.vars ??= new LogVariables(this, this.store, this.source));
   }
 
   /** The event with `id`, or null when no event has it. */
@@ -333,5 +351,9 @@ class EventView extends RollupView {
   get details(): AnyDetails | null {
     if (this.stated === undefined) this.stated = this.events.lines.details(this.id);
     return this.stated;
+  }
+
+  get variables(): Variables | null {
+    return this.events.variables.at(this.id);
   }
 }

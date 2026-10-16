@@ -52,6 +52,8 @@ import type {
   TransferableLog,
   TruncationKind,
   UserInfo,
+  Variable,
+  Variables,
 } from '../browser.js';
 import * as browser from '../browser.js';
 import * as node from '../node.js';
@@ -129,6 +131,8 @@ interface PublicTypeSurface {
   transferableLog: TransferableLog;
   truncationKind: TruncationKind;
   userInfo: UserInfo;
+  variable: Variable;
+  variables: Variables;
 }
 
 // Both builds must state one surface, so a caller's types hold whichever condition resolves.

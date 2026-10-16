@@ -1,9 +1,11 @@
 // What reading the parser's views adds to its build, on the synthetic logs. Local only.
 //   pnpm run bench:views [--runs=5] [--log=<name>]
-// Gates (100 MB): reading every column adds < 30 ms; an object for every event < 250 ms.
+// Gates (100 MB): reading every column adds < 30 ms; an object for every event < 250 ms; the
+// variables at every 1000th variable line, which indexes them all, < 50 ms.
 
 import process, { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
+import { idOfType } from '../../src/catalog/catalog.js';
 import { nodeEngine } from '../../src/engine/node.js';
 import type { ApexLog } from '../../src/views/log.js';
 import { apexLog } from '../../src/views/log.js';
@@ -12,7 +14,7 @@ import { runsFlag, timedRuns } from './runs.js';
 import { versus } from './versus.js';
 
 /** The gates, in milliseconds over the build, for the 100 MB log. */
-const GATES = { columns: 30, events: 250 } as const;
+const GATES = { columns: 30, events: 250, variables: 50 } as const;
 const GATE_LOG = 'parse_100mb';
 
 /** Reads every column of every event row once, as a caller that reads them all does. */
@@ -44,6 +46,20 @@ export function readEvents(log: ApexLog): number {
   return sum;
 }
 
+const ASSIGNMENT = idOfType('VARIABLE_ASSIGNMENT');
+
+/** Reads the variables at every 1000th variable line: the first read indexes every line. */
+export function readVariables(log: ApexLog): number {
+  const { type } = log.columns;
+  let sum = 0;
+  // Every index is a row, so in range, and an event from 1.
+  for (let id = 1, seen = 0; id < type.length; id++) {
+    if (type[id] === ASSIGNMENT && seen++ % 1000 === 0)
+      sum += log.event(id)?.variables?.locals.length ?? 0;
+  }
+  return sum;
+}
+
 const ms = (n: number): string => `${n.toFixed(1)} ms`;
 const mb = (n: number): string => `${(n / 1_000_000).toFixed(1)} MB`;
 
@@ -68,6 +84,7 @@ async function main(): Promise<void> {
     const work: [keyof typeof GATES, (log: ApexLog) => unknown][] = [
       ['columns', readColumns],
       ['events', readEvents],
+      ['variables', readVariables],
     ];
     for (const [what, run] of work) {
       // A new view each run, so no run reads another's memo; making it is part of the cost.

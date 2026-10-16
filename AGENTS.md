@@ -58,7 +58,10 @@ execution timings, governor limits, and SOQL/DML/SOSL counts. Zero runtime depen
   its text, as `aggregations` or a limit usage, and the values the rows after it give, as a
   throw's `isCaught`, one reader per type; `EventDetails` lists them,
   and `ofType` types each event's `details`. `engine/throws.ts` reads each throw's outcome from
-  the rows after it, in one pass on the first `isCaught` read. `views/log.ts` reads row 0 as `ApexLog`, the root, and makes each figure that needs work
+  the rows after it, in one pass on the first `isCaught` read. `engine/variables.ts` indexes the
+  log's variable lines on the first `variables` read: typed-array columns per write and per
+  declaration, and each frame's own lines as one CSR list, so a read is a binary search.
+  `views/variables.ts` turns what it finds into frozen `Variable`s, made once per event. `views/log.ts` reads row 0 as `ApexLog`, the root, and makes each figure that needs work
   on first read. A merged package run can end after the leaves that follow it, so `at()` searches
   frames only.
 - `src/__tests__/` — vitest suites. `helpers.ts` holds shared fixtures.

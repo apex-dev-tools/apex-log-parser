@@ -56,6 +56,7 @@ export type {
   LogTruncation,
   LogTruncationRegion,
 } from '../views/log.js';
+export type { Variable, Variables } from '../views/variables.js';
 export type { LogBuffers, TransferableLog } from './buffers.js';
 export { toBuffers } from './buffers.js';
 export type { ParseOptions } from './parse.js';

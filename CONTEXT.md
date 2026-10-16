@@ -104,6 +104,30 @@ _Avoid_: classification
 **Debug category**:
 The Salesforce debug log category an event type belongs to, such as `apexCode` or `database`.
 
+## Variables
+
+**Variable**:
+A name a `FINEST` log records a value or a declaration for, as it stood at one event.
+
+**Write**:
+A `VARIABLE_ASSIGNMENT` line: a variable's name, its value as text, and an address after it on
+some lines. A value holds until the next write to the same name.
+_Avoid_: assignment event
+
+**Declaration**:
+A `VARIABLE_SCOPE_BEGIN` line: a variable's name and type, and whether it is static. The log writes
+no end to a declaration.
+
+**Local**:
+A variable a frame wrote or declared itself, whose name holds no `.`. A caller's locals are not in
+the frame it calls.
+
+**Recording frame**:
+The frame whose variables an event sees: the nearest frame at or above it with a write or
+declaration of its own by then. A query or a system call records none, so the Apex frame that
+issued it answers.
+_Avoid_: scope frame
+
 ## Figures
 
 **Rollup**:

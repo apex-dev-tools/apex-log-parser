@@ -20,9 +20,9 @@ const LIMITS = [
   '09:00:00.0 (900)|CUMULATIVE_LIMIT_USAGE_END',
 ];
 
-// Every part of a build: the header, namespaces, counts, heap, details, a caught throw, a flow
-// running total, a flow error, limits, a skipped block, a frame left open and a line the parser
-// cannot read.
+// Every part of a build: the header, namespaces, counts, heap, details, a caught throw, a variable,
+// a flow running total, a flow error, limits, a skipped block, a frame left open and a line the
+// parser cannot read.
 const LOG = [
   '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;CALLOUT,INFO;DB,INFO;SYSTEM,DEBUG;WORKFLOW,INFO',
   '09:15:30.25 (1)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|(GMT-08:00) Pacific Standard Time (America/Los_Angeles)|GMT-08:00',
@@ -30,6 +30,7 @@ const LOG = [
   '09:00:00.0 (20)|CODE_UNIT_STARTED|[EXTERNAL]|01p000000000AAA|ns.MyClass.run()',
   '09:00:00.0 (30)|ENTERING_MANAGED_PKG|ns',
   '09:00:00.0 (40)|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()',
+  '09:00:00.0 (45)|VARIABLE_ASSIGNMENT|[1]|count|1',
   '09:00:00.0 (50)|SOQL_EXECUTE_BEGIN|[2]|Aggregations:1|SELECT Id FROM MyObject__c',
   '09:00:00.0 (55)|SOQL_EXECUTE_EXPLAIN|[2]|TableScan on MyObject__c : [], cardinality: 1, sobjectCardinality: 1, relativeCost 1.3',
   '09:00:00.0 (60)|SOQL_EXECUTE_END|[2]|Rows:2',
@@ -61,6 +62,7 @@ function summary(log: ApexLog): unknown {
       lineNumber: e.lineNumber,
       namespace: e.namespace,
       details: e.details,
+      variables: e.variables && { frame: e.variables.frame.id, locals: e.variables.locals },
       duration: e.duration,
       soqlRowCount: e.soqlRowCount,
       dmlCount: e.dmlCount,
@@ -118,6 +120,7 @@ it('the fixture states every part of a build', async () => {
   expect(log.ofType('SOQL_EXECUTE_EXPLAIN')[0]?.details).not.toBeNull();
   expect(log.ofType('FLOW_ELEMENT_ERROR')[0]?.details.elementName).toBe('Update_Account');
   expect(log.ofType('EXCEPTION_THROWN')[0]?.details.isCaught).toBe(true);
+  expect(log.ofType('VARIABLE_ASSIGNMENT')[0]?.variables?.locals).toHaveLength(1);
 });
 
 describe.each([
