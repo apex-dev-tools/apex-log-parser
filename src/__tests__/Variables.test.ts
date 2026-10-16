@@ -146,6 +146,24 @@ describe('variables', () => {
     ]);
   });
 
+  it('shares the statics between events with no static line between them', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|ns.Cache.hits|1`,
+      `${at(1150)}|VARIABLE_ASSIGNMENT|[2]|ns.Other.flag|true`,
+      `${at(1200)}|VARIABLE_ASSIGNMENT|[3]|a|1`,
+      `${at(1300)}|VARIABLE_ASSIGNMENT|[4]|b|2`,
+      `${at(1400)}|VARIABLE_ASSIGNMENT|[5]|ns.Cache.hits|2`,
+      `${at(1500)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
+    );
+    const statics = (text: string) => eventWith(log, text).variables?.statics;
+    expect(statics('|a|1')).toBe(statics('|b|2'));
+    const later = statics('|ns.Cache.hits|2');
+    expect(later).not.toBe(statics('|b|2'));
+    expect(later?.[0]?.variables[0]?.value).toBe('2');
+    expect(later?.[1]?.variables[0]).toBe(statics('|b|2')?.[1]?.variables[0]);
+  });
+
   it('reads this as the frame wrote it, and its fields without `this.`', () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,

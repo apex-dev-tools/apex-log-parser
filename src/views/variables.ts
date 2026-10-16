@@ -73,6 +73,11 @@ export class LogVariables {
   // undefined until made; null for a log with no variable lines.
   private index: VariableIndex | null | undefined = undefined;
   private readonly read = new Map<number, Variables | null>();
+  // By statics version: events between two static lines share one list.
+  private readonly staticsRead = new Map<number, readonly StaticClass[]>();
+  // By write, or by declaration for a static never written: a static's earliest declaration is
+  // fixed, so its write alone names the entry, and a new version decodes only what changed.
+  private readonly staticRead = new Map<number, { className: string; variable: Variable }>();
 
   constructor(events: LogEvents, store: Store, source: Source) {
     this.events = events;
@@ -142,15 +147,30 @@ export class LogVariables {
   }
 
   private statics(index: VariableIndex, cut: number): readonly StaticClass[] {
+    const version = index.staticsVersion(cut);
+    let held = this.staticsRead.get(version);
+    if (!held) {
+      held = this.staticsAt(index, cut);
+      this.staticsRead.set(version, held);
+    }
+    return held;
+  }
+
+  private staticsAt(index: VariableIndex, cut: number): readonly StaticClass[] {
     const byClass = new Map<string, Variable[]>();
     for (const found of index.statics(cut)) {
-      const { name, ...rest } = this.variable(index, found);
-      const dot = name.lastIndexOf('.');
-      const className = name.slice(0, Math.max(dot, 0));
-      const variable = Object.freeze({ name: name.slice(dot + 1), ...rest });
-      const held = byClass.get(className);
-      if (held) held.push(variable);
-      else byClass.set(className, [variable]);
+      const key = found.write === NONE ? -2 - found.declaration : found.write;
+      let entry = this.staticRead.get(key);
+      if (!entry) {
+        const { name, ...rest } = this.variable(index, found);
+        const dot = name.lastIndexOf('.');
+        const className = name.slice(0, Math.max(dot, 0));
+        entry = { className, variable: Object.freeze({ name: name.slice(dot + 1), ...rest }) };
+        this.staticRead.set(key, entry);
+      }
+      const held = byClass.get(entry.className);
+      if (held) held.push(entry.variable);
+      else byClass.set(entry.className, [entry.variable]);
     }
     return Object.freeze(
       [...byClass]

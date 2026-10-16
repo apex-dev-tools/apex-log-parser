@@ -112,6 +112,9 @@ export class VariableIndex {
   private readonly staticWrites: Int32Array;
   /** Each static's earliest declaration, by static ordinal, or `NONE`. */
   private readonly staticDeclaration: Int32Array;
+  /** Every static write, then every static's earliest declaration, each in log order: each changes what `statics` returns. */
+  private readonly staticWriteOrder: Int32Array;
+  private readonly staticDeclarationOrder: Int32Array;
 
   private constructor(store: Store, source: Source) {
     const { start, end, parent, count } = store;
@@ -350,6 +353,8 @@ export class VariableIndex {
     this.staticStart = staticWrites.start;
     this.staticWrites = staticWrites.items;
     this.staticDeclaration = staticDeclaration;
+    this.staticWriteOrder = staticLines.slice(0, staticCount);
+    this.staticDeclarationOrder = staticDeclaration.filter((s) => s !== NONE).sort();
   }
 
   /** The index of the log's variable lines; null when the log has none, so states no variables. */
@@ -534,6 +539,15 @@ export class VariableIndex {
       out.push({ name: staticNames[p]!, write, declaration });
     }
     return out;
+  }
+
+  /** How many static lines by `cut` change what `statics` returns: two cuts with the same count get the same statics. */
+  staticsVersion(cut: number): number {
+    const { staticWriteOrder, staticDeclarationOrder } = this;
+    return (
+      upperBound(staticWriteOrder, 0, staticWriteOrder.length, this.writes, cut) +
+      upperBound(staticDeclarationOrder, 0, staticDeclarationOrder.length, this.declarations, cut)
+    );
   }
 
   /** The row of write `w`. */
