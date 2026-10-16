@@ -157,7 +157,6 @@ export class VariableIndex {
     const S = declarations.length;
     let nameKind = new Uint8Array(256);
     let nameClass = new Int32Array(256);
-    let thisName = NONE;
     const nameOf = (s: number, e: number): number => {
       const before = strings.size;
       const id = strings.intern(s, e);
@@ -169,7 +168,6 @@ export class VariableIndex {
           nameClass = resized(nameClass, size);
         }
         nameKind[id] = kindOf(bytes, s, e);
-        if (nameKind[id] === NAME_KIND.this) thisName = id;
         nameClass[id] =
           nameKind[id] === NAME_KIND.static
             ? strings.intern(s, lastIndexOfByte(bytes, DOT, s, e))
@@ -221,18 +219,13 @@ export class VariableIndex {
     const lineRow = (line: number): number => (line < W ? writes[line]! : declarations[line - W]!);
     const lineName = (line: number): number =>
       line < W ? writeName[line]! : declaredName[line - W]!;
-    const frameFirst = new Int32Array(count).fill(NONE);
-    for (const line of lines) {
-      const frame = parent[lineRow(line)]!;
-      if (frameFirst[frame] === NONE) frameFirst[frame] = lineRow(line);
-    }
     // By frame, then name, declarations first, so one binary search finds a name's line by a cut.
-    const scoped = lines.filter((line) => {
-      const name = lineName(line);
-      return name !== NONE && nameKind[name] !== NAME_KIND.static;
-    });
-    const byKind = grouped(2, scoped, (line) => (line < W ? 1 : 0)).items;
-    const byLineName = grouped(strings.size, byKind, lineName).items;
+    const local = (name: number): boolean => name !== NONE && nameKind[name] !== NAME_KIND.static;
+    const scoped = new Int32Array(W + S);
+    let scopedCount = 0;
+    for (let d = 0; d < S; d++) if (local(declaredName[d]!)) scoped[scopedCount++] = W + d;
+    for (let w = 0; w < W; w++) if (local(writeName[w]!)) scoped[scopedCount++] = w;
+    const byLineName = grouped(strings.size, scoped.subarray(0, scopedCount), lineName).items;
     const nameLines = grouped(count, byLineName, (line) => parent[lineRow(line)]!).items;
     const runName: number[] = [];
     const runFirst: number[] = [];
@@ -260,25 +253,33 @@ export class VariableIndex {
       for (let k = runFirst[r]!; k < runWrites[r]!; k++) nameLines[k]! -= W;
     }
     for (let frame = 0; frame < count; frame++) frameNames[frame + 1]! += frameNames[frame]!;
-    // A field write reports the object the field belongs to: its writes by object, then by name.
     const fieldLines = new Int32Array(W);
+    const describing = new Int32Array(W);
+    const staticLines = new Int32Array(W);
     let fieldCount = 0;
+    let describingCount = 0;
+    let staticCount = 0;
+    const staticOf = new Int32Array(strings.size).fill(NONE);
+    let statics = 0;
     for (let w = 0; w < W; w++) {
       const name = writeName[w]!;
-      if (name !== NONE && nameKind[name] === NAME_KIND.field && writeOwner[w] !== NONE)
-        fieldLines[fieldCount++] = w;
+      if (name === NONE) continue;
+      const kind = nameKind[name];
+      const owner = writeOwner[w]!;
+      if (kind === NAME_KIND.field) {
+        // A field write reports the object the field belongs to, not the object its value is.
+        if (owner !== NONE) fieldLines[fieldCount++] = w;
+        continue;
+      }
+      // Any other write with an address states that object's value, unless the value is one.
+      if (owner !== NONE && writeValueAddress[w] === NONE) describing[describingCount++] = w;
+      if (kind === NAME_KIND.static) {
+        if (staticOf[name] === NONE) staticOf[name] = statics++;
+        staticLines[staticCount++] = w;
+      }
     }
     const byName = grouped(strings.size, fieldLines.subarray(0, fieldCount), (w) => writeName[w]!);
     const owners = grouped(strings.size, byName.items, (w) => writeOwner[w]!);
-    // Any other write that reports an address states that object's value, unless the value is one.
-    const describing = new Int32Array(W);
-    let describingCount = 0;
-    for (let w = 0; w < W; w++) {
-      const name = writeName[w]!;
-      if (name === NONE || nameKind[name] === NAME_KIND.field) continue;
-      if (writeOwner[w] !== NONE && writeValueAddress[w] === NONE)
-        describing[describingCount++] = w;
-    }
     const described = grouped(strings.size, describing.subarray(0, describingCount), (w) => {
       // Every describing write reports an address
       return writeOwner[w]!;
@@ -289,19 +290,22 @@ export class VariableIndex {
     const lastUntil = new Int32Array(strings.size).fill(NONE);
     const runWrite: number[] = [];
     const runType: number[] = [];
+    const frameFirst = new Int32Array(count).fill(NONE);
     for (const line of lines) {
       const row = lineRow(line);
       // Each row's parent is a frame row or the log
       const frame = parent[row]!;
+      if (frameFirst[frame] === NONE) frameFirst[frame] = row;
       if (line >= W) {
         const d = line - W;
-        if (declaredName[d] === thisName && declaredType[d] !== NONE)
+        if (nameKind[declaredName[d]!] === NAME_KIND.this && declaredType[d] !== NONE)
           declaredThis.set(frame, declaredType[d]!);
         continue;
       }
       const owner = writeOwner[line]!;
       const cls = declaredThis.get(frame);
-      if (writeName[line] !== thisName || owner === NONE || cls === undefined) continue;
+      if (nameKind[writeName[line]!] !== NAME_KIND.this || owner === NONE || cls === undefined)
+        continue;
       const last = lastUntil[owner]!;
       if (last !== NONE && (row <= last || type[frame] !== CONSTRUCTOR)) continue;
       lastUntil[owner] = subtreeEnd[frame]! - 1;
@@ -314,45 +318,26 @@ export class VariableIndex {
       return writeOwner[runWrite[r]!]!;
     });
 
-    // A static lives for the transaction, so its writes are one list per name, wherever made.
-    const staticOf = new Int32Array(strings.size).fill(NONE);
-    let statics = 0;
-    for (let w = 0; w < W; w++) {
-      const name = writeName[w]!;
-      if (name !== NONE && nameKind[name] === NAME_KIND.static && staticOf[name] === NONE)
-        staticOf[name] = statics++;
-    }
-    for (let s = 0; s < S; s++) {
-      const name = declaredName[s]!;
-      if (name !== NONE && nameKind[name] === NAME_KIND.static && staticOf[name] === NONE)
-        staticOf[name] = statics++;
+    // A static lives for the transaction, so its lines are one list per name, wherever made.
+    const firstDeclared = new Int32Array(strings.size).fill(NONE);
+    for (let d = 0; d < S; d++) {
+      const name = declaredName[d]!;
+      if (name === NONE || nameKind[name] !== NAME_KIND.static) continue;
+      if (staticOf[name] === NONE) staticOf[name] = statics++;
+      // In log order, so the first kept is the earliest: the line from which events see the static.
+      if (firstDeclared[name] === NONE) firstDeclared[name] = d;
     }
     const staticNames = new Int32Array(statics);
     for (let name = 0; name < staticOf.length; name++) {
       // name is a string id
       if (staticOf[name] !== NONE) staticNames[staticOf[name]!] = name;
     }
-    const staticLines = new Int32Array(W);
-    let staticCount = 0;
-    for (let w = 0; w < W; w++) {
-      const name = writeName[w]!;
-      if (name !== NONE && nameKind[name] === NAME_KIND.static) staticLines[staticCount++] = w;
-    }
     const staticWrites = grouped(statics, staticLines.subarray(0, staticCount), (w) => {
       // Every static write's name has a static ordinal
       return staticOf[writeName[w]!]!;
     });
-    const staticDeclaration = new Int32Array(statics).fill(NONE);
-    for (let s = 0; s < S; s++) {
-      const name = declaredName[s]!;
-      // In log order, so the first kept is the earliest: the line from which events see the static.
-      if (
-        name !== NONE &&
-        nameKind[name] === NAME_KIND.static &&
-        staticDeclaration[staticOf[name]!] === NONE
-      )
-        staticDeclaration[staticOf[name]!] = s;
-    }
+    // Each static's name is a name id
+    const staticDeclaration = staticNames.map((name) => firstDeclared[name]!);
     const staticWriteOrder = staticLines.slice(0, staticCount);
     const staticDeclarationOrder = staticDeclaration.filter((d) => d !== NONE).sort();
     // Per class, so a read rebuilds only the class whose static changed.
@@ -604,8 +589,13 @@ export class VariableIndex {
   private addressOf(text: string): number {
     if (!this.addresses) {
       const addresses = new Map<string, number>();
+      const seen = new Uint8Array(this.strings.size);
       for (const ids of [this.writeOwner, this.writeValueAddress]) {
-        for (const id of ids) if (id !== NONE) addresses.set(this.strings.text(id), id);
+        for (const id of ids) {
+          if (id === NONE || seen[id]) continue;
+          seen[id] = 1;
+          addresses.set(this.strings.text(id), id);
+        }
       }
       this.addresses = addresses;
     }
