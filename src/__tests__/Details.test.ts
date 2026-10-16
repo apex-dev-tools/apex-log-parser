@@ -187,6 +187,61 @@ describe('FLOW_ELEMENT_ERROR details', () => {
   });
 });
 
+describe('FLOW_START_INTERVIEWS_BEGIN details', () => {
+  const interviews = (unit: string | null): string => {
+    const body = [
+      '09:18:22.6 (300)|FLOW_START_INTERVIEWS_BEGIN|1',
+      '09:18:22.6 (310)|FLOW_START_INTERVIEWS_END|1',
+    ];
+    return unit === null
+      ? body.join('\n')
+      : [
+          `09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|${unit}`,
+          ...body,
+          `09:18:22.6 (400)|CODE_UNIT_FINISHED|${unit}`,
+        ].join('\n');
+  };
+  const flowTypes = (text: string) =>
+    parse(text)
+      .ofType('FLOW_START_INTERVIEWS_BEGIN')
+      .map((e) => e.details.flowType);
+
+  it.each([
+    ['a Flow code unit', 'Flow:01I000000000AAA', 'flow'],
+    ['a Workflow code unit', 'Workflow:01I000000000AAA', 'processBuilder'],
+    ['a code unit of another kind', 'Validation:MyObject:a00000000000AAA', null],
+    ['no code unit', null, null],
+  ])('is %s: %s', (_name, unit, expected) => {
+    expect(flowTypes(interviews(unit))).toEqual([expected]);
+  });
+
+  it('is null when the nearest code unit is of another kind, though a Flow is above it', () => {
+    const text = [
+      '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|Flow:01I000000000AAA',
+      '09:18:22.6 (210)|CODE_UNIT_STARTED|[EXTERNAL]|Validation:MyObject:a00000000000AAA',
+      '09:18:22.6 (300)|FLOW_START_INTERVIEWS_BEGIN|1',
+      '09:18:22.6 (310)|FLOW_START_INTERVIEWS_END|1',
+      '09:18:22.6 (390)|CODE_UNIT_FINISHED|Validation:MyObject:a00000000000AAA',
+      '09:18:22.6 (400)|CODE_UNIT_FINISHED|Flow:01I000000000AAA',
+    ].join('\n');
+    expect(flowTypes(text)).toEqual([null]);
+  });
+
+  it('is flow for interviews inside another interviews frame, whatever started it', () => {
+    const text = [
+      '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|Workflow:01I000000000AAA',
+      '09:18:22.6 (300)|FLOW_START_INTERVIEWS_BEGIN|1',
+      '09:18:22.6 (310)|FLOW_START_INTERVIEW_BEGIN|01I000000000AAA|Outer',
+      '09:18:22.6 (320)|FLOW_START_INTERVIEWS_BEGIN|1',
+      '09:18:22.6 (330)|FLOW_START_INTERVIEWS_END|1',
+      '09:18:22.6 (340)|FLOW_START_INTERVIEW_END|01I000000000AAA|Outer',
+      '09:18:22.6 (350)|FLOW_START_INTERVIEWS_END|1',
+      '09:18:22.6 (400)|CODE_UNIT_FINISHED|Workflow:01I000000000AAA',
+    ].join('\n');
+    expect(flowTypes(text)).toEqual(['processBuilder', 'flow']);
+  });
+});
+
 describe('limit and heap details', () => {
   const log = parse(
     inExecution(

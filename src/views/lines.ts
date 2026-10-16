@@ -3,15 +3,22 @@
  */
 import { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
-import { EVENT_TYPES, eventText, fieldPosition, idOfType } from '../catalog/catalog.js';
+import {
+  codeUnitType,
+  EVENT_TYPES,
+  eventText,
+  fieldPosition,
+  idOfType,
+} from '../catalog/catalog.js';
 import type { Issues } from '../engine/issues.js';
 import { throwOutcomes } from '../engine/throws.js';
 import type { Store } from '../store/store.js';
-import type { AnyDetails } from './details.js';
-import { eventDetails } from './details.js';
+import type { AnyDetails, FlowType } from './details.js';
+import { eventDetails, flowTypeOfUnit } from './details.js';
 
 const INTERVIEWS = idOfType('FLOW_START_INTERVIEWS_BEGIN');
 const INTERVIEW = idOfType('FLOW_START_INTERVIEW_BEGIN');
+const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
 const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
 
 /**
@@ -71,6 +78,7 @@ export class EventLines {
         return plan < 0 ? null : this.at(plan);
       },
       () => (this.outcomes ??= throwOutcomes(this.store, this.issues)).get(id) ?? null,
+      () => this.flowTypeOf(id),
     );
   }
 
@@ -84,6 +92,18 @@ export class EventLines {
     // id is a row, so every column holds it
     this.fields.resetRow(this.store.start[id]!, this.store.end[id]!);
     return this.fields;
+  }
+
+  /** What started the interviews: the nearest code unit or interviews frame above them. */
+  private flowTypeOf(id: number): FlowType | null {
+    const { parent } = this.store;
+    // Every parent is a row; row 0, the log, ends the walk.
+    for (let up = parent[id]!; up > 0; up = parent[up]!) {
+      const type = this.typeOf(up);
+      if (type === INTERVIEWS) return 'flow';
+      if (type === CODE_UNIT_STARTED) return flowTypeOfUnit(codeUnitType(this.at(up)));
+    }
+    return null;
   }
 
   private firstChildOf(id: number, type: number): number {
