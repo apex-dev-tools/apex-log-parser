@@ -48,6 +48,17 @@ export interface FrameScope {
   readonly this: FoundVariable | null;
 }
 
+/** What the log holds for one address by a cut, by ordinal, or `NONE`. */
+export interface FoundObject {
+  /** The class of the object living at the address by then, as its frame declared `this`. */
+  readonly className: number;
+  /** The last write by then that states the object's value. */
+  readonly write: number;
+  /** The row of the first write that states it, when none does by then. */
+  readonly laterAt: number;
+  readonly fields: FoundVariable[];
+}
+
 /**
  * The variable lines of one log, indexed so a query searches rather than walks: each write's name
  * and addresses, each declaration's name and type, and each frame's own lines in log order. Ids
@@ -84,6 +95,16 @@ export class VariableIndex {
   /** Field writes by the object they report, then by field name, each in log order. */
   private readonly ownerStart: Int32Array;
   private readonly ownerWrites: Int32Array;
+  /** Writes that state an object's value, by the address the line reports, each in log order. */
+  private readonly describedStart: Int32Array;
+  private readonly describedWrites: Int32Array;
+  /** Each address's runs, one per object that lived there, in log order: where each starts and its class. */
+  private readonly runStart: Int32Array;
+  private readonly runs: Int32Array;
+  private readonly runAt: Int32Array;
+  private readonly runClass: Int32Array;
+  /** Each address id by its text, made on the first `addressOf`. */
+  private addresses: Map<string, number> | null = null;
   /** Each static's name id, by static ordinal. */
   private readonly staticNames: Int32Array;
   /** Each static's writes, by static ordinal, in log order. */
@@ -187,6 +208,55 @@ export class VariableIndex {
       .filter((w) => nameKind[writeName[w]!] === NAME_KIND.field && writeOwner[w] !== NONE);
     const byName = grouped(strings.size, fieldLines, (w) => writeName[w]!).items;
     const owners = grouped(strings.size, byName, (w) => writeOwner[w]!);
+    // Any other write that reports an address states that object's value, unless the value is itself one.
+    const describing = new Int32Array(W);
+    let describingCount = 0;
+    for (let w = 0; w < W; w++) {
+      const name = writeName[w]!;
+      if (name === NONE || nameKind[name] === NAME_KIND.field) continue;
+      if (writeOwner[w] !== NONE && writeValueAddress[w] === NONE)
+        describing[describingCount++] = w;
+    }
+    const described = grouped(strings.size, describing.subarray(0, describingCount), (w) => {
+      // Every describing write reports an address
+      return writeOwner[w]!;
+    });
+    // A `this` write in a frame that declared `this` names the class of the object at its address.
+    // An address is reused once its object is gone, so each object is a run, from that write to the
+    // end of its frame. A write inside the last run adds none: a superclass constructor runs on the
+    // object inside the subclass's. Only a construction starts a later run, as a method declares
+    // `this` as the type it was compiled against.
+    const { subtreeEnd, type } = store;
+    const declaredThis = new Map<number, number>();
+    const lastUntil = new Int32Array(strings.size).fill(NONE);
+    const runWrite: number[] = [];
+    const runUntil: number[] = [];
+    const runType: number[] = [];
+    for (const line of lines) {
+      const row = lineRow(line);
+      // Each row's parent is a frame row or the log
+      const frame = parent[row]!;
+      if (line >= W) {
+        const d = line - W;
+        if (declaredName[d] === thisName && declaredType[d] !== NONE && !declaredStatic[d])
+          declaredThis.set(frame, declaredType[d]!);
+        continue;
+      }
+      const owner = writeOwner[line]!;
+      const cls = declaredThis.get(frame);
+      if (writeName[line] !== thisName || owner === NONE || cls === undefined) continue;
+      const last = lastUntil[owner]!;
+      if (last !== NONE && (row <= last || type[frame] !== CONSTRUCTOR)) continue;
+      lastUntil[owner] = subtreeEnd[frame]! - 1;
+      runWrite.push(line);
+      runUntil.push(subtreeEnd[frame]! - 1);
+      runType.push(cls);
+    }
+    const runIds = Int32Array.from(runWrite.keys());
+    const runs = grouped(strings.size, runIds, (r) => {
+      // Every run's write reports an address
+      return writeOwner[runWrite[r]!]!;
+    });
 
     // A static lives for the transaction, so its writes are one list per name, wherever made.
     const staticOf = new Int32Array(strings.size).fill(NONE);
@@ -243,6 +313,12 @@ export class VariableIndex {
     this.objectWrites = objects.items;
     this.ownerStart = owners.start;
     this.ownerWrites = owners.items;
+    this.describedStart = described.start;
+    this.describedWrites = described.items;
+    this.runStart = runs.start;
+    this.runs = runs.items;
+    this.runAt = Int32Array.from(runWrite, (w) => writes[w]!);
+    this.runClass = Int32Array.from(runType);
     this.staticNames = staticNames;
     this.staticStart = staticWrites.start;
     this.staticWrites = staticWrites.items;
@@ -379,20 +455,78 @@ export class VariableIndex {
         if (nameKind[writeName[w]!] === NAME_KIND.field) take(w);
       }
     }
-    if (object !== NONE) {
-      const { ownerStart, ownerWrites } = this;
-      const end = ownerStart[object + 1]!;
-      // One run per field name inside the object's run, each in log order.
-      for (let lo = ownerStart[object]!; lo < end; ) {
-        const name = writeName[ownerWrites[lo]!]!;
-        let hi = lo + 1;
-        while (hi < end && writeName[ownerWrites[hi]!] === name) hi++;
-        const last = upperBound(ownerWrites, lo, hi, writes, cut) - 1;
-        if (last >= lo) take(ownerWrites[last]!);
-        lo = hi;
-      }
-    }
+    if (object !== NONE) this.ownerFields(object, cut, take);
     return [...latest.values()].map((w) => ({ name: writeName[w]!, write: w, declaration: NONE }));
+  }
+
+  /** The id of an address the log writes, or `NONE`. */
+  addressOf(text: string): number {
+    if (!this.addresses) {
+      const addresses = new Map<string, number>();
+      for (const ids of [this.writeOwner, this.writeValueAddress]) {
+        for (const id of ids) if (id !== NONE) addresses.set(this.strings.text(id), id);
+      }
+      this.addresses = addresses;
+    }
+    return this.addresses.get(text) ?? NONE;
+  }
+
+  /**
+   * What the log holds for the object at `address` by `cut`: the class of the object living there,
+   * the last write that states its value, or where the first one is when none does by then, and
+   * its fields. Null when the log holds none of these for the address.
+   */
+  objectAt(address: number, cut: number): FoundObject | null {
+    const { describedStart, describedWrites, writes, runStart, ownerStart } = this;
+    const lo = describedStart[address]!;
+    const hi = describedStart[address + 1]!;
+    if (
+      lo === hi &&
+      runStart[address] === runStart[address + 1] &&
+      ownerStart[address] === ownerStart[address + 1]
+    )
+      return null;
+    const last = upperBound(describedWrites, lo, hi, writes, cut) - 1;
+    const write = last >= lo ? describedWrites[last]! : NONE;
+    const run = this.runOf(address, cut);
+    const fields: FoundVariable[] = [];
+    this.ownerFields(address, cut, (w) =>
+      fields.push({ name: this.writeName[w]!, write: w, declaration: NONE }),
+    );
+    return {
+      className: run === NONE ? NONE : this.runClass[run]!,
+      write,
+      laterAt: write === NONE && lo < hi ? writes[describedWrites[lo]!]! : NONE,
+      fields,
+    };
+  }
+
+  /**
+   * Hands `take` the last write by `cut` to each field of the object at `address`. Where the address
+   * held an earlier object, only writes from this object's run on count.
+   */
+  private ownerFields(address: number, cut: number, take: (w: number) => void): void {
+    const { ownerStart, ownerWrites, writeName, writes, runStart, runs } = this;
+    const run = this.runOf(address, cut);
+    const from = run !== NONE && run !== runs[runStart[address]!] ? this.runAt[run]! : 0;
+    const end = ownerStart[address + 1]!;
+    // One run per field name inside the object's run, each in log order.
+    for (let lo = ownerStart[address]!; lo < end; ) {
+      const name = writeName[ownerWrites[lo]!]!;
+      let hi = lo + 1;
+      while (hi < end && writeName[ownerWrites[hi]!] === name) hi++;
+      const last = upperBound(ownerWrites, lo, hi, writes, cut) - 1;
+      if (last >= lo && writes[ownerWrites[last]!]! >= from) take(ownerWrites[last]!);
+      lo = hi;
+    }
+  }
+
+  /** The run of the object living at `address` by `cut`, or `NONE` before the log names one. */
+  private runOf(address: number, cut: number): number {
+    const { runStart, runs, runAt } = this;
+    const lo = runStart[address]!;
+    const after = upperBound(runs, lo, runStart[address + 1]!, runAt, cut);
+    return after > lo ? runs[after - 1]! : NONE;
   }
 
   /**

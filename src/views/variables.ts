@@ -50,6 +50,18 @@ export interface Variables {
   readonly statics: readonly StaticClass[];
 }
 
+/** What the log holds for the object at one address, as it stood at an event. */
+export interface ObjectState {
+  /** The class of the object living there by then, as its own frame declared `this`; null when the log names none. */
+  readonly className: string | null;
+  /** The object's value as the last write by then that states it wrote it; null when none does. */
+  readonly value: string | null;
+  /** The id of the first event that states the value, when none does by then; else null. */
+  readonly laterAt: number | null;
+  /** The last write by then to each of its fields, by name without `this.`. */
+  readonly fields: readonly Variable[];
+}
+
 const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const byName = (a: Variable, b: Variable): number => order(a.name, b.name);
 
@@ -78,31 +90,54 @@ export class LogVariables {
     return held;
   }
 
-  private make(id: number): Variables | null {
+  /** The object at `address` as event `id` stood; null when the log holds nothing for it. */
+  objectAt(id: number, address: string): ObjectState | null {
+    const index = this.indexed();
+    const at = index ? index.addressOf(address) : NONE;
+    const found = index && at !== NONE ? index.objectAt(at, index.cutOf(id)) : null;
+    if (!index || !found) return null;
+    const row = found.write === NONE ? NONE : index.writeRow(found.write);
+    return Object.freeze({
+      className: found.className === NONE ? null : index.strings.text(found.className),
+      value: row === NONE ? null : this.events.lines.field(row, 'value'),
+      laterAt: found.laterAt === NONE ? null : found.laterAt,
+      fields: Object.freeze(found.fields.map((f) => this.field(index, f)).sort(byName)),
+    });
+  }
+
+  private indexed(): VariableIndex | null {
     if (this.index === undefined) this.index = VariableIndex.of(this.store, this.source);
-    const index = this.index;
+    return this.index;
+  }
+
+  private make(id: number): Variables | null {
+    const index = this.indexed();
     if (!index) return null;
     const cut = index.cutOf(id);
     const frame = index.recordingFrame(id, cut);
     if (frame === NONE) return null;
     const scope = index.scope(frame, cut);
     const locals = scope.locals.map((found) => this.variable(index, found));
-    const fields = index.objectFields(index.innermostFrame(id), frame, cut).map((found) => {
-      const { name, ...rest } = this.variable(index, found);
-      // A field line's address is the object the field belongs to, so only an address value counts.
-      const address = index.valueAddress(found.write);
-      return Object.freeze({
-        name: name.slice(name.indexOf('.') + 1),
-        ...rest,
-        address: address === NONE ? null : index.strings.text(address),
-      });
-    });
+    const fields = index
+      .objectFields(index.innermostFrame(id), frame, cut)
+      .map((found) => this.field(index, found));
     return Object.freeze({
       frame: this.events.event(frame) as FrameEvent,
       locals: Object.freeze(locals.sort(byName)),
       this: scope.this && this.variable(index, scope.this),
       fields: Object.freeze(fields.sort(byName)),
       statics: this.statics(index, cut),
+    });
+  }
+
+  private field(index: VariableIndex, found: FoundVariable): Variable {
+    const { name, ...rest } = this.variable(index, found);
+    // A field line's address is the object the field belongs to, so only an address value counts.
+    const address = index.valueAddress(found.write);
+    return Object.freeze({
+      name: name.slice(name.indexOf('.') + 1),
+      ...rest,
+      address: address === NONE ? null : index.strings.text(address),
     });
   }
 

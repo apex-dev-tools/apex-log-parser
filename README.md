@@ -25,7 +25,8 @@ VS Code extension and its [MCP server](https://github.com/certinia/debug-log-ana
   extra values (`details`), such as a query's plan or whether a throw was caught.
 - **An event tree** where each entry is matched to its exit, with self and total times in
   nanoseconds.
-- **Variables in scope** at any event of a `FINEST` log, as the log recorded them.
+- **Variables in scope** at any event of a `FINEST` log, as the log recorded them, and the object
+  at any address the log writes.
 - **Counts up the tree**: SOQL, DML and SOSL statements and rows, exceptions and heap.
 - **Governor limits** per namespace, with a snapshot for each limit block in the log.
 - **No dependencies**, ESM only.

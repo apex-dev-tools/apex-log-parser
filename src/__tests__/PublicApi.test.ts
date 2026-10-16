@@ -41,6 +41,7 @@ import type {
   LogTruncationRegion,
   LogWorker,
   NamespaceLimits,
+  ObjectState,
   ParseOptions,
   ParsePhase,
   ParseProgress,
@@ -121,6 +122,7 @@ interface PublicTypeSurface {
   logTruncationRegion: LogTruncationRegion;
   logWorker: LogWorker;
   namespaceLimits: NamespaceLimits;
+  objectState: ObjectState;
   parseOptions: ParseOptions;
   parsePhase: ParsePhase;
   parseProgress: ParseProgress;

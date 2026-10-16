@@ -13,7 +13,7 @@ import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../sto
 import type { StringTable } from '../store/strings.js';
 import type { AnyDetails, DetailsOf } from './details.js';
 import { EventLines } from './lines.js';
-import type { Variables } from './variables.js';
+import type { ObjectState, Variables } from './variables.js';
 import { LogVariables } from './variables.js';
 
 /** A rollup: the own part, and the part with every descendant. */
@@ -94,6 +94,13 @@ interface EventBase extends Rollups {
    * event is in no frame, or the log has no variable lines, as below the `FINEST` Apex level.
    */
   readonly variables: Variables | null;
+  /**
+   * What the log holds for the object at `address`, as `0x` and hex, as the event stood, as
+   * `variables` reads: its class, its value and its fields. The address is the platform's, and it
+   * reuses one once its object is gone, so each object at an address is read apart. Null when the
+   * log holds nothing for the address.
+   */
+  objectAt(address: string): ObjectState | null;
 }
 
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
@@ -355,5 +362,9 @@ class EventView extends RollupView {
 
   get variables(): Variables | null {
     return this.events.variables.at(this.id);
+  }
+
+  objectAt(address: string): ObjectState | null {
+    return this.events.variables.objectAt(this.id, address);
   }
 }

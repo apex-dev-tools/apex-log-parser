@@ -135,6 +135,11 @@ The text the log writes for an object, `0x` and hex digits. A field's write stat
 the object the field belongs to; any other write, the object its value is. The platform reuses an
 address once the object at it is gone.
 
+**Object**:
+What lived at one address for a time: from the `this` write that named its class, to the end of
+the frame that made it. A construction at the address after that is a new object. The parser's
+reading: the log states no object's end.
+
 **Recording frame**:
 The frame whose variables an event sees: the nearest frame at or above it with a write or
 declaration of its own by then. A query or a system call records none, so the Apex frame that

@@ -260,3 +260,108 @@ describe('variables', () => {
     expect(none.event(1)?.variables).toBeNull();
   });
 });
+
+describe('objectAt', () => {
+  it('reads the value as the event stood, and where the log first states it when it has not yet', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1050)}|VARIABLE_ASSIGNMENT|[2]|alias|0xaaa`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[3]|view|{"ref":"0xaaa"}`,
+      `${at(1150)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1200)}|METHOD_ENTRY|[9]|01p000000000AAA|ns.Second.run()`,
+      `${at(1250)}|VARIABLE_ASSIGNMENT|[10]|held|{"n":1}|0xaaa`,
+      `${at(1300)}|VARIABLE_ASSIGNMENT|[11]|held|{"n":2}|0xaaa`,
+      `${at(1350)}|METHOD_EXIT|[9]|01p000000000AAA|ns.Second.run()`,
+    );
+    // The value is an address, so it reads the object there; one only nested in a value does too.
+    expect(eventWith(log, '|alias|').variables?.locals[0]?.address).toBe('0xaaa');
+    expect(eventWith(log, 'ns.First.run()').objectAt('0xaaa')).toEqual({
+      className: null,
+      value: null,
+      laterAt: eventWith(log, '{"n":1}').id,
+      fields: [],
+    });
+    expect(eventWith(log, '{"n":1}').objectAt('0xaaa')?.value).toBe('{"n":1}');
+    expect(eventWith(log, 'ns.Second.run()').objectAt('0xaaa')).toMatchObject({
+      value: '{"n":2}',
+      laterAt: null,
+    });
+  });
+
+  it('takes the value from a write of this, and only fields from a field write', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|this.sortDir|"asc"|0xf1e`,
+      `${at(1150)}|VARIABLE_ASSIGNMENT|[3]|this|{"sortDir":"asc"}|0xaaa`,
+      `${at(1200)}|VARIABLE_ASSIGNMENT|[4]|alias|0xbbb`,
+      `${at(1900)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const outer = eventWith(log, 'ns.Outer.run()');
+    expect(outer.objectAt('0xf1e')).toEqual({
+      className: null,
+      value: null,
+      laterAt: null,
+      fields: [{ name: 'sortDir', type: null, value: '"asc"', address: null, id: 2 }],
+    });
+    expect(outer.objectAt('0xaaa')?.value).toBe('{"sortDir":"asc"}');
+    // The log never wrote what is at 0xbbb.
+    expect(outer.objectAt('0xbbb')).toBeNull();
+    expect(outer.objectAt('0xnothere')).toBeNull();
+  });
+
+  it('names the class the object was constructed as, not its superclass, from its declaration on', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1050)}|CONSTRUCTOR_ENTRY|[17]|01p000000000AAA|<init>()|ns.Handler`,
+      `${at(1060)}|VARIABLE_SCOPE_BEGIN|[11]|this|ns.Handler|true|false`,
+      `${at(1070)}|VARIABLE_ASSIGNMENT|[11]|this|{}|0x7b4`,
+      `${at(1080)}|CONSTRUCTOR_ENTRY|[12]|01p000000000AAA|<init>()|ns.BaseHandler`,
+      `${at(1090)}|VARIABLE_SCOPE_BEGIN|[15]|this|ns.BaseHandler|true|false`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[15]|this|{}|0x7b4`,
+      `${at(1110)}|CONSTRUCTOR_EXIT|[12]|01p000000000AAA|<init>()|ns.BaseHandler`,
+      `${at(1120)}|CONSTRUCTOR_EXIT|[17]|01p000000000AAA|<init>()|ns.Handler`,
+      `${at(1200)}|METHOD_ENTRY|[3]|01p000000000AAA|ns.Base.run()`,
+      `${at(1210)}|VARIABLE_SCOPE_BEGIN|[3]|this|ns.Base|true|false`,
+      `${at(1220)}|VARIABLE_ASSIGNMENT|[3]|this|{}|0xccc`,
+      `${at(1230)}|METHOD_EXIT|[3]|01p000000000AAA|ns.Base.run()`,
+      `${at(1300)}|METHOD_ENTRY|[4]|01p000000000AAA|ns.Second.run()`,
+      `${at(1310)}|VARIABLE_ASSIGNMENT|[4]|this|{}|0xddd`,
+      `${at(1320)}|METHOD_EXIT|[4]|01p000000000AAA|ns.Second.run()`,
+      `${at(1900)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const outer = eventWith(log, 'ns.Outer.run()');
+    expect(outer.objectAt('0x7b4')?.className).toBe('ns.Handler');
+    expect(eventWith(log, 'CONSTRUCTOR_ENTRY').objectAt('0x7b4')?.className).toBe('ns.Handler');
+    expect(eventWith(log, '|ns.Handler|true|').objectAt('0x7b4')?.className).toBeNull();
+    // An object made outside the log is named by the type a method declared `this` as.
+    expect(outer.objectAt('0xccc')?.className).toBe('ns.Base');
+    // A frame that never declared `this` names no class.
+    expect(outer.objectAt('0xddd')?.className).toBeNull();
+  });
+
+  it('reads a reused address as a new object, in objectAt and in fields', () => {
+    const log = logOf(
+      `${at(1000)}|CONSTRUCTOR_ENTRY|[1]|01p000000000AAA|<init>()|ns.First`,
+      `${at(1010)}|VARIABLE_SCOPE_BEGIN|[1]|this|ns.First|true|false`,
+      `${at(1020)}|VARIABLE_ASSIGNMENT|[1]|this|{}|0xbbb`,
+      `${at(1030)}|VARIABLE_ASSIGNMENT|[2]|this.one|1|0xbbb`,
+      `${at(1040)}|CONSTRUCTOR_EXIT|[1]|01p000000000AAA|<init>()|ns.First`,
+      `${at(1050)}|CONSTRUCTOR_ENTRY|[9]|01p000000000AAA|<init>()|ns.First`,
+      `${at(1060)}|VARIABLE_SCOPE_BEGIN|[9]|this|ns.First|true|false`,
+      `${at(1070)}|VARIABLE_ASSIGNMENT|[9]|this|{}|0xbbb`,
+      `${at(1080)}|VARIABLE_ASSIGNMENT|[10]|this.two|2|0xbbb`,
+      `${at(1090)}|CONSTRUCTOR_EXIT|[9]|01p000000000AAA|<init>()|ns.First`,
+      `${at(1100)}|METHOD_ENTRY|[20]|01p000000000AAA|ns.First.go()`,
+      `${at(1120)}|VARIABLE_ASSIGNMENT|[20]|this|{}|0xbbb`,
+      `${at(1130)}|METHOD_EXIT|[20]|01p000000000AAA|ns.First.go()`,
+    );
+    const go = eventWith(log, 'ns.First.go()');
+    expect(go.objectAt('0xbbb')?.fields.map((v) => v.name)).toEqual(['two']);
+    expect(go.variables?.fields.map((v) => v.name)).toEqual(['two']);
+    expect(
+      eventWith(log, 'this.one')
+        .objectAt('0xbbb')
+        ?.fields.map((v) => v.name),
+    ).toEqual(['one']);
+  });
+});
