@@ -448,6 +448,21 @@ describe('objectAt', () => {
     });
   });
 
+  it('is null before any line holds the object, when no later write states its value', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|seen|1`,
+      `${at(1200)}|VARIABLE_ASSIGNMENT|[3]|this.f|1|0xabc`,
+      `${at(1300)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    expect(eventWith(log, '|seen|').objectAt('0xabc')).toBeNull();
+    expect(
+      eventWith(log, 'this.f')
+        .objectAt('0xabc')
+        ?.fields.map((v) => v.name),
+    ).toEqual(['f']);
+  });
+
   it('takes the value from a write of this, and only fields from a field write', () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,

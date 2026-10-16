@@ -457,25 +457,25 @@ export class VariableIndex {
   /**
    * What the log holds for the object at `address` as event `id` stood: the class of the object
    * living there, the last write that states its value, or where the first one is when none does
-   * by then, and its fields. Null when the log holds none of these for the address.
+   * by then, and its fields. Null when the log holds none of these for the address by then.
    */
   objectAt(id: number, address: string): FoundObject | null {
     const at = this.addressOf(address);
     if (at === NONE) return null;
-    const { describedStart, describedWrites, writes, runStart, ownerStart } = this;
+    const { describedStart, describedWrites, writes } = this;
     const lo = describedStart[at]!;
     const hi = describedStart[at + 1]!;
-    if (lo === hi && runStart[at] === runStart[at + 1] && ownerStart[at] === ownerStart[at + 1])
-      return null;
     const cut = this.cutOf(id);
     const last = upperBound(describedWrites, lo, hi, writes, cut) - 1;
     const run = this.runOf(at, cut);
     const fields: FoundVariable[] = [];
     this.ownerFields(at, cut, (w) => fields.push(this.found(this.writeName[w]!, w, NONE)));
+    const laterRow = last < lo && lo < hi ? writes[describedWrites[lo]!]! : NONE;
+    if (run === NONE && last < lo && laterRow === NONE && !fields.length) return null;
     return {
       className: run === NONE ? NONE : this.runClass[run]!,
       valueRow: last >= lo ? writes[describedWrites[last]!]! : NONE,
-      laterRow: last < lo && lo < hi ? writes[describedWrites[lo]!]! : NONE,
+      laterRow,
       fields,
     };
   }

@@ -100,7 +100,8 @@ interface EventBase extends Rollups {
    * The object at `address` when the event ran: its class, its value and its fields. Give the
    * address exactly as the log writes it, as `Variable.address` does; case counts. The platform
    * reuses an address after its object is gone, so this reads only the object that lived there at
-   * the event. Null when the log holds nothing for the address anywhere.
+   * the event. Null when the log holds nothing for the address by then, and no later write states
+   * its value.
    */
   objectAt(address: string): ObjectState | null;
 }
