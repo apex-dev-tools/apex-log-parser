@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { Source } from '../bytes/source.js';
-import type { FoundVariable } from '../engine/variables.js';
+import type { FoundStaticClass, FoundVariable } from '../engine/variables.js';
 import { VariableIndex } from '../engine/variables.js';
 import type { Store } from '../store/store.js';
 import { NONE } from '../store/store.js';
@@ -65,12 +65,6 @@ export interface ObjectState {
 const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const byName = (a: Variable, b: Variable): number => order(a.name, b.name);
 
-/** A static, split at its last `.` into its class and its own name. */
-interface StaticEntry {
-  readonly className: string;
-  readonly variable: Variable;
-}
-
 /** Each event's variables, read from one index of the log made on first read. */
 export class LogVariables {
   private readonly events: LogEvents;
@@ -81,10 +75,12 @@ export class LogVariables {
   private readonly read = new Map<number, Variables | null>();
   // By statics version: events between two static lines share one list.
   private readonly staticsRead = new Map<number, readonly StaticClass[]>();
-  // A static's earliest declaration is fixed, so its write's row alone names the entry, and a new
-  // version decodes only what changed. A static never written is named by its declaration's row.
-  private readonly staticWritten = new Map<number, StaticEntry>();
-  private readonly staticDeclared = new Map<number, StaticEntry>();
+  // By class key, then the class's version, so a new version rebuilds only the class that changed.
+  private readonly classRead = new Map<number, Map<number, StaticClass>>();
+  // A static's earliest declaration is fixed, so its write's row alone names it. A static never
+  // written is named by its declaration's row.
+  private readonly staticWritten = new Map<number, Variable>();
+  private readonly staticDeclared = new Map<number, Variable>();
   // By write row, or by declaration row for a local never written, so events share each object and
   // each value is decoded once. A local's write pairs with no type before its declaration, so the
   // type is checked.
@@ -175,32 +171,39 @@ export class LogVariables {
   }
 
   private staticsAt(index: VariableIndex, id: number): readonly StaticClass[] {
-    const byClass = new Map<string, Variable[]>();
-    for (const found of index.statics(id)) {
-      const written = found.row !== NONE;
-      const memo = written ? this.staticWritten : this.staticDeclared;
-      const key = written ? found.row : found.declaredAt;
-      let entry = memo.get(key);
-      if (!entry) {
-        const name = index.strings.text(found.name);
-        const dot = name.lastIndexOf('.');
-        entry = {
-          className: name.slice(0, Math.max(dot, 0)),
-          variable: this.variable(index, found, name.slice(dot + 1)),
-        };
-        memo.set(key, entry);
-      }
-      const held = byClass.get(entry.className);
-      if (held) held.push(entry.variable);
-      else byClass.set(entry.className, [entry.variable]);
+    const classes = index.staticClasses(id).map((c) => this.staticClass(index, id, c));
+    return Object.freeze(classes.sort((a, b) => order(a.className, b.className)));
+  }
+
+  private staticClass(index: VariableIndex, id: number, found: FoundStaticClass): StaticClass {
+    let byVersion = this.classRead.get(found.key);
+    if (!byVersion) {
+      byVersion = new Map();
+      this.classRead.set(found.key, byVersion);
     }
-    return Object.freeze(
-      [...byClass]
-        .sort(([a], [b]) => order(a, b))
-        .map(([className, variables]) =>
-          Object.freeze({ className, variables: Object.freeze(variables.sort(byName)) }),
-        ),
-    );
+    let held = byVersion.get(found.version);
+    if (!held) {
+      const variables = index.staticsOf(found.key, id).map((v) => this.static(index, v));
+      held = Object.freeze({
+        className: text(index, found.className) ?? '',
+        variables: Object.freeze(variables.sort(byName)),
+      });
+      byVersion.set(found.version, held);
+    }
+    return held;
+  }
+
+  private static(index: VariableIndex, found: FoundVariable): Variable {
+    const written = found.row !== NONE;
+    const memo = written ? this.staticWritten : this.staticDeclared;
+    const key = written ? found.row : found.declaredAt;
+    let held = memo.get(key);
+    if (!held) {
+      const name = index.strings.text(found.name);
+      held = this.variable(index, found, name.slice(name.lastIndexOf('.') + 1));
+      memo.set(key, held);
+    }
+    return held;
   }
 
   private variable(index: VariableIndex, found: FoundVariable, name: string): Variable {

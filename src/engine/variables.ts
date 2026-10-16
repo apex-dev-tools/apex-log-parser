@@ -59,6 +59,16 @@ export interface FoundVariables {
   readonly staticsVersion: number;
 }
 
+/** One class with statics an event sees. */
+export interface FoundStaticClass {
+  /** The class's place among the log's static classes, to pass to `staticsOf`. */
+  readonly key: number;
+  /** The name before the statics' last `.`, as a string id, or `NONE` when they have none. */
+  readonly className: number;
+  /** Equal for two events that see the same statics of the class. */
+  readonly version: number;
+}
+
 /** What the log holds for one address by a cut, as string ids and rows, or `NONE`. */
 export interface FoundObject {
   /** The class of the object living at the address by then, as its frame declared `this`. */
@@ -123,9 +133,19 @@ export class VariableIndex {
   private readonly staticWrites: Int32Array;
   /** Each static's earliest declaration, by static ordinal, or `NONE`. */
   private readonly staticDeclaration: Int32Array;
-  /** Every static write, then every static's earliest declaration, each in log order: each changes what `statics` returns. */
+  /** Every static write, then every static's earliest declaration, each in log order: each changes what the statics are. */
   private readonly staticWriteOrder: Int32Array;
   private readonly staticDeclarationOrder: Int32Array;
+  /** Each static class's name id, or `NONE`, by class key. */
+  private readonly classNames: Int32Array;
+  /** Each class's statics, by class key. */
+  private readonly classStart: Int32Array;
+  private readonly classStatics: Int32Array;
+  /** Each class's share of the two lists above, by class key, each in log order. */
+  private readonly classWriteStart: Int32Array;
+  private readonly classWrites: Int32Array;
+  private readonly classDeclarationStart: Int32Array;
+  private readonly classDeclarations: Int32Array;
 
   private constructor(store: Store, source: Source) {
     const { start, end, parent, count } = store;
@@ -137,16 +157,22 @@ export class VariableIndex {
     const W = writes.length;
     const S = declarations.length;
     let nameKind = new Uint8Array(256);
+    let nameClass = new Int32Array(256);
     let thisName = NONE;
     const nameOf = (s: number, e: number): number => {
       const before = strings.size;
       const id = strings.intern(s, e);
       if (id === before) {
         // Addresses and types share the table, so a new name can skip ids past the end.
-        if (id >= nameKind.length)
-          nameKind = resized(nameKind, Math.max(id + 1, nameKind.length * 2));
+        if (id >= nameKind.length) {
+          const size = Math.max(id + 1, nameKind.length * 2);
+          nameKind = resized(nameKind, size);
+          nameClass = resized(nameClass, size);
+        }
         nameKind[id] = kindOf(bytes, s, e);
         if (nameKind[id] === NAME_KIND.this) thisName = id;
+        const dot = nameKind[id] === NAME_KIND.static ? lastIndexOfByte(bytes, DOT, s, e) : -1;
+        nameClass[id] = dot > s ? strings.intern(s, dot) : NONE;
       }
       return id;
     };
@@ -332,6 +358,34 @@ export class VariableIndex {
       if (name !== NONE && declaredStatic[s] && staticDeclaration[staticOf[name]!] === NONE)
         staticDeclaration[staticOf[name]!] = s;
     }
+    const staticWriteOrder = staticLines.slice(0, staticCount);
+    const staticDeclarationOrder = staticDeclaration.filter((d) => d !== NONE).sort();
+    // A static's class lists its statics and the lines that change them, so a read rebuilds a class
+    // only when one of its own statics changed.
+    const keyOf = new Map<number, number>();
+    const classNames: number[] = [];
+    const staticClass = new Int32Array(statics);
+    for (let p = 0; p < statics; p++) {
+      // p is a static ordinal, and each static's name is a name id
+      const cls = nameClass[staticNames[p]!]!;
+      let key = keyOf.get(cls);
+      if (key === undefined) {
+        key = classNames.length;
+        keyOf.set(cls, key);
+        classNames.push(cls);
+      }
+      staticClass[p] = key;
+    }
+    const C = classNames.length;
+    // Every static line's name has a static ordinal, and every ordinal a class
+    const classOfStatic = (p: number): number => staticClass[p]!;
+    const classStatics = grouped(C, Int32Array.from(staticNames.keys()), classOfStatic);
+    const classWrites = grouped(C, staticWriteOrder, (w) =>
+      classOfStatic(staticOf[writeName[w]!]!),
+    );
+    const classDeclarations = grouped(C, staticDeclarationOrder, (d) =>
+      classOfStatic(staticOf[declaredName[d]!]!),
+    );
 
     this.store = store;
     this.strings = strings;
@@ -362,8 +416,15 @@ export class VariableIndex {
     this.staticStart = staticWrites.start;
     this.staticWrites = staticWrites.items;
     this.staticDeclaration = staticDeclaration;
-    this.staticWriteOrder = staticLines.slice(0, staticCount);
-    this.staticDeclarationOrder = staticDeclaration.filter((s) => s !== NONE).sort();
+    this.staticWriteOrder = staticWriteOrder;
+    this.staticDeclarationOrder = staticDeclarationOrder;
+    this.classNames = Int32Array.from(classNames);
+    this.classStart = classStatics.start;
+    this.classStatics = classStatics.items;
+    this.classWriteStart = classWrites.start;
+    this.classWrites = classWrites.items;
+    this.classDeclarationStart = classDeclarations.start;
+    this.classDeclarations = classDeclarations.items;
   }
 
   /** The index of the log's variable lines; null when the log has none, so states no variables. */
@@ -417,17 +478,38 @@ export class VariableIndex {
     };
   }
 
+  /** Each class with a static written or declared by event `id`. */
+  staticClasses(id: number): FoundStaticClass[] {
+    const { classNames, classWriteStart, classWrites, classDeclarationStart, classDeclarations } =
+      this;
+    const cut = this.cutOf(id);
+    // key is a class key, so every per-class array holds it
+    const byCut = (ids: Int32Array, start: Int32Array, rows: Int32Array, key: number): number =>
+      upperBound(ids, start[key]!, start[key + 1]!, rows, cut) - start[key]!;
+    const out: FoundStaticClass[] = [];
+    for (let key = 0; key < classNames.length; key++) {
+      const version =
+        byCut(classWrites, classWriteStart, this.writes, key) +
+        byCut(classDeclarations, classDeclarationStart, this.declarations, key);
+      if (version > 0) out.push({ key, className: classNames[key]!, version });
+    }
+    return out;
+  }
+
   /**
-   * Every static by event `id`: its last write, with its earliest declaration, or a declaration by
-   * then and no write. A static lives for the transaction, so a write in any frame counts.
+   * The statics of class `key` by event `id`: each one's last write, with its earliest declaration,
+   * or a declaration by then and no write. A static lives for the transaction, so a write in any
+   * frame counts.
    */
-  statics(id: number): FoundVariable[] {
+  staticsOf(key: number, id: number): FoundVariable[] {
     const { staticNames, staticStart, staticWrites, staticDeclaration, writes, declarations } =
       this;
     const cut = this.cutOf(id);
     const out: FoundVariable[] = [];
-    for (let p = 0; p < staticNames.length; p++) {
-      // p is a static ordinal, so every per-static array holds it
+    // key is a class key
+    for (let k = this.classStart[key]!; k < this.classStart[key + 1]!; k++) {
+      // k is inside the class's list, and each entry is a static ordinal
+      const p = this.classStatics[k]!;
       const lo = upperBound(staticWrites, staticStart[p]!, staticStart[p + 1]!, writes, cut);
       const declaration = staticDeclaration[p]!;
       const write = lo > staticStart[p]! ? staticWrites[lo - 1]! : NONE;
