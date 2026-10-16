@@ -65,6 +65,12 @@ export interface ObjectState {
 const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const byName = (a: Variable, b: Variable): number => order(a.name, b.name);
 
+/** A static, split at its last `.` into its class and its own name. */
+interface StaticEntry {
+  readonly className: string;
+  readonly variable: Variable;
+}
+
 /** Each event's variables, read from one index of the log made on first read. */
 export class LogVariables {
   private readonly events: LogEvents;
@@ -75,9 +81,10 @@ export class LogVariables {
   private readonly read = new Map<number, Variables | null>();
   // By statics version: events between two static lines share one list.
   private readonly staticsRead = new Map<number, readonly StaticClass[]>();
-  // By write, or by declaration for a static never written: a static's earliest declaration is
-  // fixed, so its write alone names the entry, and a new version decodes only what changed.
-  private readonly staticRead = new Map<number, { className: string; variable: Variable }>();
+  // A static's earliest declaration is fixed, so its write's row alone names the entry, and a new
+  // version decodes only what changed. A static never written is named by its declaration's row.
+  private readonly staticWritten = new Map<number, StaticEntry>();
+  private readonly staticDeclared = new Map<number, StaticEntry>();
 
   constructor(events: LogEvents, store: Store, source: Source) {
     this.events = events;
@@ -98,14 +105,12 @@ export class LogVariables {
   /** The object at `address` as event `id` stood; null when the log holds nothing for it. */
   objectAt(id: number, address: string): ObjectState | null {
     const index = this.indexed();
-    const at = index ? index.addressOf(address) : NONE;
-    const found = index && at !== NONE ? index.objectAt(at, index.cutOf(id)) : null;
+    const found = index?.objectAt(id, address);
     if (!index || !found) return null;
-    const row = found.write === NONE ? NONE : index.writeRow(found.write);
     return Object.freeze({
-      className: found.className === NONE ? null : index.strings.text(found.className),
-      value: row === NONE ? null : this.events.lines.field(row, 'value'),
-      laterAt: found.laterAt === NONE ? null : found.laterAt,
+      className: text(index, found.className),
+      value: found.valueRow === NONE ? null : this.events.lines.field(found.valueRow, 'value'),
+      laterAt: found.laterRow === NONE ? null : found.laterRow,
       fields: Object.freeze(found.fields.map((f) => this.field(index, f)).sort(byName)),
     });
   }
@@ -117,56 +122,47 @@ export class LogVariables {
 
   private make(id: number): Variables | null {
     const index = this.indexed();
-    if (!index) return null;
-    const cut = index.cutOf(id);
-    const frame = index.recordingFrame(id, cut);
-    if (frame === NONE) return null;
-    const scope = index.scope(frame, cut);
-    const locals = scope.locals.map((found) => this.variable(index, found));
-    const fields = index
-      .objectFields(index.innermostFrame(id), frame, cut)
-      .map((found) => this.field(index, found));
+    const found = index?.at(id);
+    if (!index || !found) return null;
+    const local = (v: FoundVariable): Variable =>
+      this.variable(index, v, index.strings.text(v.name));
     return Object.freeze({
-      frame: this.events.event(frame) as FrameEvent,
-      locals: Object.freeze(locals.sort(byName)),
-      this: scope.this && this.variable(index, scope.this),
-      fields: Object.freeze(fields.sort(byName)),
-      statics: this.statics(index, cut),
+      frame: this.events.event(found.frame) as FrameEvent,
+      locals: Object.freeze(found.locals.map(local).sort(byName)),
+      this: found.this && local(found.this),
+      fields: Object.freeze(found.fields.map((f) => this.field(index, f)).sort(byName)),
+      statics: this.statics(index, id, found.staticsVersion),
     });
   }
 
   private field(index: VariableIndex, found: FoundVariable): Variable {
-    const { name, ...rest } = this.variable(index, found);
-    // A field line's address is the object the field belongs to, so only an address value counts.
-    const address = index.valueAddress(found.write);
-    return Object.freeze({
-      name: name.slice(name.indexOf('.') + 1),
-      ...rest,
-      address: address === NONE ? null : index.strings.text(address),
-    });
+    return this.variable(index, found, index.strings.text(found.name).slice('this.'.length));
   }
 
-  private statics(index: VariableIndex, cut: number): readonly StaticClass[] {
-    const version = index.staticsVersion(cut);
+  private statics(index: VariableIndex, id: number, version: number): readonly StaticClass[] {
     let held = this.staticsRead.get(version);
     if (!held) {
-      held = this.staticsAt(index, cut);
+      held = this.staticsAt(index, id);
       this.staticsRead.set(version, held);
     }
     return held;
   }
 
-  private staticsAt(index: VariableIndex, cut: number): readonly StaticClass[] {
+  private staticsAt(index: VariableIndex, id: number): readonly StaticClass[] {
     const byClass = new Map<string, Variable[]>();
-    for (const found of index.statics(cut)) {
-      const key = found.write === NONE ? -2 - found.declaration : found.write;
-      let entry = this.staticRead.get(key);
+    for (const found of index.statics(id)) {
+      const written = found.row !== NONE;
+      const memo = written ? this.staticWritten : this.staticDeclared;
+      const key = written ? found.row : found.declaredAt;
+      let entry = memo.get(key);
       if (!entry) {
-        const { name, ...rest } = this.variable(index, found);
+        const name = index.strings.text(found.name);
         const dot = name.lastIndexOf('.');
-        const className = name.slice(0, Math.max(dot, 0));
-        entry = { className, variable: Object.freeze({ name: name.slice(dot + 1), ...rest }) };
-        this.staticRead.set(key, entry);
+        entry = {
+          className: name.slice(0, Math.max(dot, 0)),
+          variable: this.variable(index, found, name.slice(dot + 1)),
+        };
+        memo.set(key, entry);
       }
       const held = byClass.get(entry.className);
       if (held) held.push(entry.variable);
@@ -181,16 +177,19 @@ export class LogVariables {
     );
   }
 
-  private variable(index: VariableIndex, { name, write, declaration }: FoundVariable): Variable {
-    const type = declaration === NONE ? NONE : index.declarationType(declaration);
-    const address = write === NONE ? NONE : index.writeAddress(write);
-    const row = write === NONE ? NONE : index.writeRow(write);
+  private variable(index: VariableIndex, found: FoundVariable, name: string): Variable {
+    const { row } = found;
     return Object.freeze({
-      name: index.strings.text(name),
-      type: type === NONE ? null : index.strings.text(type),
+      name,
+      type: text(index, found.type),
       value: row === NONE ? null : this.events.lines.field(row, 'value'),
-      address: address === NONE ? null : index.strings.text(address),
+      address: text(index, found.address),
       id: row === NONE ? null : row,
     });
   }
+}
+
+/** String `id`'s text, or null for `NONE`. */
+function text(index: VariableIndex, id: number): string | null {
+  return id === NONE ? null : index.strings.text(id);
 }

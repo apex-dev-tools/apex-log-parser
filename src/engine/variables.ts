@@ -35,27 +35,38 @@ const CLASS_NAME = fieldPosition(CONSTRUCTOR, 'className').at;
 /** What a variable's name makes it. Each distinct name is read once. */
 const NAME_KIND = { local: 0, this: 1, field: 2, static: 3 } as const;
 
-/** One name a query found: its last write and its earliest declaration, by ordinal, or `NONE`. */
+/** One variable a query found, as string ids and rows, or `NONE`. */
 export interface FoundVariable {
+  /** As the log writes it. */
   readonly name: number;
-  readonly write: number;
-  readonly declaration: number;
+  /** The row of its last write by the cut. */
+  readonly row: number;
+  /** The row of its earliest declaration by the cut. */
+  readonly declaredAt: number;
+  readonly type: number;
+  /** The address of the object the value is. */
+  readonly address: number;
 }
 
-/** What a frame holds itself by a cut: its locals, and its last write to `this`, if any. */
-export interface FrameScope {
+/** What an event sees by its cut, as string ids and rows, or `NONE`. */
+export interface FoundVariables {
+  /** The recording frame's row. */
+  readonly frame: number;
   readonly locals: FoundVariable[];
   readonly this: FoundVariable | null;
+  readonly fields: FoundVariable[];
+  /** Equal for two events that see the same statics. */
+  readonly staticsVersion: number;
 }
 
-/** What the log holds for one address by a cut, by ordinal, or `NONE`. */
+/** What the log holds for one address by a cut, as string ids and rows, or `NONE`. */
 export interface FoundObject {
   /** The class of the object living at the address by then, as its frame declared `this`. */
   readonly className: number;
-  /** The last write by then that states the object's value. */
-  readonly write: number;
+  /** The row of the last write by then that states the object's value. */
+  readonly valueRow: number;
   /** The row of the first write that states it, when none does by then. */
-  readonly laterAt: number;
+  readonly laterRow: number;
   readonly fields: FoundVariable[];
 }
 
@@ -363,26 +374,90 @@ export class VariableIndex {
     return new VariableIndex(store, source);
   }
 
+  /**
+   * What event `id` sees, as the recording frame holds it: its locals, `this` and fields, and the
+   * version of the statics. Null when the event is in no frame.
+   */
+  at(id: number): FoundVariables | null {
+    const cut = this.cutOf(id);
+    const innermost = this.innermostFrame(id);
+    const frame = this.recordingFrame(innermost, cut);
+    if (frame === NONE) return null;
+    const { locals, self } = this.own(frame, cut);
+    return {
+      frame,
+      locals,
+      this: self,
+      fields: this.objectFields(innermost, frame, cut),
+      staticsVersion: this.staticsVersion(cut),
+    };
+  }
+
+  /**
+   * What the log holds for the object at `address` as event `id` stood: the class of the object
+   * living there, the last write that states its value, or where the first one is when none does
+   * by then, and its fields. Null when the log holds none of these for the address.
+   */
+  objectAt(id: number, address: string): FoundObject | null {
+    const at = this.addressOf(address);
+    if (at === NONE) return null;
+    const { describedStart, describedWrites, writes, runStart, ownerStart } = this;
+    const lo = describedStart[at]!;
+    const hi = describedStart[at + 1]!;
+    if (lo === hi && runStart[at] === runStart[at + 1] && ownerStart[at] === ownerStart[at + 1])
+      return null;
+    const cut = this.cutOf(id);
+    const last = upperBound(describedWrites, lo, hi, writes, cut) - 1;
+    const run = this.runOf(at, cut);
+    const fields: FoundVariable[] = [];
+    this.ownerFields(at, cut, (w) => fields.push(this.found(this.writeName[w]!, w, NONE)));
+    return {
+      className: run === NONE ? NONE : this.runClass[run]!,
+      valueRow: last >= lo ? writes[describedWrites[last]!]! : NONE,
+      laterRow: last < lo && lo < hi ? writes[describedWrites[lo]!]! : NONE,
+      fields,
+    };
+  }
+
+  /**
+   * Every static by event `id`: its last write, with its earliest declaration, or a declaration by
+   * then and no write. A static lives for the transaction, so a write in any frame counts.
+   */
+  statics(id: number): FoundVariable[] {
+    const { staticNames, staticStart, staticWrites, staticDeclaration, writes, declarations } =
+      this;
+    const cut = this.cutOf(id);
+    const out: FoundVariable[] = [];
+    for (let p = 0; p < staticNames.length; p++) {
+      // p is a static ordinal, so every per-static array holds it
+      const lo = upperBound(staticWrites, staticStart[p]!, staticStart[p + 1]!, writes, cut);
+      const declaration = staticDeclaration[p]!;
+      const write = lo > staticStart[p]! ? staticWrites[lo - 1]! : NONE;
+      if (write === NONE && (declaration === NONE || declarations[declaration]! > cut)) continue;
+      out.push(this.found(staticNames[p]!, write, declaration));
+    }
+    return out;
+  }
+
   /** The last row an event's variables read: a frame reads as it finished, a leaf as the log reached it. */
-  cutOf(id: number): number {
+  private cutOf(id: number): number {
     // id is a row
     return isFrameRow(this.store, id) ? this.store.subtreeEnd[id]! - 1 : id;
   }
 
   /** The frame an event is in: itself for a frame, else its parent, which is 0 at the top. */
-  innermostFrame(id: number): number {
+  private innermostFrame(id: number): number {
     // id is a row
     return isFrameRow(this.store, id) ? id : this.store.parent[id]!;
   }
 
   /**
-   * The frame whose variables an event sees: the nearest frame at or above it with a variable line
-   * of its own by `cut`. A query or a system call has no locals: the Apex frame that issued it
-   * does. The innermost frame when none has one; `NONE` when the event is in no frame.
+   * The frame whose variables an event sees: the nearest frame from `innermost` up with a variable
+   * line of its own by `cut`. A query or a system call has no locals: the Apex frame that issued it
+   * does. `innermost` when none has one; `NONE` when the event is in no frame.
    */
-  recordingFrame(id: number, cut: number): number {
+  private recordingFrame(innermost: number, cut: number): number {
     const { parent } = this.store;
-    const innermost = this.innermostFrame(id);
     // Each parent but the log's is a row
     for (let frame = innermost; frame > 0; frame = parent[frame]!) {
       const first = this.frameFirst[frame]!;
@@ -396,7 +471,7 @@ export class VariableIndex {
    * never wrote, with its earliest declaration; not `this`, and not a field or static, whose names
    * hold a `.`. And its last write to `this`, with the type it declared `this` as.
    */
-  scope(frame: number, cut: number): FrameScope {
+  private own(frame: number, cut: number): { locals: FoundVariable[]; self: FoundVariable | null } {
     const { nameKind, nameRunName, nameLines, writes, declarations, frameNames } = this;
     const W = writes.length;
     const locals: FoundVariable[] = [];
@@ -411,12 +486,12 @@ export class VariableIndex {
       const declared = first < this.nameRunWrites[r]! ? nameLines[first]! - W : NONE;
       const declaration = declared !== NONE && declarations[declared]! <= cut ? declared : NONE;
       if (kind === NAME_KIND.this) {
-        if (write !== NONE) self = { name, write, declaration };
+        if (write !== NONE) self = this.found(name, write, declaration);
       } else if (write !== NONE || declaration !== NONE) {
-        locals.push({ name, write, declaration });
+        locals.push(this.found(name, write, declaration));
       }
     }
-    return { locals, this: self };
+    return { locals, self };
   }
 
   /**
@@ -425,7 +500,7 @@ export class VariableIndex {
    * log grouped under the object's address, as a constructor that returned set them. A frame on
    * another object of the class is left out. The latest write wins.
    */
-  objectFields(innermost: number, frame: number, cut: number): FoundVariable[] {
+  private objectFields(innermost: number, frame: number, cut: number): FoundVariable[] {
     const { parent } = this.store;
     const { writes, writeName, nameKind, frameNames, nameRunName } = this;
     const latest = new Map<number, number>();
@@ -449,11 +524,11 @@ export class VariableIndex {
       }
     }
     if (object !== NONE) this.ownerFields(object, cut, take);
-    return [...latest.values()].map((w) => ({ name: writeName[w]!, write: w, declaration: NONE }));
+    return [...latest.values()].map((w) => this.found(writeName[w]!, w, NONE));
   }
 
   /** The id of an address the log writes, or `NONE`. */
-  addressOf(text: string): number {
+  private addressOf(text: string): number {
     if (!this.addresses) {
       const addresses = new Map<string, number>();
       for (const ids of [this.writeOwner, this.writeValueAddress]) {
@@ -462,36 +537,6 @@ export class VariableIndex {
       this.addresses = addresses;
     }
     return this.addresses.get(text) ?? NONE;
-  }
-
-  /**
-   * What the log holds for the object at `address` by `cut`: the class of the object living there,
-   * the last write that states its value, or where the first one is when none does by then, and
-   * its fields. Null when the log holds none of these for the address.
-   */
-  objectAt(address: number, cut: number): FoundObject | null {
-    const { describedStart, describedWrites, writes, runStart, ownerStart } = this;
-    const lo = describedStart[address]!;
-    const hi = describedStart[address + 1]!;
-    if (
-      lo === hi &&
-      runStart[address] === runStart[address + 1] &&
-      ownerStart[address] === ownerStart[address + 1]
-    )
-      return null;
-    const last = upperBound(describedWrites, lo, hi, writes, cut) - 1;
-    const write = last >= lo ? describedWrites[last]! : NONE;
-    const run = this.runOf(address, cut);
-    const fields: FoundVariable[] = [];
-    this.ownerFields(address, cut, (w) =>
-      fields.push({ name: this.writeName[w]!, write: w, declaration: NONE }),
-    );
-    return {
-      className: run === NONE ? NONE : this.runClass[run]!,
-      write,
-      laterAt: write === NONE && lo < hi ? writes[describedWrites[lo]!]! : NONE,
-      fields,
-    };
   }
 
   /**
@@ -522,27 +567,8 @@ export class VariableIndex {
     return after > lo ? runs[after - 1]! : NONE;
   }
 
-  /**
-   * Every static by `cut`: its last write, with its earliest declaration, or a declaration by then
-   * and no write. A static lives for the transaction, so a write in any frame counts.
-   */
-  statics(cut: number): FoundVariable[] {
-    const { staticNames, staticStart, staticWrites, staticDeclaration, writes, declarations } =
-      this;
-    const out: FoundVariable[] = [];
-    for (let p = 0; p < staticNames.length; p++) {
-      // p is a static ordinal, so every per-static array holds it
-      const lo = upperBound(staticWrites, staticStart[p]!, staticStart[p + 1]!, writes, cut);
-      const declaration = staticDeclaration[p]!;
-      const write = lo > staticStart[p]! ? staticWrites[lo - 1]! : NONE;
-      if (write === NONE && (declaration === NONE || declarations[declaration]! > cut)) continue;
-      out.push({ name: staticNames[p]!, write, declaration });
-    }
-    return out;
-  }
-
   /** How many static lines by `cut` change what `statics` returns: two cuts with the same count get the same statics. */
-  staticsVersion(cut: number): number {
+  private staticsVersion(cut: number): number {
     const { staticWriteOrder, staticDeclarationOrder } = this;
     return (
       upperBound(staticWriteOrder, 0, staticWriteOrder.length, this.writes, cut) +
@@ -550,29 +576,22 @@ export class VariableIndex {
     );
   }
 
-  /** The row of write `w`. */
-  writeRow(w: number): number {
-    // w is a write ordinal
-    return this.writes[w]!;
-  }
-
-  /** The object write `w`'s value is, to read it at: the value itself where the log wrote an address, else the address it reports. */
-  writeAddress(w: number): number {
-    // w is a write ordinal
-    const value = this.writeValueAddress[w]!;
-    return value === NONE ? this.writeOwner[w]! : value;
-  }
-
-  /** The address write `w`'s value is, where the log wrote one in place of the value; else `NONE`. */
-  valueAddress(w: number): number {
-    // w is a write ordinal
-    return this.writeValueAddress[w]!;
-  }
-
-  /** The type declaration `s` states, or `NONE`. */
-  declarationType(s: number): number {
-    // s is a declaration ordinal
-    return this.declaredType[s]!;
+  /** Name `name` with write `write` and declaration `declaration`, by ordinal, as rows and string ids. */
+  private found(name: number, write: number, declaration: number): FoundVariable {
+    let address = NONE;
+    if (write !== NONE) {
+      address = this.writeValueAddress[write]!;
+      // A field line's address is the object the field belongs to, so only an address value counts.
+      if (address === NONE && this.nameKind[name] !== NAME_KIND.field)
+        address = this.writeOwner[write]!;
+    }
+    return {
+      name,
+      row: write === NONE ? NONE : this.writes[write]!,
+      declaredAt: declaration === NONE ? NONE : this.declarations[declaration]!,
+      type: declaration === NONE ? NONE : this.declaredType[declaration]!,
+      address,
+    };
   }
 
   /** Name run `r`'s last write by `cut`, or `NONE`. */
