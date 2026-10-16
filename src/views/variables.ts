@@ -85,6 +85,12 @@ export class LogVariables {
   // version decodes only what changed. A static never written is named by its declaration's row.
   private readonly staticWritten = new Map<number, StaticEntry>();
   private readonly staticDeclared = new Map<number, StaticEntry>();
+  // By write row, or by declaration row for a local never written, so events share each object and
+  // each value is decoded once. A local's write pairs with no type before its declaration, so the
+  // type is checked.
+  private readonly localWritten = new Map<number, { type: number; variable: Variable }>();
+  private readonly localDeclared = new Map<number, Variable>();
+  private readonly fieldWritten = new Map<number, Variable>();
 
   constructor(events: LogEvents, store: Store, source: Source) {
     this.events = events;
@@ -124,19 +130,39 @@ export class LogVariables {
     const index = this.indexed();
     const found = index?.at(id);
     if (!index || !found) return null;
-    const local = (v: FoundVariable): Variable =>
-      this.variable(index, v, index.strings.text(v.name));
     return Object.freeze({
       frame: this.events.event(found.frame) as FrameEvent,
-      locals: Object.freeze(found.locals.map(local).sort(byName)),
-      this: found.this && local(found.this),
+      locals: Object.freeze(found.locals.map((v) => this.local(index, v)).sort(byName)),
+      this: found.this && this.local(index, found.this),
       fields: Object.freeze(found.fields.map((f) => this.field(index, f)).sort(byName)),
       statics: this.statics(index, id, found.staticsVersion),
     });
   }
 
+  private local(index: VariableIndex, found: FoundVariable): Variable {
+    if (found.row === NONE) {
+      let held = this.localDeclared.get(found.declaredAt);
+      if (!held) {
+        held = this.variable(index, found, index.strings.text(found.name));
+        this.localDeclared.set(found.declaredAt, held);
+      }
+      return held;
+    }
+    const held = this.localWritten.get(found.row);
+    if (held?.type === found.type) return held.variable;
+    const variable = this.variable(index, found, index.strings.text(found.name));
+    if (!held) this.localWritten.set(found.row, { type: found.type, variable });
+    return variable;
+  }
+
+  /** A field is always written, and its write states no type. */
   private field(index: VariableIndex, found: FoundVariable): Variable {
-    return this.variable(index, found, index.strings.text(found.name).slice('this.'.length));
+    let held = this.fieldWritten.get(found.row);
+    if (!held) {
+      held = this.variable(index, found, index.strings.text(found.name).slice('this.'.length));
+      this.fieldWritten.set(found.row, held);
+    }
+    return held;
   }
 
   private statics(index: VariableIndex, id: number, version: number): readonly StaticClass[] {
