@@ -284,6 +284,12 @@ describe('event text', () => {
   it('reads only the fields a real line states', () => {
     expect(text('WF_EMAIL_ALERT', 'alert')).toBe('alert');
     expect(text('WF_APPROVAL_SUBMITTER', 'Name|005000000000AAA')).toBe('Name : 005000000000AAA');
+    expect(
+      text(
+        'USER_INFO',
+        '[EXTERNAL]|005000000000AAA|user@example.com|Pacific Standard Time|GMT-08:00',
+      ),
+    ).toBe('user@example.com : 005000000000AAA');
     expect(text('VALIDATION_PASS', '')).toBeNull();
   });
 
