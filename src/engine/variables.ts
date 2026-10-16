@@ -513,9 +513,10 @@ export class VariableIndex {
       // k is inside the class's list, and each entry is a static ordinal
       const p = this.classStatics[k]!;
       const lo = upperBound(staticWrites, staticStart[p]!, staticStart[p + 1]!, writes, cut);
-      const declaration = staticDeclaration[p]!;
+      const earliest = staticDeclaration[p]!;
+      const declaration = earliest !== NONE && declarations[earliest]! <= cut ? earliest : NONE;
       const write = lo > staticStart[p]! ? staticWrites[lo - 1]! : NONE;
-      if (write === NONE && (declaration === NONE || declarations[declaration]! > cut)) continue;
+      if (write === NONE && declaration === NONE) continue;
       out.push(this.found(staticNames[p]!, write, declaration));
     }
     return out;

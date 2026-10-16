@@ -219,6 +219,19 @@ describe('variables', () => {
     ]);
   });
 
+  it('gives a static no type before the log declares it', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|ns.Cache.hits|1`,
+      `${at(1200)}|VARIABLE_ASSIGNMENT|[3]|seen|1`,
+      `${at(1300)}|VARIABLE_SCOPE_BEGIN|[4]|ns.Cache.hits|Integer|false|true`,
+      `${at(1400)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
+    );
+    const type = (text: string) => eventWith(log, text).variables?.statics[0]?.variables[0]?.type;
+    expect(type('|seen|1')).toBeNull();
+    expect(type('ns.First.run()')).toBe('Integer');
+  });
+
   it("keeps a static's earliest declared type when another frame declares it again", () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,

@@ -68,6 +68,9 @@ export interface ObjectState {
 
 const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const byName = (a: Variable, b: Variable): number => order(a.name, b.name);
+const whole = (name: string): string => name;
+const fieldName = (name: string): string => name.slice('this.'.length);
+const staticName = (name: string): string => name.slice(name.lastIndexOf('.') + 1);
 
 /** Each event's variables, read from one index of the log made on first read. */
 export class LogVariables {
@@ -81,16 +84,9 @@ export class LogVariables {
   private readonly staticsRead = new Map<number, readonly StaticClass[]>();
   // By class key, then the class's version, so a new version rebuilds only the class that changed.
   private readonly classRead = new Map<number, Map<number, StaticClass>>();
-  // A static's earliest declaration is fixed, so its write's row alone names it. A static never
-  // written is named by its declaration's row.
-  private readonly staticWritten = new Map<number, Variable>();
-  private readonly staticDeclared = new Map<number, Variable>();
-  // By write row, or by declaration row for a local never written, so events share each object and
-  // each value is decoded once. A local's write pairs with no type before its declaration, so the
-  // type is checked.
-  private readonly localWritten = new Map<number, { type: number; variable: Variable }>();
-  private readonly localDeclared = new Map<number, Variable>();
-  private readonly fieldWritten = new Map<number, Variable>();
+  // One line names one variable, so its row keys it; a write's type depends on the cut, so it is checked.
+  private readonly written = new Map<number, { type: number; variable: Variable }>();
+  private readonly declared = new Map<number, Variable>();
 
   constructor(events: LogEvents, store: Store, source: Source) {
     this.events = events;
@@ -140,29 +136,32 @@ export class LogVariables {
   }
 
   private local(index: VariableIndex, found: FoundVariable): Variable {
+    return this.shared(index, found, whole);
+  }
+
+  private field(index: VariableIndex, found: FoundVariable): Variable {
+    return this.shared(index, found, fieldName);
+  }
+
+  /** The one `Variable` for `found`'s line, named by `short` of the name the log writes. */
+  private shared(
+    index: VariableIndex,
+    found: FoundVariable,
+    short: (name: string) => string,
+  ): Variable {
     if (found.row === NONE) {
-      let held = this.localDeclared.get(found.declaredAt);
+      let held = this.declared.get(found.declaredAt);
       if (!held) {
-        held = this.variable(index, found, index.strings.text(found.name));
-        this.localDeclared.set(found.declaredAt, held);
+        held = this.variable(index, found, short(index.strings.text(found.name)));
+        this.declared.set(found.declaredAt, held);
       }
       return held;
     }
-    const held = this.localWritten.get(found.row);
+    const held = this.written.get(found.row);
     if (held?.type === found.type) return held.variable;
-    const variable = this.variable(index, found, index.strings.text(found.name));
-    if (!held) this.localWritten.set(found.row, { type: found.type, variable });
+    const variable = this.variable(index, found, short(index.strings.text(found.name)));
+    if (!held) this.written.set(found.row, { type: found.type, variable });
     return variable;
-  }
-
-  /** A field is always written, and its write states no type. */
-  private field(index: VariableIndex, found: FoundVariable): Variable {
-    let held = this.fieldWritten.get(found.row);
-    if (!held) {
-      held = this.variable(index, found, index.strings.text(found.name).slice('this.'.length));
-      this.fieldWritten.set(found.row, held);
-    }
-    return held;
   }
 
   private statics(index: VariableIndex, id: number, version: number): readonly StaticClass[] {
@@ -198,16 +197,7 @@ export class LogVariables {
   }
 
   private static(index: VariableIndex, found: FoundVariable): Variable {
-    const written = found.row !== NONE;
-    const memo = written ? this.staticWritten : this.staticDeclared;
-    const key = written ? found.row : found.declaredAt;
-    let held = memo.get(key);
-    if (!held) {
-      const name = index.strings.text(found.name);
-      held = this.variable(index, found, name.slice(name.lastIndexOf('.') + 1));
-      memo.set(key, held);
-    }
-    return held;
+    return this.shared(index, found, staticName);
   }
 
   private variable(index: VariableIndex, found: FoundVariable, name: string): Variable {
