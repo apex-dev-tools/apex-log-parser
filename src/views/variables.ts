@@ -22,6 +22,13 @@ export interface Variable {
   readonly id: number | null;
 }
 
+/** The statics of one class, which the log names before each static's own name. */
+export interface StaticClass {
+  readonly className: string;
+  /** By name, without the class. */
+  readonly variables: readonly Variable[];
+}
+
 /** The variables an event could see, as the log recorded them. */
 export interface Variables {
   /**
@@ -31,10 +38,12 @@ export interface Variables {
   readonly frame: FrameEvent;
   /** The frame's own: its last write to each name, and each name it declared and never wrote. */
   readonly locals: readonly Variable[];
+  /** Every static written or declared anywhere by then, by class, as a static lives for the transaction. */
+  readonly statics: readonly StaticClass[];
 }
 
-const byName = (a: Variable, b: Variable): number =>
-  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const byName = (a: Variable, b: Variable): number => order(a.name, b.name);
 
 /** Each event's variables, read from one index of the log made on first read. */
 export class LogVariables {
@@ -72,7 +81,28 @@ export class LogVariables {
     return Object.freeze({
       frame: this.events.event(frame) as FrameEvent,
       locals: Object.freeze(locals.sort(byName)),
+      statics: this.statics(index, cut),
     });
+  }
+
+  private statics(index: VariableIndex, cut: number): readonly StaticClass[] {
+    const byClass = new Map<string, Variable[]>();
+    for (const found of index.statics(cut)) {
+      const { name, ...rest } = this.variable(index, found);
+      const dot = name.lastIndexOf('.');
+      const className = name.slice(0, Math.max(dot, 0));
+      const variable = Object.freeze({ name: name.slice(dot + 1), ...rest });
+      const held = byClass.get(className);
+      if (held) held.push(variable);
+      else byClass.set(className, [variable]);
+    }
+    return Object.freeze(
+      [...byClass]
+        .sort(([a], [b]) => order(a, b))
+        .map(([className, variables]) =>
+          Object.freeze({ className, variables: Object.freeze(variables.sort(byName)) }),
+        ),
+    );
   }
 
   private variable(index: VariableIndex, { name, write, declaration }: FoundVariable): Variable {

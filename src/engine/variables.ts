@@ -60,6 +60,13 @@ export class VariableIndex {
   /** Each frame's own lines, by frame row: a write's ordinal, or a declaration's plus the write count. */
   private readonly ownStart: Int32Array;
   private readonly own: Int32Array;
+  /** Each static's name id, by static ordinal. */
+  private readonly staticNames: Int32Array;
+  /** Each static's writes, by static ordinal, in log order. */
+  private readonly staticStart: Int32Array;
+  private readonly staticWrites: Int32Array;
+  /** Each static's earliest declaration, by static ordinal, or `NONE`. */
+  private readonly staticDeclaration: Int32Array;
   /** Per-query marks by string id: equal to `query` once seen in the current query. */
   private readonly written: Int32Array;
   private readonly declared: Int32Array;
@@ -139,6 +146,47 @@ export class VariableIndex {
       own[next[parent[row]!]!++] = takeWrite ? w++ : W + s++;
     }
 
+    // A static lives for the transaction, so its writes are one list per name, wherever made.
+    const staticOf = new Int32Array(strings.size).fill(NONE);
+    let statics = 0;
+    for (let w = 0; w < W; w++) {
+      const name = writeName[w]!;
+      if (name !== NONE && nameKind[name] === NAME_KIND.static && staticOf[name] === NONE)
+        staticOf[name] = statics++;
+    }
+    for (let s = 0; s < S; s++) {
+      const name = declaredName[s]!;
+      if (name !== NONE && declaredStatic[s] && staticOf[name] === NONE) staticOf[name] = statics++;
+    }
+    const staticNames = new Int32Array(statics);
+    for (let name = 0; name < staticOf.length; name++) {
+      // name is a string id
+      if (staticOf[name] !== NONE) staticNames[staticOf[name]!] = name;
+    }
+    const staticStart = new Int32Array(statics + 1);
+    const staticOfWrite = (w: number): number => {
+      const name = writeName[w]!;
+      return name === NONE || nameKind[name] !== NAME_KIND.static ? NONE : staticOf[name]!;
+    };
+    for (let w = 0; w < W; w++) {
+      const p = staticOfWrite(w);
+      if (p !== NONE) staticStart[p + 1]!++;
+    }
+    for (let p = 0; p < statics; p++) staticStart[p + 1]! += staticStart[p]!;
+    const staticNext = staticStart.slice(0, statics);
+    const staticWrites = new Int32Array(staticStart[statics]!);
+    for (let w = 0; w < W; w++) {
+      const p = staticOfWrite(w);
+      if (p !== NONE) staticWrites[staticNext[p]!++] = w;
+    }
+    const staticDeclaration = new Int32Array(statics).fill(NONE);
+    for (let s = 0; s < S; s++) {
+      const name = declaredName[s]!;
+      // In log order, so the first kept is the earliest: where the static comes into scope.
+      if (name !== NONE && declaredStatic[s] && staticDeclaration[staticOf[name]!] === NONE)
+        staticDeclaration[staticOf[name]!] = s;
+    }
+
     this.store = store;
     this.strings = strings;
     this.writes = writes;
@@ -152,6 +200,10 @@ export class VariableIndex {
     this.nameKind = nameKind;
     this.ownStart = ownStart;
     this.own = own;
+    this.staticNames = staticNames;
+    this.staticStart = staticStart;
+    this.staticWrites = staticWrites;
+    this.staticDeclaration = staticDeclaration;
     this.written = new Int32Array(strings.size);
     this.declared = new Int32Array(strings.size);
     this.declaredAt = new Int32Array(strings.size);
@@ -226,6 +278,32 @@ export class VariableIndex {
     }
     for (const name of names) {
       if (written[name] !== mark) out.push({ name, write: NONE, declaration: declaredAt[name]! });
+    }
+    return out;
+  }
+
+  /**
+   * Every static by `cut`: its last write, with its earliest declaration, or a declaration by then
+   * and no write. A static lives for the transaction, so a write in any frame counts.
+   */
+  statics(cut: number): FoundVariable[] {
+    const { staticNames, staticStart, staticWrites, staticDeclaration, writes, declarations } =
+      this;
+    const out: FoundVariable[] = [];
+    for (let p = 0; p < staticNames.length; p++) {
+      // p is a static ordinal, so every per-static array holds it
+      let lo = staticStart[p]!;
+      let hi = staticStart[p + 1]!;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        // mid is inside the static's run
+        if (writes[staticWrites[mid]!]! <= cut) lo = mid + 1;
+        else hi = mid;
+      }
+      const declaration = staticDeclaration[p]!;
+      const write = lo > staticStart[p]! ? staticWrites[lo - 1]! : NONE;
+      if (write === NONE && (declaration === NONE || declarations[declaration]! > cut)) continue;
+      out.push({ name: staticNames[p]!, write, declaration });
     }
     return out;
   }

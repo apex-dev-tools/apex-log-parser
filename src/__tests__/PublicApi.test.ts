@@ -48,6 +48,7 @@ import type {
   RunningUsage,
   SelfTotal,
   Shape,
+  StaticClass,
   StreamRead,
   TransferableLog,
   TruncationKind,
@@ -127,6 +128,7 @@ interface PublicTypeSurface {
   runningUsage: RunningUsage;
   selfTotal: SelfTotal;
   shape: Shape;
+  staticClass: StaticClass;
   streamRead: StreamRead;
   transferableLog: TransferableLog;
   truncationKind: TruncationKind;

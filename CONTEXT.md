@@ -122,6 +122,10 @@ no end to a declaration.
 A variable a frame wrote or declared itself, whose name holds no `.`. A caller's locals are not in
 the frame it calls.
 
+**Static**:
+A variable whose name the log writes after its class, as `ns.MyClass.NAME`. It lives for the
+transaction, so a write in any frame is in scope after it.
+
 **Recording frame**:
 The frame whose variables an event sees: the nearest frame at or above it with a write or
 declaration of its own by then. A query or a system call records none, so the Apex frame that

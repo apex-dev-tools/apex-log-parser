@@ -98,6 +98,54 @@ describe('variables', () => {
     expect(names(eventWith(log, 'ns.Outer.run()'))).toEqual(['count']);
   });
 
+  it('groups the statics by class, written in any frame by then, both sorted', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1050)}|VARIABLE_SCOPE_BEGIN|[1]|ns.Cache.hits|Integer|false|true`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|ns.Cache.hits|1`,
+      `${at(1150)}|VARIABLE_ASSIGNMENT|[2]|ns.Other.flag|true|0x2b`,
+      `${at(1200)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1300)}|METHOD_ENTRY|[9]|01p000000000AAA|ns.Second.run()`,
+      `${at(1350)}|VARIABLE_ASSIGNMENT|[3]|ns.Cache.hits|2`,
+      `${at(1400)}|VARIABLE_ASSIGNMENT|[10]|ns.Cache.misses|9`,
+      `${at(1500)}|METHOD_EXIT|[9]|01p000000000AAA|ns.Second.run()`,
+    );
+    const statics = (text: string) => eventWith(log, text).variables?.statics;
+    expect(statics('ns.First.run()')).toEqual([
+      {
+        className: 'ns.Cache',
+        variables: [{ name: 'hits', type: 'Integer', value: '1', address: null, id: 3 }],
+      },
+      {
+        className: 'ns.Other',
+        variables: [{ name: 'flag', type: null, value: 'true', address: '0x2b', id: 4 }],
+      },
+    ]);
+    // A write after the event is not in its statics; the latest by then is.
+    expect(statics('ns.Second.run()')?.[0]?.variables.map((v) => [v.name, v.value])).toEqual([
+      ['hits', '2'],
+      ['misses', '9'],
+    ]);
+  });
+
+  it('lists a static declared by then and never written, and not one declared later', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|seen|1`,
+      `${at(1200)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1300)}|METHOD_ENTRY|[9]|01p000000000AAA|ns.Second.run()`,
+      `${at(1400)}|VARIABLE_SCOPE_BEGIN|[10]|ns.Late.field|Integer|true|true`,
+      `${at(1500)}|METHOD_EXIT|[9]|01p000000000AAA|ns.Second.run()`,
+    );
+    expect(eventWith(log, 'ns.First.run()').variables?.statics).toEqual([]);
+    expect(eventWith(log, 'ns.Second.run()').variables?.statics).toEqual([
+      {
+        className: 'ns.Late',
+        variables: [{ name: 'field', type: 'Integer', value: null, address: null, id: null }],
+      },
+    ]);
+  });
+
   it('is the same object on each read', () => {
     const log = logOf(...OUTER);
     const outer = eventWith(log, 'ns.Outer.run()');
