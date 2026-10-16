@@ -69,6 +69,26 @@ describe('event text', () => {
     }
   });
 
+  it("splits a variable's value from its address, and keeps a value that holds `|` whole", () => {
+    const log = logOf(
+      `${at(1)}|VARIABLE_ASSIGNMENT|[1]|this.name|"a|b"|0x1A2b`,
+      `${at(2)}|VARIABLE_ASSIGNMENT|[2]|result|null|`,
+      `${at(3)}|VARIABLE_ASSIGNMENT|[3]|label|"a|b"`,
+      `${at(4)}|VARIABLE_ASSIGNMENT|[4]|ns.MyClass.NAME|"x"`,
+      `${at(5)}|VARIABLE_ASSIGNMENT|[5]|count|0x1f`,
+    );
+    const read = (id: number) => ['value', 'address'].map((name) => log.event(id)?.field(name));
+    expect([1, 2, 3, 4, 5].map(read)).toEqual([
+      ['"a|b"', '0x1A2b'],
+      ['null', null],
+      // The last field is not an address, so the value runs to the line's end.
+      ['"a|b"', null],
+      ['"x"', null],
+      // With no `|` after the value, a value that looks like an address is still the value.
+      ['0x1f', null],
+    ]);
+  });
+
   it('is an Apex call for an Apex frame, and not for a VF call the line made a leaf', () => {
     const log = logOf(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
