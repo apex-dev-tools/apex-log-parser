@@ -98,6 +98,60 @@ describe('variables', () => {
     expect(names(eventWith(log, 'ns.Outer.run()'))).toEqual(['count']);
   });
 
+  it('gives no this for a frame that declared this and never wrote it', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1050)}|VARIABLE_SCOPE_BEGIN|[1]|this|ns.Outer|true|false`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|count|1`,
+      `${at(1500)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const outer = eventWith(log, 'ns.Outer.run()').variables;
+    expect(outer?.this).toBeNull();
+    expect(outer?.locals.map((v) => v.name)).toEqual(['count']);
+  });
+
+  it('gives a write no type before the frame declares the name', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|x|1`,
+      `${at(1200)}|VARIABLE_SCOPE_BEGIN|[3]|x|Integer|false|false`,
+      `${at(1500)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    expect(eventWith(log, '|x|1').variables?.locals[0]?.type).toBeNull();
+    expect(eventWith(log, 'ns.Outer.run()').variables?.locals[0]?.type).toBe('Integer');
+  });
+
+  it('answers from the caller when the called frame writes only after the event', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|a|1`,
+      `${at(1200)}|METHOD_ENTRY|[3]|01p000000000AAA|ns.Inner.step()`,
+      `${at(1300)}|SOQL_EXECUTE_BEGIN|[4]|Aggregations:0|SELECT Id FROM Account`,
+      `${at(1400)}|SOQL_EXECUTE_END|[4]|Rows:1`,
+      `${at(1500)}|VARIABLE_ASSIGNMENT|[5]|b|2`,
+      `${at(1600)}|METHOD_EXIT|[3]|01p000000000AAA|ns.Inner.step()`,
+      `${at(1700)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const query = eventWith(log, 'SOQL_EXECUTE_BEGIN').variables;
+    expect(query?.frame).toBe(eventWith(log, 'ns.Outer.run()'));
+    expect(query?.locals.map((v) => v.name)).toEqual(['a']);
+  });
+
+  it('sorts names and classes in code-unit order', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|b|1`,
+      `${at(1200)}|VARIABLE_ASSIGNMENT|[3]|B|2`,
+      `${at(1300)}|VARIABLE_ASSIGNMENT|[4]|a|3`,
+      `${at(1400)}|VARIABLE_ASSIGNMENT|[5]|ns.a.x|4`,
+      `${at(1450)}|VARIABLE_ASSIGNMENT|[6]|ns.B.x|5`,
+      `${at(1500)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const outer = eventWith(log, 'ns.Outer.run()').variables;
+    expect(outer?.locals.map((v) => v.name)).toEqual(['B', 'a', 'b']);
+    expect(outer?.statics.map((c) => c.className)).toEqual(['ns.B', 'ns.a']);
+  });
+
   it('groups the statics by class, written in any frame by then, both sorted', () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
@@ -148,6 +202,19 @@ describe('variables', () => {
         variables: [{ name: 'field', type: 'Integer', value: null, address: null, write: null }],
       },
     ]);
+  });
+
+  it("keeps a static's earliest declared type when another frame declares it again", () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1100)}|VARIABLE_SCOPE_BEGIN|[2]|ns.Cache.hits|Integer|false|true`,
+      `${at(1200)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1300)}|METHOD_ENTRY|[9]|01p000000000AAA|ns.Second.run()`,
+      `${at(1400)}|VARIABLE_SCOPE_BEGIN|[10]|ns.Cache.hits|Long|false|true`,
+      `${at(1500)}|METHOD_EXIT|[9]|01p000000000AAA|ns.Second.run()`,
+    );
+    const statics = eventWith(log, 'ns.Second.run()').variables?.statics;
+    expect(statics?.[0]?.variables.map((v) => v.type)).toEqual(['Integer']);
   });
 
   it('gives a static whose name holds no class a null class, sorted first', () => {
@@ -277,11 +344,35 @@ describe('variables', () => {
     expect(log.event(1)?.variables?.locals).toHaveLength(100);
   });
 
-  it('is the same object on each read', () => {
-    const log = logOf(...OUTER);
+  it('is the same object on each read, and every part of it is frozen', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|this|{}|0xaaa`,
+      `${at(1200)}|VARIABLE_ASSIGNMENT|[3]|this.total|1|0xaaa`,
+      `${at(1300)}|VARIABLE_ASSIGNMENT|[4]|count|2`,
+      `${at(1400)}|VARIABLE_ASSIGNMENT|[5]|ns.Cache.hits|3`,
+      `${at(1500)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
     const outer = eventWith(log, 'ns.Outer.run()');
-    expect(outer.variables).toBe(outer.variables);
-    expect(Object.isFrozen(outer.variables?.locals[0])).toBe(true);
+    const read = outer.variables;
+    expect(read).toBe(outer.variables);
+    const object = outer.objectAt('0xaaa');
+    const parts = [
+      read,
+      read?.locals,
+      read?.locals[0],
+      read?.this,
+      read?.fields,
+      read?.fields[0],
+      read?.statics,
+      read?.statics[0],
+      read?.statics[0]?.variables,
+      object,
+      object?.fields,
+      object?.fields[0],
+    ];
+    for (const part of parts) expect(Object.isFrozen(part)).toBe(true);
+    expect(parts.every((part) => part != null)).toBe(true);
   });
 
   it('is null for an event in no frame, or a log with no variable lines', () => {
@@ -299,6 +390,7 @@ describe('variables', () => {
       `${at(2)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
     );
     expect(none.event(1)?.variables).toBeNull();
+    expect(none.event(1)?.objectAt('0xaaa')).toBeNull();
   });
 });
 
@@ -307,14 +399,13 @@ describe('objectAt', () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
       `${at(1050)}|VARIABLE_ASSIGNMENT|[2]|alias|0xaaa`,
-      `${at(1100)}|VARIABLE_ASSIGNMENT|[3]|view|{"ref":"0xaaa"}`,
       `${at(1150)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
       `${at(1200)}|METHOD_ENTRY|[9]|01p000000000AAA|ns.Second.run()`,
       `${at(1250)}|VARIABLE_ASSIGNMENT|[10]|held|{"n":1}|0xaaa`,
       `${at(1300)}|VARIABLE_ASSIGNMENT|[11]|held|{"n":2}|0xaaa`,
       `${at(1350)}|METHOD_EXIT|[9]|01p000000000AAA|ns.Second.run()`,
     );
-    // The value is an address, so it reads the object there; one only nested in a value does too.
+    // The value is an address, so it reads the object there.
     expect(eventWith(log, '|alias|').variables?.locals[0]?.address).toBe('0xaaa');
     expect(eventWith(log, 'ns.First.run()').objectAt('0xaaa')).toEqual({
       className: null,
