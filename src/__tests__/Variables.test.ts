@@ -146,6 +146,86 @@ describe('variables', () => {
     ]);
   });
 
+  it('reads this as the frame wrote it, and its fields without `this.`', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1060)}|VARIABLE_SCOPE_BEGIN|[9]|this|ns.Outer|true|false`,
+      `${at(1070)}|VARIABLE_ASSIGNMENT|[9]|this|{}|0xbbb`,
+      `${at(1150)}|VARIABLE_ASSIGNMENT|[3]|this.total|42|0xbbb`,
+      `${at(1160)}|VARIABLE_ASSIGNMENT|[4]|this.child|0xccc|0xbbb`,
+      `${at(1300)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const outer = eventWith(log, 'ns.Outer.run()').variables;
+    expect(outer?.this).toEqual({
+      name: 'this',
+      type: 'ns.Outer',
+      value: '{}',
+      address: '0xbbb',
+      id: 3,
+    });
+    // A field line's address is its owner's, so a field's address is its value's, if any.
+    expect(outer?.fields).toEqual([
+      { name: 'child', type: null, value: '0xccc', address: '0xccc', id: 5 },
+      { name: 'total', type: null, value: '42', address: null, id: 4 },
+    ]);
+  });
+
+  it('merges the fields of every frame of the class on the stack, the latest write winning', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Outer.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|this.fromCaller|"set early"`,
+      `${at(1150)}|VARIABLE_ASSIGNMENT|[2]|this.both|1`,
+      `${at(1200)}|METHOD_ENTRY|[5]|01p000000000AAA|ns.Other.help()`,
+      `${at(1250)}|VARIABLE_ASSIGNMENT|[3]|this.notMine|1`,
+      `${at(1300)}|METHOD_ENTRY|[5]|01p000000000AAA|ns.Outer.step()`,
+      `${at(1350)}|VARIABLE_ASSIGNMENT|[6]|this.fromCallee|7`,
+      `${at(1360)}|VARIABLE_ASSIGNMENT|[6]|this.both|2`,
+      `${at(1400)}|METHOD_EXIT|[5]|01p000000000AAA|ns.Outer.step()`,
+      `${at(1450)}|METHOD_EXIT|[5]|01p000000000AAA|ns.Other.help()`,
+      `${at(1500)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
+    );
+    const fields = eventWith(log, 'ns.Outer.step()').variables?.fields;
+    expect(fields?.map((v) => [v.name, v.value])).toEqual([
+      ['both', '2'],
+      ['fromCallee', '7'],
+      ['fromCaller', '"set early"'],
+    ]);
+  });
+
+  it('leaves out a frame on another object of the class, unless the log names neither', () => {
+    const two = (outerAddress: string) =>
+      logOf(
+        `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.Same.outer()`,
+        `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|this.outerOnly|"A"${outerAddress}`,
+        `${at(1200)}|METHOD_ENTRY|[9]|01p000000000AAA|ns.Same.inner()`,
+        `${at(1300)}|VARIABLE_ASSIGNMENT|[10]|this.innerOnly|"B"|0xbbb`,
+        `${at(1400)}|METHOD_EXIT|[9]|01p000000000AAA|ns.Same.inner()`,
+        `${at(1500)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Same.outer()`,
+      );
+    const fieldNames = (log: ApexLog, text: string) =>
+      eventWith(log, text).variables?.fields.map((v) => v.name);
+    const apart = two('|0xaaa');
+    expect(fieldNames(apart, 'ns.Same.inner()')).toEqual(['innerOnly']);
+    expect(fieldNames(apart, 'ns.Same.outer()')).toEqual(['outerOnly']);
+    expect(fieldNames(two(''), 'ns.Same.inner()')).toEqual(['innerOnly', 'outerOnly']);
+  });
+
+  it('gives a frame the fields a returned constructor set, and those with no address', () => {
+    const log = logOf(
+      `${at(1000)}|CONSTRUCTOR_ENTRY|[62]|01p000000000AAA|<init>()|ns.Selector`,
+      `${at(1010)}|VARIABLE_SCOPE_BEGIN|[1]|this|ns.Selector|true|false`,
+      `${at(1020)}|VARIABLE_ASSIGNMENT|[1]|this|{}|0xaaa`,
+      `${at(1030)}|VARIABLE_ASSIGNMENT|[2]|this.sObj|"Account"|0xaaa`,
+      `${at(1040)}|CONSTRUCTOR_EXIT|[62]|01p000000000AAA|<init>()|ns.Selector`,
+      `${at(1050)}|METHOD_ENTRY|[70]|01p000000000AAA|ns.Selector.query()`,
+      `${at(1060)}|VARIABLE_ASSIGNMENT|[71]|this|{}|0xaaa`,
+      `${at(1070)}|VARIABLE_ASSIGNMENT|[73]|this.plain|"no address"`,
+      `${at(1080)}|METHOD_EXIT|[70]|01p000000000AAA|ns.Selector.query()`,
+    );
+    const fields = eventWith(log, 'ns.Selector.query()').variables?.fields;
+    expect(fields?.map((v) => v.name)).toEqual(['plain', 'sObj']);
+  });
+
   it('keeps every local of a log with more names than the first table holds', () => {
     // Each write holds a value address and an owner too, so name ids step past the table's end.
     const writes = Array.from(

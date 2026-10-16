@@ -6,6 +6,8 @@ import {
   DOT,
   indexOfByte,
   isAddress,
+  LPAREN,
+  lastIndexOfByte,
   spellsAscii,
   startsWithAscii,
 } from '../bytes/ascii.js';
@@ -25,6 +27,10 @@ const WRITE_VALUE = fieldPosition(ASSIGNMENT, 'value').at;
 const DECLARED_NAME = fieldPosition(DECLARATION, 'name').at;
 const DECLARED_TYPE = fieldPosition(DECLARATION, 'type').at;
 const DECLARED_STATIC = fieldPosition(DECLARATION, 'isStatic').at;
+const METHOD = idOfType('METHOD_ENTRY');
+const CONSTRUCTOR = idOfType('CONSTRUCTOR_ENTRY');
+const SIGNATURE = fieldPosition(METHOD, 'signature').at;
+const CLASS_NAME = fieldPosition(CONSTRUCTOR, 'className').at;
 
 /** What a variable's name makes it. Each distinct name is read once. */
 const NAME_KIND = { local: 0, this: 1, field: 2, static: 3 } as const;
@@ -34,6 +40,12 @@ export interface FoundVariable {
   readonly name: number;
   readonly write: number;
   readonly declaration: number;
+}
+
+/** What a frame holds itself by a cut: its locals, and its last write to `this`, if any. */
+export interface FrameScope {
+  readonly locals: FoundVariable[];
+  readonly this: FoundVariable | null;
 }
 
 /**
@@ -57,9 +69,21 @@ export class VariableIndex {
   private readonly declaredType: Int32Array;
   private readonly declaredStatic: Uint8Array;
   private readonly nameKind: Uint8Array;
+  /** The id of the name `this`, or `NONE` when no line names it. */
+  private readonly thisName: number;
+  private readonly bytes: Uint8Array;
+  private readonly fields: ByteFields;
+  /** Each frame's class, by frame row, read on first ask. */
+  private readonly classes = new Map<number, number>();
   /** Each frame's own lines, by frame row: a write's ordinal, or a declaration's plus the write count. */
   private readonly ownStart: Int32Array;
   private readonly own: Int32Array;
+  /** Each frame's writes to `this` and its fields, by frame row. */
+  private readonly objectStart: Int32Array;
+  private readonly objectWrites: Int32Array;
+  /** Field writes by the object they report, then by field name, each in log order. */
+  private readonly ownerStart: Int32Array;
+  private readonly ownerWrites: Int32Array;
   /** Each static's name id, by static ordinal. */
   private readonly staticNames: Int32Array;
   /** Each static's writes, by static ordinal, in log order. */
@@ -83,6 +107,7 @@ export class VariableIndex {
     const W = writes.length;
     const S = declarations.length;
     let nameKind = new Uint8Array(256);
+    let thisName = NONE;
     const nameOf = (s: number, e: number): number => {
       const before = strings.size;
       const id = strings.intern(s, e);
@@ -91,6 +116,7 @@ export class VariableIndex {
         if (id >= nameKind.length)
           nameKind = resized(nameKind, Math.max(id + 1, nameKind.length * 2));
         nameKind[id] = kindOf(bytes, s, e);
+        if (nameKind[id] === NAME_KIND.this) thisName = id;
       }
       return id;
     };
@@ -135,18 +161,32 @@ export class VariableIndex {
           : 0;
     }
 
-    // Count, prefix sum, fill: each frame's lines, merged from the two lists in log order.
-    const ownStart = new Int32Array(count + 1);
-    for (let w = 0; w < W; w++) ownStart[parent[writes[w]!]! + 1]!++;
-    for (let s = 0; s < S; s++) ownStart[parent[declarations[s]!]! + 1]!++;
-    for (let row = 0; row < count; row++) ownStart[row + 1]! += ownStart[row]!;
-    const next = ownStart.slice(0, count);
-    const own = new Int32Array(W + S);
+    // Each frame's lines, merged from the two lists in log order.
+    const lines = new Int32Array(W + S);
     for (let w = 0, s = 0; w < W || s < S; ) {
       const takeWrite = s >= S || (w < W && writes[w]! < declarations[s]!);
-      const row = takeWrite ? writes[w]! : declarations[s]!;
-      own[next[parent[row]!]!++] = takeWrite ? w++ : W + s++;
+      lines[w + s] = takeWrite ? w++ : W + s++;
     }
+    const lineRow = (line: number): number => (line < W ? writes[line]! : declarations[line - W]!);
+    const own = grouped(count, lines, (line) => parent[lineRow(line)]!);
+    // Each frame's writes to its own object, apart, so a caller frame is read without its locals.
+    const objectLines = new Int32Array(W);
+    let objectCount = 0;
+    for (let w = 0; w < W; w++) {
+      const kind = writeName[w] === NONE ? NONE : nameKind[writeName[w]!]!;
+      if (kind === NAME_KIND.this || kind === NAME_KIND.field) objectLines[objectCount++] = w;
+    }
+    const objects = grouped(
+      count,
+      objectLines.subarray(0, objectCount),
+      (w) => parent[writes[w]!]!,
+    );
+    // A field write reports the object the field belongs to: its writes by object, then by name.
+    const fieldLines = objectLines
+      .subarray(0, objectCount)
+      .filter((w) => nameKind[writeName[w]!] === NAME_KIND.field && writeOwner[w] !== NONE);
+    const byName = grouped(strings.size, fieldLines, (w) => writeName[w]!).items;
+    const owners = grouped(strings.size, byName, (w) => writeOwner[w]!);
 
     // A static lives for the transaction, so its writes are one list per name, wherever made.
     const staticOf = new Int32Array(strings.size).fill(NONE);
@@ -165,22 +205,16 @@ export class VariableIndex {
       // name is a string id
       if (staticOf[name] !== NONE) staticNames[staticOf[name]!] = name;
     }
-    const staticStart = new Int32Array(statics + 1);
-    const staticOfWrite = (w: number): number => {
+    const staticLines = new Int32Array(W);
+    let staticCount = 0;
+    for (let w = 0; w < W; w++) {
       const name = writeName[w]!;
-      return name === NONE || nameKind[name] !== NAME_KIND.static ? NONE : staticOf[name]!;
-    };
-    for (let w = 0; w < W; w++) {
-      const p = staticOfWrite(w);
-      if (p !== NONE) staticStart[p + 1]!++;
+      if (name !== NONE && nameKind[name] === NAME_KIND.static) staticLines[staticCount++] = w;
     }
-    for (let p = 0; p < statics; p++) staticStart[p + 1]! += staticStart[p]!;
-    const staticNext = staticStart.slice(0, statics);
-    const staticWrites = new Int32Array(staticStart[statics]!);
-    for (let w = 0; w < W; w++) {
-      const p = staticOfWrite(w);
-      if (p !== NONE) staticWrites[staticNext[p]!++] = w;
-    }
+    const staticWrites = grouped(statics, staticLines.subarray(0, staticCount), (w) => {
+      // Every static write's name has a static ordinal
+      return staticOf[writeName[w]!]!;
+    });
     const staticDeclaration = new Int32Array(statics).fill(NONE);
     for (let s = 0; s < S; s++) {
       const name = declaredName[s]!;
@@ -200,11 +234,18 @@ export class VariableIndex {
     this.declaredType = declaredType;
     this.declaredStatic = declaredStatic;
     this.nameKind = nameKind;
-    this.ownStart = ownStart;
-    this.own = own;
+    this.thisName = thisName;
+    this.bytes = bytes;
+    this.fields = fields;
+    this.ownStart = own.start;
+    this.own = own.items;
+    this.objectStart = objects.start;
+    this.objectWrites = objects.items;
+    this.ownerStart = owners.start;
+    this.ownerWrites = owners.items;
     this.staticNames = staticNames;
-    this.staticStart = staticStart;
-    this.staticWrites = staticWrites;
+    this.staticStart = staticWrites.start;
+    this.staticWrites = staticWrites.items;
     this.staticDeclaration = staticDeclaration;
     this.written = new Int32Array(strings.size);
     this.declared = new Int32Array(strings.size);
@@ -223,6 +264,12 @@ export class VariableIndex {
     return isFrameRow(this.store, id) ? this.store.subtreeEnd[id]! - 1 : id;
   }
 
+  /** The frame an event is in: itself for a frame, else its parent, which is 0 at the top. */
+  innermostFrame(id: number): number {
+    // id is a row
+    return isFrameRow(this.store, id) ? id : this.store.parent[id]!;
+  }
+
   /**
    * The frame whose variables an event sees: the nearest frame at or above it with a variable line
    * of its own by `cut`. A query or a system call has no locals: the Apex frame that issued it
@@ -230,8 +277,8 @@ export class VariableIndex {
    */
   recordingFrame(id: number, cut: number): number {
     const { parent } = this.store;
-    // id is a row, and so is each parent but the log's
-    const innermost = isFrameRow(this.store, id) ? id : parent[id]!;
+    const innermost = this.innermostFrame(id);
+    // Each parent but the log's is a row
     for (let frame = innermost; frame > 0; frame = parent[frame]!) {
       const first = this.ownStart[frame]!;
       if (first < this.ownStart[frame + 1]! && this.lineRow(this.own[first]!) <= cut) return frame;
@@ -240,10 +287,11 @@ export class VariableIndex {
   }
 
   /**
-   * The frame's locals by `cut`: each name's last write, and each name it declared and never wrote,
-   * with its earliest declaration. Not `this`, and not a field or static, whose names hold a `.`.
+   * What the frame holds by `cut`. Its locals: each name's last write, and each name it declared and
+   * never wrote, with its earliest declaration; not `this`, and not a field or static, whose names
+   * hold a `.`. And its last write to `this`, with the type it declared `this` as.
    */
-  locals(frame: number, cut: number): FoundVariable[] {
+  scope(frame: number, cut: number): FrameScope {
     const mark = ++this.query;
     const { written, declared, declaredAt, nameKind, writeName, declaredName } = this;
     const W = this.writes.length;
@@ -262,8 +310,10 @@ export class VariableIndex {
       } else {
         const s = line - W;
         const name = declaredName[s]!;
-        if (name === NONE || this.declaredStatic[s] || nameKind[name] !== NAME_KIND.local) continue;
-        if (declared[name] !== mark) names.push(name);
+        if (name === NONE || this.declaredStatic[s] || nameKind[name] === NAME_KIND.static)
+          continue;
+        if (nameKind[name] === NAME_KIND.field) continue;
+        if (declared[name] !== mark && name !== this.thisName) names.push(name);
         declared[name] = mark;
         // Backwards, so the earliest declaration is the one left.
         declaredAt[name] = s;
@@ -281,7 +331,68 @@ export class VariableIndex {
     for (const name of names) {
       if (written[name] !== mark) out.push({ name, write: NONE, declaration: declaredAt[name]! });
     }
-    return out;
+    const thisWrite = this.lastObjectWrite(frame, cut, NAME_KIND.this);
+    const thisName = this.thisName;
+    return {
+      locals: out,
+      this:
+        thisWrite === NONE
+          ? null
+          : {
+              name: thisName,
+              write: thisWrite,
+              declaration: declared[thisName] === mark ? declaredAt[thisName]! : NONE,
+            },
+    };
+  }
+
+  /**
+   * The fields of the object `frame` runs on, by `cut`: the last write to each. From every frame from
+   * `innermost` up of the same class, as one object's methods share its fields, and from writes the
+   * log grouped under the object's address, as a constructor that returned set them. A frame on
+   * another object of the class is left out. The latest write wins.
+   */
+  objectFields(innermost: number, frame: number, cut: number): FoundVariable[] {
+    const { parent } = this.store;
+    const { writes, writeName, nameKind, objectStart, objectWrites } = this;
+    const latest = new Map<number, number>();
+    const take = (w: number): void => {
+      // A field write has a name
+      const name = writeName[w]!;
+      const held = latest.get(name);
+      if (held === undefined || writes[held]! < writes[w]!) latest.set(name, w);
+    };
+    const object = this.objectOf(frame, cut);
+    const cls = this.classOf(frame);
+    for (let f = innermost; f > 0; f = parent[f]!) {
+      if (f !== frame && (cls === NONE || this.classOf(f) !== cls)) continue;
+      const theirs = f === frame ? object : this.objectOf(f, cut);
+      if (object !== NONE && theirs !== NONE && object !== theirs) continue;
+      const lo = objectStart[f]!;
+      for (
+        let k = upperBound(objectWrites, lo, objectStart[f + 1]!, writes, cut) - 1;
+        k >= lo;
+        k--
+      ) {
+        // k is inside the frame's run
+        const w = objectWrites[k]!;
+        if (nameKind[writeName[w]!] === NAME_KIND.field) take(w);
+      }
+    }
+    if (object !== NONE) {
+      const { ownerStart, ownerWrites } = this;
+      const end = ownerStart[object + 1]!;
+      // One run per field name inside the object's run, each in log order.
+      for (let lo = ownerStart[object]!; lo < end; ) {
+        const name = writeName[ownerWrites[lo]!]!;
+        let hi = lo + 1;
+        while (hi < end && writeName[ownerWrites[hi]!] === name) hi++;
+        const last = upperBound(ownerWrites, lo, hi, writes, cut) - 1;
+        if (last >= lo) take(ownerWrites[last]!);
+        lo = hi;
+      }
+    }
+    return [...latest.values()].map((w) => ({ name: writeName[w]!, write: w, declaration: NONE }));
   }
 
   /**
@@ -294,14 +405,7 @@ export class VariableIndex {
     const out: FoundVariable[] = [];
     for (let p = 0; p < staticNames.length; p++) {
       // p is a static ordinal, so every per-static array holds it
-      let lo = staticStart[p]!;
-      let hi = staticStart[p + 1]!;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        // mid is inside the static's run
-        if (writes[staticWrites[mid]!]! <= cut) lo = mid + 1;
-        else hi = mid;
-      }
+      const lo = upperBound(staticWrites, staticStart[p]!, staticStart[p + 1]!, writes, cut);
       const declaration = staticDeclaration[p]!;
       const write = lo > staticStart[p]! ? staticWrites[lo - 1]! : NONE;
       if (write === NONE && (declaration === NONE || declarations[declaration]! > cut)) continue;
@@ -323,10 +427,77 @@ export class VariableIndex {
     return value === NONE ? this.writeOwner[w]! : value;
   }
 
+  /** The address write `w`'s value is, where the log wrote one in place of the value; else `NONE`. */
+  valueAddress(w: number): number {
+    // w is a write ordinal
+    return this.writeValueAddress[w]!;
+  }
+
   /** The type declaration `s` states, or `NONE`. */
   declarationType(s: number): number {
     // s is a declaration ordinal
     return this.declaredType[s]!;
+  }
+
+  /** The frame's last write by `cut` to `this`, or to a field if `kind` says so, or `NONE`. */
+  private lastObjectWrite(frame: number, cut: number, kind: number): number {
+    const { objectStart, objectWrites, writes, writeName, nameKind } = this;
+    const lo = objectStart[frame]!;
+    for (
+      let k = upperBound(objectWrites, lo, objectStart[frame + 1]!, writes, cut) - 1;
+      k >= lo;
+      k--
+    ) {
+      // k is inside the frame's run
+      const w = objectWrites[k]!;
+      if (nameKind[writeName[w]!] === kind) return w;
+    }
+    return NONE;
+  }
+
+  /** The object the frame runs on by `cut`: the address its latest `this` or field write reports. */
+  private objectOf(frame: number, cut: number): number {
+    const { objectStart, objectWrites, writes, writeOwner } = this;
+    const lo = objectStart[frame]!;
+    for (
+      let k = upperBound(objectWrites, lo, objectStart[frame + 1]!, writes, cut) - 1;
+      k >= lo;
+      k--
+    ) {
+      // k is inside the frame's run
+      const owner = writeOwner[objectWrites[k]!]!;
+      if (owner !== NONE) return owner;
+    }
+    return NONE;
+  }
+
+  /**
+   * The class a frame runs in: a constructor's `className`, or a method's signature up to its name.
+   * `NONE` for any other frame.
+   */
+  private classOf(frame: number): number {
+    let cls = this.classes.get(frame);
+    if (cls === undefined) {
+      cls = NONE;
+      const { type, start, end } = this.store;
+      const bytes = this.bytes;
+      // frame is a row
+      const t = type[frame]!;
+      if (t === METHOD || t === CONSTRUCTOR) {
+        const f = this.fields;
+        f.resetRow(start[frame]!, end[frame]!);
+        const at = t === METHOD ? SIGNATURE : CLASS_NAME;
+        const s = f.startOf(at);
+        let e = f.endOf(at);
+        if (s >= 0 && t === METHOD) {
+          const paren = indexOfByte(bytes, LPAREN, s, e);
+          e = lastIndexOfByte(bytes, DOT, s, paren < 0 ? e : paren);
+        }
+        if (s >= 0 && e > s) cls = this.strings.intern(s, e);
+      }
+      this.classes.set(frame, cls);
+    }
+    return cls;
   }
 
   /** Where in the frame's run its lines after `cut` start. */
@@ -347,6 +518,39 @@ export class VariableIndex {
     // A line is a write ordinal, or a declaration ordinal past the writes
     return line < W ? this.writes[line]! : this.declarations[line - W]!;
   }
+}
+
+/** `items` as one list per key, each in the order given: count, prefix sum, fill. */
+function grouped(
+  keys: number,
+  items: Int32Array,
+  keyOf: (item: number) => number,
+): { start: Int32Array; items: Int32Array } {
+  const start = new Int32Array(keys + 1);
+  // Each item's key is below keys
+  for (const item of items) start[keyOf(item) + 1]!++;
+  for (let k = 0; k < keys; k++) start[k + 1]! += start[k]!;
+  const next = start.slice(0, keys);
+  const out = new Int32Array(items.length);
+  for (const item of items) out[next[keyOf(item)]!++] = item;
+  return { start, items: out };
+}
+
+/** Where in `ids[lo..hi)`, ordinals in log order, the first whose row is past `cut` is. */
+function upperBound(
+  ids: Int32Array,
+  lo: number,
+  hi: number,
+  rows: Int32Array,
+  cut: number,
+): number {
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    // mid is inside the run, and each id in it is an ordinal of rows
+    if (rows[ids[mid]!]! <= cut) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 function kindOf(bytes: Uint8Array, start: number, end: number): number {

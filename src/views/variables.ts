@@ -38,6 +38,14 @@ export interface Variables {
   readonly frame: FrameEvent;
   /** The frame's own: its last write to each name, and each name it declared and never wrote. */
   readonly locals: readonly Variable[];
+  /** The object the frame runs on, as its last write to `this` states it; null when it wrote none. */
+  readonly this: Variable | null;
+  /**
+   * The fields of that object: the last write to each, by name without `this.`, from any frame on
+   * the object, or a constructor that set them and returned. The log names no class hierarchy, so a
+   * subclass's field can be listed in a superclass frame.
+   */
+  readonly fields: readonly Variable[];
   /** Every static written or declared anywhere by then, by class, as a static lives for the transaction. */
   readonly statics: readonly StaticClass[];
 }
@@ -77,10 +85,23 @@ export class LogVariables {
     const cut = index.cutOf(id);
     const frame = index.recordingFrame(id, cut);
     if (frame === NONE) return null;
-    const locals = index.locals(frame, cut).map((found) => this.variable(index, found));
+    const scope = index.scope(frame, cut);
+    const locals = scope.locals.map((found) => this.variable(index, found));
+    const fields = index.objectFields(index.innermostFrame(id), frame, cut).map((found) => {
+      const { name, ...rest } = this.variable(index, found);
+      // A field line's address is the object the field belongs to, so only an address value counts.
+      const address = index.valueAddress(found.write);
+      return Object.freeze({
+        name: name.slice(name.indexOf('.') + 1),
+        ...rest,
+        address: address === NONE ? null : index.strings.text(address),
+      });
+    });
     return Object.freeze({
       frame: this.events.event(frame) as FrameEvent,
       locals: Object.freeze(locals.sort(byName)),
+      this: scope.this && this.variable(index, scope.this),
+      fields: Object.freeze(fields.sort(byName)),
       statics: this.statics(index, cut),
     });
   }

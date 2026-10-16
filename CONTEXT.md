@@ -126,6 +126,15 @@ the frame it calls.
 A variable whose name the log writes after its class, as `ns.MyClass.NAME`. It lives for the
 transaction, so a write in any frame is in scope after it.
 
+**Field**:
+A variable of the object a frame runs on, which the log names as `this.<name>`. Every frame on the
+same object sees it.
+
+**Address**:
+The text the log writes for an object, `0x` and hex digits. A field's write states the address of
+the object the field belongs to; any other write, the object its value is. The platform reuses an
+address once the object at it is gone.
+
 **Recording frame**:
 The frame whose variables an event sees: the nearest frame at or above it with a write or
 declaration of its own by then. A query or a system call records none, so the Apex frame that
