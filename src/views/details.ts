@@ -29,6 +29,18 @@ export interface ExplainPlan {
   readonly relativeCost: number | null;
 }
 
+/** What started a flow interviews frame. */
+export type FlowType = 'flow' | 'processBuilder';
+
+const FLOW_OF_UNIT = new Map<string, FlowType>([
+  ['Flow', 'flow'],
+  ['Workflow', 'processBuilder'],
+]);
+
+/** The flow type a code unit of `unit` type starts; null for any other unit, or none. */
+export const flowTypeOfUnit = (unit: string | null): FlowType | null =>
+  FLOW_OF_UNIT.get(unit ?? '') ?? null;
+
 /**
  * The values each type's line states beyond its text, or derives from the rows after it, by type. A
  * value is null when the log does not state it, or states it malformed; `field()` still gives the
@@ -45,6 +57,8 @@ export interface EventDetails {
   readonly DML_BEGIN: { readonly operation: string | null; readonly sObjectType: string | null };
   /** The kind of code, as `Flow` or `Validation`, from the unit's name. */
   readonly CODE_UNIT_STARTED: { readonly codeUnitType: string | null };
+  /** What started the interviews, from the code unit above them: `Flow` or nested is `flow`, `Workflow` is `processBuilder`. Null for any other unit. */
+  readonly FLOW_START_INTERVIEWS_BEGIN: { readonly flowType: FlowType | null };
   /** Bytes, as the line states them: positive for a deallocation. */
   readonly HEAP_ALLOCATE: { readonly bytes: number | null };
   readonly HEAP_DEALLOCATE: { readonly bytes: number | null };
@@ -80,10 +94,16 @@ export type AnyDetails = EventDetails[keyof EventDetails];
 
 type Read<T> = (f: Fields) => T;
 /**
- * Reads a line's details; `explain` gives a query's explain line, or null when it has none, and
- * `isCaught` the reading of a throw.
+ * Reads a line's details; `explain` gives a query's explain line, or null when it has none,
+ * `isCaught` the reading of a throw, and `flowType` what started an interviews frame. `explain`
+ * and `flowType` move the shared cursor, so read `f` first.
  */
-type Reader<T> = (f: Fields, explain: () => Fields | null, isCaught: () => boolean | null) => T;
+type Reader<T> = (
+  f: Fields,
+  explain: () => Fields | null,
+  isCaught: () => boolean | null,
+  flowType: () => FlowType | null,
+) => T;
 
 /** Field `name`'s position in `typeId`'s line; throws at load for a name the entry does not list. */
 function position(typeId: number, name: string): { at: number; last: boolean } {
@@ -175,6 +195,9 @@ reader('DML_BEGIN', (t) => {
   return (f) => ({ operation: operation(f), sObjectType: sObjectType(f) });
 });
 reader('CODE_UNIT_STARTED', () => (f) => ({ codeUnitType: codeUnitType(f) }));
+reader('FLOW_START_INTERVIEWS_BEGIN', () => (_f, _explain, _isCaught, flowType) => ({
+  flowType: flowType(),
+}));
 for (const type of ['HEAP_ALLOCATE', 'HEAP_DEALLOCATE', 'BULK_HEAP_ALLOCATE'] as const) {
   reader(type, (t) => {
     const bytes = int(t, 'bytes', 'Bytes:');
@@ -216,8 +239,9 @@ export function eventDetails(
   f: () => Fields,
   explain: () => Fields | null,
   isCaught: () => boolean | null,
+  flowType: () => FlowType | null,
 ): AnyDetails | null {
   const read = READERS[typeId];
-  const details = read ? read(f(), explain, isCaught) : null;
+  const details = read ? read(f(), explain, isCaught, flowType) : null;
   return details && Object.freeze(details);
 }
