@@ -146,6 +146,25 @@ describe('variables', () => {
     ]);
   });
 
+  it('gives a static whose name holds no class a null class, sorted first', () => {
+    const log = logOf(
+      `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,
+      `${at(1100)}|VARIABLE_ASSIGNMENT|[2]|ns.MyClass.count|1`,
+      `${at(1200)}|VARIABLE_ASSIGNMENT|[3]|.dotted|2`,
+      `${at(1300)}|VARIABLE_SCOPE_BEGIN|[4]|bare|Integer|false|true`,
+      `${at(1400)}|METHOD_EXIT|[1]|01p000000000AAA|ns.First.run()`,
+    );
+    expect(
+      eventWith(log, 'ns.First.run()').variables?.statics.map((c) => [
+        c.className,
+        c.variables.map((v) => v.name),
+      ]),
+    ).toEqual([
+      [null, ['bare', 'dotted']],
+      ['ns.MyClass', ['count']],
+    ]);
+  });
+
   it('shares the statics between events with no static line between them', () => {
     const log = logOf(
       `${at(1000)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.First.run()`,

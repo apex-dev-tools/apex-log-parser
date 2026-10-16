@@ -24,7 +24,8 @@ export interface Variable {
 
 /** The statics of one class, which the log names before each static's own name. */
 export interface StaticClass {
-  readonly className: string;
+  /** As the log names it, with its namespace, as `ns.MyClass`; null when the name holds no class. */
+  readonly className: string | null;
   /** By name, without the class. */
   readonly variables: readonly Variable[];
 }
@@ -172,7 +173,7 @@ export class LogVariables {
 
   private staticsAt(index: VariableIndex, id: number): readonly StaticClass[] {
     const classes = index.staticClasses(id).map((c) => this.staticClass(index, id, c));
-    return Object.freeze(classes.sort((a, b) => order(a.className, b.className)));
+    return Object.freeze(classes.sort((a, b) => order(a.className ?? '', b.className ?? '')));
   }
 
   private staticClass(index: VariableIndex, id: number, found: FoundStaticClass): StaticClass {
@@ -185,7 +186,7 @@ export class LogVariables {
     if (!held) {
       const variables = index.staticsOf(found.key, id).map((v) => this.static(index, v));
       held = Object.freeze({
-        className: text(index, found.className) ?? '',
+        className: text(index, found.className),
         variables: Object.freeze(variables.sort(byName)),
       });
       byVersion.set(found.version, held);
