@@ -90,9 +90,8 @@ export class LogVariables {
   private readonly staticsRead = new Map<number, readonly StaticClass[]>();
   // By class key, then the class's version, so a new version rebuilds only the class that changed.
   private readonly classRead = new Map<number, Map<number, StaticClass>>();
-  // By row, as one line names one variable; the type is checked, as it depends on the cut.
-  private readonly written = new Map<number, { type: number; variable: Variable }>();
-  private readonly declared = new Map<number, Variable>();
+  // By its write's row and its declaration's row, which together fix every value it holds.
+  private readonly shares = new Map<number, Variable>();
 
   constructor(events: LogEvents, store: Store, source: Source) {
     this.events = events;
@@ -155,19 +154,14 @@ export class LogVariables {
     found: FoundVariable,
     short: (name: string) => string,
   ): Variable {
-    if (found.row === NONE) {
-      let held = this.declared.get(found.declaredAt);
-      if (!held) {
-        held = this.variable(index, found, short(index.strings.text(found.name)));
-        this.declared.set(found.declaredAt, held);
-      }
-      return held;
+    // Rows are below the store's count, so the pair fits in one safe integer.
+    const key = (found.row + 1) * (this.store.count + 1) + found.declaredAt + 1;
+    let held = this.shares.get(key);
+    if (!held) {
+      held = this.variable(index, found, short(index.strings.text(found.name)));
+      this.shares.set(key, held);
     }
-    const held = this.written.get(found.row);
-    if (held?.type === found.type) return held.variable;
-    const variable = this.variable(index, found, short(index.strings.text(found.name)));
-    if (!held) this.written.set(found.row, { type: found.type, variable });
-    return variable;
+    return held;
   }
 
   private statics(index: VariableIndex, id: number, version: number): readonly StaticClass[] {
