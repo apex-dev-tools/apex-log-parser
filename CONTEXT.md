@@ -86,7 +86,7 @@ _Avoid_: event metadata
 One `|`-separated part of a line after its timestamp and event type, such as the row count of
 `SOQL_EXECUTE_END`. Each event type names its fields, in line order. A field the line does not state
 is null.
-_Avoid_: column (a different thing, see below), part
+_Avoid_: column (a different thing, see below), part, object field (a different thing, see below)
 
 **Layout**:
 An event type's fields, in order. A layout is either seen in real logs or only taken from the
@@ -103,6 +103,49 @@ _Avoid_: classification
 
 **Debug category**:
 The Salesforce debug log category an event type belongs to, such as `apexCode` or `database`.
+
+## Variables
+
+**Variable**:
+A name a `FINEST` log records a value or a declaration for, as it stood at one event.
+
+**Write**:
+A `VARIABLE_ASSIGNMENT` line: a variable's name, its value as text, and an address after it on
+some lines. A value holds until the next write to the same name.
+_Avoid_: assignment event
+
+**Declaration**:
+A `VARIABLE_SCOPE_BEGIN` line: a variable's name and type, and whether it is static. The log writes
+no end to a declaration.
+
+**Local**:
+A variable a frame wrote or declared itself, whose name holds no `.`. A caller's locals are not in
+the frame it calls.
+
+**Static**:
+A variable whose name the log writes after its class, as `ns.MyClass.NAME`. It lives for the
+transaction, so a write in any frame holds for every event after it.
+
+**Object field**:
+A variable of the object a frame runs on, which the log names as `this.<name>`. Every frame on the
+same object sees it. The API lists them as `fields`.
+_Avoid_: field (a part of a line, see above)
+
+**Address**:
+The text the log writes for an object, `0x` and hex digits. An object field's write states the
+address of the object the field belongs to; any other write, the object its value is. The platform
+reuses an address once the object at it is gone.
+
+**Object**:
+What lived at one address for a time: from the `this` write that named its class, to the end of
+the frame that made it. A construction at the address after that is a new object. The parser's
+reading: the log states no object's end.
+
+**Recording frame**:
+The frame whose variables an event sees: the nearest frame at or above it with a write or
+declaration of its own by then, or the frame the event is in when none has one. A query or a
+system call records none, so the Apex frame that issued it answers.
+_Avoid_: scope frame
 
 ## Figures
 

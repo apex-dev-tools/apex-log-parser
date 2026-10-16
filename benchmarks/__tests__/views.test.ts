@@ -1,7 +1,7 @@
 import { idOfType } from '../../src/catalog/catalog.js';
 import { nodeEngine } from '../../src/engine/node.js';
 import { apexLog } from '../../src/views/log.js';
-import { readColumns, readEvents } from '../scripts/views.js';
+import { readColumns, readEvents, readVariables } from '../scripts/views.js';
 
 const log = apexLog(
   nodeEngine.build(
@@ -30,5 +30,27 @@ describe('readColumns', () => {
 describe('readEvents', () => {
   it('reads every event', () => {
     expect(readEvents(log)).toBe(1 + 2 + 2);
+  });
+});
+
+describe('readVariables', () => {
+  it('reads the variables at the first of every 1000 variable lines', () => {
+    const lines = Array.from(
+      { length: 1001 },
+      (_, i) => `09:00:00.001 (${1100 + i})|VARIABLE_ASSIGNMENT|[2]|v${i}|${i}`,
+    );
+    const variables = apexLog(
+      nodeEngine.build(
+        new TextEncoder().encode(
+          [
+            '64.0 APEX_CODE,FINEST',
+            '09:00:00.001 (1000)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()',
+            ...lines,
+          ].join('\n'),
+        ),
+      ),
+    );
+    // The first line sees itself; the 1001st sees every line before it too.
+    expect(readVariables(variables)).toBe(1 + 1001);
   });
 });

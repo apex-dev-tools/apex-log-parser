@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import { addressPipe } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
 import {
@@ -20,6 +21,8 @@ const INTERVIEWS = idOfType('FLOW_START_INTERVIEWS_BEGIN');
 const INTERVIEW = idOfType('FLOW_START_INTERVIEW_BEGIN');
 const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
 const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
+const ASSIGNMENT = idOfType('VARIABLE_ASSIGNMENT');
+const VALUE = fieldPosition(ASSIGNMENT, 'value').at;
 
 /**
  * Reads each row's line from the source, on demand: its text, raw line and fields. One cursor
@@ -27,6 +30,7 @@ const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
  */
 export class EventLines {
   private readonly store: Store;
+  private readonly source: Source;
   private readonly issues: Issues;
   private readonly fields: ByteFields;
   /** Whether each decided throw was caught, by row; made on the first read of one. */
@@ -34,6 +38,7 @@ export class EventLines {
 
   constructor(store: Store, source: Source, issues: Issues) {
     this.store = store;
+    this.source = source;
     this.issues = issues;
     this.fields = new ByteFields(source);
   }
@@ -64,7 +69,18 @@ export class EventLines {
     if (at < 0)
       throw new RangeError(`${EVENT_TYPES[type]?.type ?? 'The log'} has no field ${name}`);
     const f = this.at(id);
+    if (type === ASSIGNMENT && at >= VALUE) return this.assignmentField(f, at === VALUE);
     return (last ? f.from(at, '|') : f.at(at)) || null;
+  }
+
+  /** A write's value runs to its trailing address, if any, so a value that holds `|` stays whole. */
+  private assignmentField(f: ByteFields, value: boolean): string | null {
+    const start = f.startOf(VALUE);
+    if (start < 0) return null;
+    const end = f.lineEnd;
+    const pipe = addressPipe(this.source.bytes, start, end);
+    if (value) return this.source.text(start, pipe < 0 ? end : pipe) || null;
+    return pipe < 0 ? null : this.source.text(pipe + 1, end) || null;
   }
 
   /** The values the row's line states beyond its text, or the rows after it give; null for none. */

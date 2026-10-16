@@ -41,6 +41,7 @@ import type {
   LogTruncationRegion,
   LogWorker,
   NamespaceLimits,
+  ObjectState,
   ParseOptions,
   ParsePhase,
   ParseProgress,
@@ -48,10 +49,13 @@ import type {
   RunningUsage,
   SelfTotal,
   Shape,
+  StaticClass,
   StreamRead,
   TransferableLog,
   TruncationKind,
   UserInfo,
+  Variable,
+  Variables,
 } from '../browser.js';
 import * as browser from '../browser.js';
 import * as node from '../node.js';
@@ -118,6 +122,7 @@ interface PublicTypeSurface {
   logTruncationRegion: LogTruncationRegion;
   logWorker: LogWorker;
   namespaceLimits: NamespaceLimits;
+  objectState: ObjectState;
   parseOptions: ParseOptions;
   parsePhase: ParsePhase;
   parseProgress: ParseProgress;
@@ -125,10 +130,13 @@ interface PublicTypeSurface {
   runningUsage: RunningUsage;
   selfTotal: SelfTotal;
   shape: Shape;
+  staticClass: StaticClass;
   streamRead: StreamRead;
   transferableLog: TransferableLog;
   truncationKind: TruncationKind;
   userInfo: UserInfo;
+  variable: Variable;
+  variables: Variables;
 }
 
 // Both builds must state one surface, so a caller's types hold whichever condition resolves.

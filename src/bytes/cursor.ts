@@ -88,6 +88,11 @@ export class ByteFields implements Fields {
     else this.complete = true;
   }
 
+  /** Where the line ends in the source, before its line ending and any continuation lines. */
+  get lineEnd(): number {
+    return this.end;
+  }
+
   get count(): number {
     // Each call finds one more field or marks the line complete.
     while (!this.complete) this.startOf(this.found);

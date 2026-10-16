@@ -21,7 +21,12 @@ export const UPPER_Z = 0x5a;
 export const LBRACKET = 0x5b;
 export const RBRACKET = 0x5d;
 export const UNDERSCORE = 0x5f;
+export const LOWER_A = 0x61;
+export const LOWER_F = 0x66;
+export const LOWER_X = 0x78;
 export const PIPE = 0x7c;
+// Sets bit 5, which lowercases an ASCII letter and leaves a digit as it is.
+const LOWER = 0x20;
 
 /** The bytes from `at` spell `ascii`. The caller checks that they are there. */
 export function matchesAscii(bytes: Uint8Array, at: number, ascii: string): boolean {
@@ -67,6 +72,31 @@ export function lastIndexOfByte(
 ): number {
   for (let i = end - 1; i >= start; i--) if (bytes[i] === byte) return i;
   return -1;
+}
+
+/** Bytes `start` to `end` are a heap address: `0x` and one or more hex digits, in either case. */
+export function isAddress(bytes: Uint8Array, start: number, end: number): boolean {
+  if (end - start < 3 || bytes[start] !== ZERO || (bytes[start + 1]! | LOWER) !== LOWER_X)
+    return false;
+  for (let i = start + 2; i < end; i++) {
+    // i < end, which is inside the range
+    const b = bytes[i]!;
+    const lower = b | LOWER;
+    if (!((b >= ZERO && b <= NINE) || (lower >= LOWER_A && lower <= LOWER_F))) return false;
+  }
+  return true;
+}
+
+const MAX_ADDRESS = 18;
+
+/**
+ * Where the `|` before a trailing address is in bytes `start` to `end`, or -1 when the last field
+ * is not one. An empty last field counts: the log writes `|` and no address for a null value.
+ */
+export function addressPipe(bytes: Uint8Array, start: number, end: number): number {
+  // An address is at most `0x` and 16 hex digits, so its pipe is in the last 19 bytes.
+  const pipe = lastIndexOfByte(bytes, PIPE, Math.max(start, end - MAX_ADDRESS - 1), end);
+  return pipe >= 0 && (pipe + 1 === end || isAddress(bytes, pipe + 1, end)) ? pipe : -1;
 }
 
 /** How many times `byte` is in bytes `start` to `end`. */
