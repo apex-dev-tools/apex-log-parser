@@ -1376,7 +1376,7 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     fields: ['line', 'userId', 'username', 'timezone', 'timezoneGmt'],
     debugCategory: 'apexCode',
     level: 'ERROR',
-    text: joinPresent(' ', 'userId', 'username'),
+    text: joinPresent(' : ', 'username', 'userId'),
   },
   USER_MODE_PERMSET_APPLIED: { debugCategory: 'database', level: 'FINE' },
   VALIDATION_ERROR: {
