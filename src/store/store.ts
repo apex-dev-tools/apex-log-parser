@@ -200,7 +200,9 @@ export class Store {
     return slot === NONE ? -1 : slot * HEAP_STRIDE;
   }
 
-  /** Nanoseconds from the row's line to its exit; 0 without an exit, or with one at 0, as in v0. */
+  /**
+   * Nanoseconds from the row's line to its exit; 0 without an exit or with one at 0, as before 0.4.
+   */
   durationTotal(id: number): number {
     // id is a row the engine added
     const exit = this.exitStamp[id]!;
