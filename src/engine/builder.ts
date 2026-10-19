@@ -130,7 +130,7 @@ export interface Built {
 }
 
 /**
- * Builds the event tree in one pass, with v0's rules and v0's order of side effects. Lines
+ * Builds the event tree in one pass, with pre-0.4 rules and order of side effects. Lines
  * are read one event ahead: taking an event reads every line up to the next one, so the work that
  * follows an event (its text, then the next event's own) runs before the tree places that next
  * event.
@@ -468,8 +468,8 @@ export class LogBuilder {
 
   /**
    * Places the next event under `parent`, whose open-frame slot is `top`, or -1 for the log. A
-   * package entry in the namespace of the run before it merges into that run, as v0's merge did,
-   * and gets no row: the result is then `NONE`.
+   * package entry in the namespace of the run before it merges into that run, as the pre-0.4
+   * merge did, and gets no row: the result is then `NONE`.
    */
   private takeChild(parent: number, depth: number, top: number): number {
     const store = this.store;
@@ -506,7 +506,7 @@ export class LogBuilder {
 
   /** The next package entry extends `into` instead of getting a row. */
   private mergePackage(into: number): void {
-    // `exitStamp || timestamp`, as in v0: the event after it moves this on, when there is one.
+    // `exitStamp || timestamp`, as before 0.4: the event after it moves this on, when there is one.
     this.store.exitStamp[into] = this.nextTimestamp;
     this.lastTimestamp = this.nextTimestamp;
     this.lastFolded = false;
@@ -603,7 +603,7 @@ export class LogBuilder {
       const last = eol < 0;
       if (last) eol = len;
       this.pos = eol + 1;
-      // A CR before the line's LF is part of its line end; the last line keeps one, as in v0.
+      // A CR before the line's LF is part of its line end; the last line keeps one, as before 0.4.
       const end = !last && eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
       if (end === start) continue;
       const read = this.readEvent(start, end);
@@ -660,7 +660,7 @@ export class LogBuilder {
     }
     const timestamp = timestampIn(bytes, start, p1);
     if (Number.isNaN(timestamp)) {
-      // v0 threw here and ended the parse.
+      // Before 0.4, this threw and ended the parse.
       this.markers.lineError('Invalid log line', start, end);
       return READ.error;
     }
@@ -695,7 +695,7 @@ export class LogBuilder {
     let heap = 0;
     const sign = HEAP_SIGN[type]!;
     if (sign) {
-      // Anything but `Bytes:` and a number reads as no bytes, as in v0.
+      // Anything but `Bytes:` and a number reads as no bytes, as before 0.4.
       const stated = fields.int(HEAP_FIELD[type]!, HEAP_PREFIX);
       heap = stated === null || Number.isNaN(stated) ? 0 : sign * stated;
       // Clamped, so a free the log kept without its allocation cannot swallow later ones.

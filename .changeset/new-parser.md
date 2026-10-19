@@ -1,8 +1,8 @@
 ---
-'@apexdevtools/apex-log-parser': major
+'@apexdevtools/apex-log-parser': minor
 ---
 
-New parser, now the default. The old one is removed.
+**Breaking:** new parser, now the default. The old one is removed.
 
 **5–8× faster, 6× less memory vs v0.3** (8–100 MB logs). A 100 MB log: 182 ms and 141 MB, was 1,215 ms and 812 MB.
 
