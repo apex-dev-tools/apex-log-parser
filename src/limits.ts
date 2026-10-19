@@ -76,9 +76,13 @@ export interface NamespaceLimits {
 /** The log's governor limit usage, from its snapshots. */
 export interface GovernorLimits {
   readonly snapshots: readonly LimitSnapshot[];
-  /** Each namespace's last snapshot, combined. */
+  /**
+   * Each namespace's last snapshot, combined. Counts sum across namespaces, as if all share one
+   * pool: the log does not say which namespaces are certified packages with their own limits. So a
+   * metric can pass 100% while no namespace does; `byNamespace` gives each namespace's figure.
+   */
   readonly final: Limits;
-  /** The highest each metric of the combined figure reached at any point. */
+  /** The highest each metric of the combined figure reached at any point. Sums as `final` does. */
   readonly peak: Limits;
   /** Per namespace, in the order the log first reports them. */
   readonly byNamespace: ReadonlyMap<string, NamespaceLimits>;
@@ -111,6 +115,8 @@ export function emptyLimits(): Limits {
 const METRICS = Object.keys(emptyLimits()) as LimitMetric[];
 
 // The platform shares these across namespaces, so combining them takes the highest, not the sum.
+// Each other metric sums as the worst case: the log cannot tell a certified package, which has
+// its own limits, from a namespace that shares the org's (#112 item 6).
 const SHARED: ReadonlySet<LimitMetric> = new Set<LimitMetric>(['heapSize']);
 
 const LABELS = new Map<string, LimitMetric>([
