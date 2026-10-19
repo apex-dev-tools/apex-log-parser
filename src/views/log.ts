@@ -103,7 +103,7 @@ export interface ApexLog extends Rollups {
   readonly truncation: LogTruncation;
   /** The frames whose end is inferred, `endedBy` `'unwind'` or `'log-end'`, in the order they ended. */
   readonly unclosedFrames: readonly FrameEvent[];
-  /** In start time order. */
+  /** In start time order. One per type and summary, the first the log states; every skipped block. */
   readonly issues: readonly LogIssue[];
   /** The lines the parser could not read, one message each. */
   readonly parsingErrors: readonly string[];
