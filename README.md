@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
-[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://github.com/apex-dev-tools/apex-log-parser/blob/main/LICENSE)
 
 A fast, dependency-free parser for Salesforce Apex debug logs, in JavaScript and TypeScript. It
 turns a debug log into a typed call tree with execution timings, governor limits and SOQL/DML
@@ -284,11 +284,11 @@ globalThis.setImmediate ??= setImmediate;
 globalThis.structuredClone ??= (value) => deserialize(serialize(value));
 ```
 
-To upgrade from a version before 0.4, see the 0.4.0 entry in the [CHANGELOG](./CHANGELOG.md).
+To upgrade from a version before 0.4, see the 0.4.0 entry in the [CHANGELOG](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CHANGELOG.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, coding standards, and the PR process.
+See [CONTRIBUTING.md](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CONTRIBUTING.md) for development setup, coding standards, and the PR process.
 
 ## License
 
