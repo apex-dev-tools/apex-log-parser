@@ -101,7 +101,7 @@ export interface ApexLog extends Rollups {
   readonly isTruncated: boolean;
   /** The parts of the log the platform did not write. */
   readonly truncation: LogTruncation;
-  /** The frames whose end is inferred, `endedBy` `'unwind'` or `'logEnd'`, in the order they ended. */
+  /** The frames whose end is inferred, `endedBy` `'unwind'` or `'log-end'`, in the order they ended. */
   readonly unclosedFrames: readonly FrameEvent[];
   /** In start time order. */
   readonly issues: readonly LogIssue[];
