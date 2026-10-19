@@ -148,11 +148,16 @@ describe('typeIdAt', () => {
     }
   });
 
-  it.each(['', 'METHOD_ENTR', 'METHOD_ENTRYX', 'method_entry', 'NOT_A_TYPE'])(
-    'finds no type named %j',
-    (name) => {
-      const bytes = at(1, name);
-      expect(typeIdAt(bytes, 0, bytes.length)).toBe(-1);
-    },
-  );
+  it.each([
+    '',
+    'METHOD_ENTR',
+    'METHOD_ENTRYX',
+    'METHOD_ENTRZ',
+    'method_entry',
+    'NOT_A_TYPE',
+    'X'.repeat(60),
+  ])('finds no type named %j', (name) => {
+    const bytes = at(1, name);
+    expect(typeIdAt(bytes, 0, bytes.length)).toBe(-1);
+  });
 });

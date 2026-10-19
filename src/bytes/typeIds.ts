@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import type { EventType } from '../catalog/types.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import { hashBytes } from './hash.js';
 
@@ -33,9 +34,38 @@ for (const [id, name] of EVENT_TYPE_NAMES.entries()) {
   slots[slot] = id;
 }
 
+// The most frequent type of each name length in real logs, 90% of lines: skips the hash.
+const FREQUENT = [
+  'METHOD_ENTRY',
+  'METHOD_EXIT',
+  'STATEMENT_EXECUTE',
+  'HEAP_ALLOCATE',
+  'ENTERING_MANAGED_PKG',
+  'VARIABLE_ASSIGNMENT',
+  'CONSTRUCTOR_EXIT',
+] as const satisfies readonly EventType[];
+
+/** Per name length, the type id to compare first, or -1. */
+const firstByLength = new Int16Array(
+  Math.max(...EVENT_TYPE_NAMES.map((name) => name.length)) + 1,
+).fill(-1);
+for (const name of FREQUENT) {
+  const held = firstByLength[name.length]!;
+  if (held !== -1) throw new Error(`typeIds: ${name} has the length of ${EVENT_TYPE_NAMES[held]}`);
+  firstByLength[name.length] = EVENT_TYPE_NAMES.indexOf(name);
+}
+
 /** The type id of the event type named by bytes `start` to `end`, or -1 when no type has the name. */
 export function typeIdAt(bytes: Uint8Array, start: number, end: number): number {
   const len = end - start;
+  const first = len < firstByLength.length ? firstByLength[len]! : -1;
+  if (first >= 0) {
+    // first is a type id, so it indexes offsets
+    const at = offsets[first]!;
+    let k = 0;
+    while (k < len && pool[at + k] === bytes[start + k]) k++;
+    if (k === len) return first;
+  }
   for (let slot = slotOf(bytes, start, end); ; slot = (slot + 1) & MASK) {
     // slot is masked to the table
     const id = slots[slot]!;
