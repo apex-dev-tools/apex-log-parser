@@ -122,7 +122,7 @@ describe('ApexLog', () => {
       skipped?.exitType,
       skipped?.skippedBytes,
     ]).toEqual(['Skipped-Lines', 2, log.event(1), 'METHOD_EXIT', 1024]);
-    // An open frame ends at the latest time inside it.
+    // An unclosed frame ends at the latest time inside it.
     expect([end?.summary, end?.startTime, end?.event, end?.exitType, end?.skippedBytes]).toEqual([
       'Unexpected-End',
       4,
@@ -132,10 +132,10 @@ describe('ApexLog', () => {
     ]);
     expect(log.issues).toBe(log.issues);
     expect(Object.isFrozen(log.issues[0])).toBe(true);
-    expect(log.truncatedEvents).toEqual([log.event(2)]);
+    expect(log.unclosedFrames).toEqual([log.event(2)]);
   });
 
-  it('reports the parts the platform did not write as truncation, apart from open frames', () => {
+  it('reports the parts the platform did not write as truncation, apart from unclosed frames', () => {
     const log = logOf(
       `${at(1)}|STATEMENT_EXECUTE|[1]`,
       '*** Skipped 2,048 bytes of detailed log',
@@ -145,7 +145,7 @@ describe('ApexLog', () => {
       '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
       `${at(9)}|STATEMENT_EXECUTE|[4]`,
     );
-    expect([log.isTruncated, log.truncatedEvents]).toEqual([true, []]);
+    expect([log.isTruncated, log.unclosedFrames]).toEqual([true, []]);
     // A skipped block ends at the next frame; the maximum size at the next later event.
     expect(log.truncation).toEqual({
       regions: [

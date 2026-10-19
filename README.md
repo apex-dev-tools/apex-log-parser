@@ -94,6 +94,8 @@ Note the shape:
   `children` is always empty.
 - `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not events of their own. Each closes its
   matching entry and sets that event's `endTimestamp` and `duration`. A leaf's `endTimestamp` is its `startTimestamp`.
+- A frame's `endedBy` says whether the log states its end (`'exit'`, `'next'`) or the parser
+  inferred it (`'unwind'`, `'log-end'`). `log.unclosedFrames` lists the inferred ones.
 - `text` is null when the line states nothing, as for `EXECUTION_STARTED`. Use `text ?? type` for
   a label.
 
@@ -211,7 +213,7 @@ for (let id = 1; id <= log.eventCount; id++) {
 
 Everything comes from the package root: `parse`, `toBuffers`, `fromBuffers`, the event catalog
 (`EVENT_TYPES`, `eventType`), every type, and the const companions that go with them
-(`DEBUG_CATEGORY`, `EVENT_TYPE_NAMES`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
+(`DEBUG_CATEGORY`, `ENDED_BY`, `EVENT_TYPE_NAMES`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
 `SHAPE`, `TRUNCATION_KIND`). `DEBUG_CATEGORY_TOKEN` gives the header token of each debug category,
 and `LIMIT_METRICS` gives the unit of each limit metric:
 
@@ -221,7 +223,7 @@ import { eventType, parse, type ApexLog } from '@apexdevtools/apex-log-parser';
 
 `ApexLog` is the log. Besides its rollups and `children`, it has `event(id)`, `ofType()`, `at(ns)`,
 `columns`, `limits`, `namespaces`, `debugLevels`, `debugLevelSettings`, `userInfo`, `entryPoints`,
-`exceptions`, `truncation`, `truncatedEvents`, `issues` and `parsingErrors`.
+`exceptions`, `truncation`, `unclosedFrames`, `issues` and `parsingErrors`.
 
 The type declarations in the package document every field, event type and type, so your editor
 shows them.

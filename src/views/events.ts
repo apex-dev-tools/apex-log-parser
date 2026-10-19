@@ -7,7 +7,7 @@ import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
 import type { EventFields } from '../catalog/fields.js';
 import type { DebugCategory, EventType, EventTypeInfo, Kind, Level } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
-import { FLAG, isFrameRow } from '../engine/tables.js';
+import { ENDS_ON_NEXT, FLAG, isFrameRow } from '../engine/tables.js';
 import type { Store } from '../store/store.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
@@ -15,6 +15,17 @@ import type { AnyDetails, DetailsOf } from './details.js';
 import { EventLines } from './lines.js';
 import type { ObjectState, Variables } from './variables.js';
 import { LogVariables } from './variables.js';
+
+/** What ended a frame, and so whether its end is stated. */
+export const ENDED_BY = {
+  Exit: 'exit',
+  Next: 'next',
+  Unwind: 'unwind',
+  LogEnd: 'log-end',
+} as const;
+
+/** What ended a frame: `FrameEvent.endedBy`. */
+export type EndedBy = (typeof ENDED_BY)[keyof typeof ENDED_BY];
 
 /** A rollup: the own part, and the part with every descendant. */
 export interface SelfTotal {
@@ -61,8 +72,6 @@ interface EventBase extends Rollups {
   readonly lineNumber: number | 'EXTERNAL' | null;
   /** Null when the event is in no namespace. */
   readonly namespace: string | null;
-  /** The log does not close this frame. Always false for a leaf. */
-  readonly isTruncated: boolean;
   /**
    * What the event says, as its type's rule reads its line and continuation lines. Null when it
    * states nothing; a caller that needs a label can use `text ?? type`. Read from the log once.
@@ -109,6 +118,13 @@ interface EventBase extends Rollups {
 /** An event that spans time, from its line to the line that closes it, and holds other events. */
 export interface FrameEvent extends EventBase {
   readonly isFrame: true;
+  /**
+   * What ended the frame. Stated: `'exit'`, its own exit line; `'next'`, the next line or
+   * event, for a type with no exit line, as a package entry. Inferred: `'unwind'`, a later exit
+   * line not its own, as after an exception or a skipped block, at that line's time; `'log-end'`,
+   * the log stopped or a new execution started first, at the last time inside the frame.
+   */
+  readonly endedBy: EndedBy;
   /** In log order. */
   readonly children: readonly ApexEvent[];
 }
@@ -334,8 +350,12 @@ class EventView extends RollupView {
     return ns === NONE ? null : this.strings.text(ns);
   }
 
-  get isTruncated(): boolean {
-    return (this.store.flags[this.id]! & FLAG.truncated) !== 0;
+  get endedBy(): EndedBy {
+    // id is a row, so every column holds it
+    const flags = this.store.flags[this.id]!;
+    if (flags & FLAG.logEnd) return ENDED_BY.LogEnd;
+    if (flags & FLAG.unwind) return ENDED_BY.Unwind;
+    return ENDS_ON_NEXT[this.store.type[this.id]!] ? ENDED_BY.Next : ENDED_BY.Exit;
   }
 
   get text(): string | null {

@@ -97,12 +97,12 @@ export interface ApexLog extends Rollups {
   readonly size: number;
   /** Milliseconds since midnight, from the first event's line; null when it states none. */
   readonly startTime: number | null;
-  /** The platform did not write part of the log. A frame with no exit does not count. */
+  /** The platform did not write part of the log. An unclosed frame does not count. */
   readonly isTruncated: boolean;
   /** The parts of the log the platform did not write. */
   readonly truncation: LogTruncation;
-  /** The frames the log does not close, in the order they ended. */
-  readonly truncatedEvents: readonly FrameEvent[];
+  /** The frames whose end is inferred, `endedBy` `'unwind'` or `'logEnd'`, in the order they ended. */
+  readonly unclosedFrames: readonly FrameEvent[];
   /** In start time order. */
   readonly issues: readonly LogIssue[];
   /** The lines the parser could not read, one message each. */
@@ -160,7 +160,7 @@ class LogView extends RollupView implements ApexLog {
     frames?: Int32Array;
     issues?: readonly LogIssue[];
     truncation?: LogTruncation;
-    truncatedEvents?: readonly FrameEvent[];
+    unclosedFrames?: readonly FrameEvent[];
     parsingErrors?: readonly string[];
     limits?: GovernorLimits;
     namespaces?: readonly string[];
@@ -271,10 +271,10 @@ class LogView extends RollupView implements ApexLog {
     }));
   }
 
-  get truncatedEvents(): readonly FrameEvent[] {
+  get unclosedFrames(): readonly FrameEvent[] {
     // The engine lists frames only, and each one is a row.
-    return (this.memo.truncatedEvents ??= Object.freeze(
-      this.built.truncated.map((id) => this.all.event(id) as FrameEvent),
+    return (this.memo.unclosedFrames ??= Object.freeze(
+      this.built.unclosedFrames.map((id) => this.all.event(id) as FrameEvent),
     ));
   }
 

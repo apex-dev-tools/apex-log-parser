@@ -380,10 +380,10 @@ describe('the tree', () => {
     );
     expect(outline(log)).toEqual([
       'METHOD_ENTRY@1-4',
-      '  METHOD_ENTRY@2-4',
+      '  METHOD_ENTRY@2-4~',
       '    EXCEPTION_THROWN@3',
       'METHOD_ENTRY@5-7',
-      '  METHOD_ENTRY@6-7',
+      '  METHOD_ENTRY@6-7~',
     ]);
     expect(log.issues).toEqual([]);
   });
@@ -394,7 +394,7 @@ describe('the tree', () => {
       `${at(2)}|STATEMENT_EXECUTE|[1]`,
       `${at(3)}|ENTERING_MANAGED_PKG|ns`,
     );
-    expect(outline(log)).toEqual(['ENTERING_MANAGED_PKG@1-3', 'STATEMENT_EXECUTE@2']);
+    expect(outline(log)).toEqual(['ENTERING_MANAGED_PKG@1-3!', 'STATEMENT_EXECUTE@2']);
     expect(log.endTimestamp).toBe(3);
   });
 

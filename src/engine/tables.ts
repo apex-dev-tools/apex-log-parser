@@ -12,10 +12,12 @@ import { RULE } from './namespaces.js';
 
 /** Per-event bits in `Store.flags`. */
 export const FLAG = {
-  /** The log does not close this frame. */
-  truncated: 1,
+  /** The log stopped, or a new execution started, before any line ended this frame. */
+  logEnd: 1,
   /** A frame type that this event's line made a leaf, as a VF call with no method. */
   notEntry: 2,
+  /** A later exit line, not its own, ended this frame, as when an exception unwinds the stack. */
+  unwind: 4,
 } as const;
 
 /** The type id of the log itself, row 0. One past the event types. */
@@ -48,6 +50,8 @@ export const IS_EXIT: Uint8Array = new Uint8Array(TYPES);
 export const EXIT_LINE: Uint8Array = new Uint8Array(TYPES);
 /** A frame the next line closes. */
 export const NEXT_LINE_EXITS: Uint8Array = new Uint8Array(TYPES);
+/** A frame type with no exit line: the next line or event ends it. */
+export const ENDS_ON_NEXT: Uint8Array = new Uint8Array(TYPES);
 /** A frame an exit line or the next line closes: one that goes on the open-frame stack. */
 export const HAS_EXITS: Uint8Array = new Uint8Array(TYPES);
 export const ACCEPTS_TEXT: Uint8Array = new Uint8Array(TYPES);
@@ -85,6 +89,7 @@ for (const info of EVENT_TYPES) {
   IS_EXIT[t] = info.shape === 'exit' || g.closes === 'next-line' ? 1 : 0;
   EXIT_LINE[t] = info.shape === 'exit' ? 1 : 0;
   NEXT_LINE_EXITS[t] = g.closes === 'next-line' ? 1 : 0;
+  ENDS_ON_NEXT[t] = g.closes === 'next-line' || g.closes === 'next-event' ? 1 : 0;
   HAS_EXITS[t] = g.closes === 'exit' || g.closes === 'next-line' ? 1 : 0;
   ACCEPTS_TEXT[t] = g.acceptsText ? 1 : 0;
   DISCONTINUITY[t] = g.discontinuity ? 1 : 0;

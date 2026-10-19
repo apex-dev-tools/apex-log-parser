@@ -58,9 +58,15 @@ from the rows after it, such as whether a throw was caught. Not exit details.
 The parser's reading of a throw from the row after it: a `FATAL_ERROR` follows, or another row
 does. The log does not state it.
 
-**Unterminated frame**:
-A frame that the log does not close, because the log ends or the platform dropped its exit line.
-_Avoid_: truncated event (truncation is a different thing, see below)
+**Unclosed frame**:
+A frame whose end is inferred: a later exit line not its own unwinds it, as after an exception or
+a skipped block, or the log stops first. A type with no exit line, which the next line ends, is not
+one.
+_Avoid_: unterminated frame, truncated event (truncation is a different thing, see below)
+
+**Unwind**:
+To end open frames at an exit line that is not their own, as the frame it closes is further out
+or an exception passed. Each one ends at that line.
 
 **Id**:
 An event's position in log order. Unique and the same for the same log text, but valid only within
@@ -184,4 +190,4 @@ A line the parser could not read.
 
 **Truncation**:
 Content the platform did not write: a skipped block (`*** Skipped N bytes`) or the end of a log that
-hit the maximum size. Not an unterminated frame.
+hit the maximum size. Not an unclosed frame.
