@@ -87,10 +87,15 @@ describe('namespaces', () => {
       '07:09:40.0 (10)|CONSTRUCTOR_EXIT|[1]|01p000000000AAA|<init>()|ns.OuterClass',
       '07:09:40.0 (11)|METHOD_ENTRY|[1]|01p000000000AAA|ns.OuterClass.myMethod(ns.OuterClass.Config)',
       '07:09:40.0 (12)|METHOD_EXIT|[1]|01p000000000AAA|ns.OuterClass.myMethod(ns.OuterClass.Config)',
+      '07:09:40.0 (12)|METHOD_ENTRY|[1]|01p000000000AAA|ns3.Other.Other()',
+      '07:09:40.0 (12)|METHOD_EXIT|[1]|ns3.Other',
       '07:09:40.0 (13)|METHOD_ENTRY|[1]|01p000000000AAA|ns2.StaticOuter.StaticOuter()',
       '07:09:40.0 (14)|METHOD_EXIT|[1]|ns2.StaticOuter',
       '07:09:40.0 (15)|METHOD_ENTRY|[1]|01p000000000AAA|ns2.StaticOuter.staticMethod(ns2.StaticOuter.Config)',
       '07:09:40.0 (16)|METHOD_EXIT|[1]|01p000000000AAA|ns2.StaticOuter.staticMethod(ns2.StaticOuter.Config)',
+      // The same length as ns2, which the line before left as the last stated prefix.
+      '07:09:40.0 (16)|METHOD_ENTRY|[1]|01p000000000AAA|ns3.Other.run()',
+      '07:09:40.0 (16)|METHOD_EXIT|[1]|01p000000000AAA|ns3.Other.run()',
       '07:09:40.0 (17)|CONSTRUCTOR_ENTRY|[1]|01p000000000AAA|<init>()|OuterClass.InnerClass',
       '07:09:40.0 (18)|CONSTRUCTOR_EXIT|[1]|01p000000000AAA|<init>()|OuterClass.InnerClass',
       '07:09:40.0 (19)|METHOD_ENTRY|[1]|01p000000000AAA|OuterClass.InnerClass.innerMethod(OuterClass.Config)',
@@ -111,7 +116,7 @@ describe('namespaces', () => {
       '07:09:40.0 (32)|EXECUTION_FINISHED',
     ].join('\n');
     const parsed = parse(log);
-    expect(parsed.namespaces).toEqual(['ns', 'ns2']);
+    expect(parsed.namespaces).toEqual(['ns', 'ns3', 'ns2']);
     expect(outline(parsed)).toEqual([
       'null [null]',
       '  execute_anonymous_apex [null]',
@@ -120,8 +125,10 @@ describe('namespaces', () => {
       '    ns.OuterClass.OuterClass() [ns]',
       '    ns.OuterClass() [ns]',
       '    ns.OuterClass.myMethod(ns.OuterClass.Config) [ns]',
+      '    ns3.Other.Other() [ns3]',
       '    ns2.StaticOuter.StaticOuter() [ns2]',
       '    ns2.StaticOuter.staticMethod(ns2.StaticOuter.Config) [ns2]',
+      '    ns3.Other.run() [ns3]',
       '    OuterClass.InnerClass() [null]',
       '    OuterClass.InnerClass.innerMethod(OuterClass.Config) [null]',
       '    OuterClass.OuterClass() [null]',
