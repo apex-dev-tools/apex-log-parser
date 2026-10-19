@@ -117,19 +117,19 @@ describe('ApexLog', () => {
     const [skipped, end] = log.issues;
     expect([
       skipped?.summary,
-      skipped?.startTime,
+      skipped?.startTimestamp,
       skipped?.event,
       skipped?.exitType,
       skipped?.skippedBytes,
     ]).toEqual(['Skipped-Lines', 2, log.event(1), 'METHOD_EXIT', 1024]);
     // An unclosed frame ends at the latest time inside it.
-    expect([end?.summary, end?.startTime, end?.event, end?.exitType, end?.skippedBytes]).toEqual([
-      'Unexpected-End',
-      4,
-      log.event(2),
-      null,
-      null,
-    ]);
+    expect([
+      end?.summary,
+      end?.startTimestamp,
+      end?.event,
+      end?.exitType,
+      end?.skippedBytes,
+    ]).toEqual(['Unexpected-End', 4, log.event(2), null, null]);
     expect(log.issues).toBe(log.issues);
     expect(Object.isFrozen(log.issues[0])).toBe(true);
     expect(log.unclosedFrames).toEqual([log.event(2)]);
@@ -151,16 +151,16 @@ describe('ApexLog', () => {
       regions: [
         {
           kind: 'skipped-lines',
-          startTime: 1,
-          endTime: 3,
+          startTimestamp: 1,
+          endTimestamp: 3,
           event: log.event(1),
           exitType: null,
           skippedBytes: 2048,
         },
         {
           kind: 'max-size',
-          startTime: 4,
-          endTime: 9,
+          startTimestamp: 4,
+          endTimestamp: 9,
           event: log.event(3),
           exitType: 'METHOD_EXIT',
           skippedBytes: null,

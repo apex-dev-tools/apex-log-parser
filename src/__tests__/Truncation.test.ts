@@ -43,9 +43,9 @@ describe('truncation', () => {
 
     const region = parse(log).truncation.regions[0];
 
-    expect(region?.startTime).toBe(200);
+    expect(region?.startTimestamp).toBe(200);
     // The following METHOD_ENTRY (800), not the HEAP_ALLOCATE detail line (500).
-    expect(region?.endTime).toBe(800);
+    expect(region?.endTimestamp).toBe(800);
     expect(region?.skippedBytes).toBe(500);
   });
 
@@ -251,7 +251,7 @@ describe('truncation', () => {
     );
     expect(outline(log)).toEqual(['METHOD_ENTRY@1-2!', '  STATEMENT_EXECUTE@2', 'FATAL_ERROR@3']);
     // Replaced once the frame ends, so it follows the Unexpected-End issue at the same time.
-    expect(log.issues.map((i) => [i.summary, i.startTime, i.event?.id])).toEqual([
+    expect(log.issues.map((i) => [i.summary, i.startTimestamp, i.event?.id])).toEqual([
       ['Unexpected-End', 2, 1],
       ['Max-Size-reached', 2, 1],
       ['System.LimitException', 3, 3],
@@ -266,7 +266,7 @@ describe('truncation', () => {
       `${at(5)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(9)}|STATEMENT_EXECUTE|[3]`,
     );
-    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
       ['max-size', 2, 5],
     ]);
   });
@@ -275,10 +275,10 @@ describe('truncation', () => {
     const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
     const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, cut, `${at(9)}|STATEMENT_EXECUTE|[3]`);
     expect(log.parsingErrors).toEqual([`Invalid line number: ${cut}`]);
-    expect(log.issues.map((i) => [i.summary, i.event?.id, i.startTime])).toEqual([
+    expect(log.issues.map((i) => [i.summary, i.event?.id, i.startTimestamp])).toEqual([
       ['Max-Size-reached', 2, 2],
     ]);
-    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
       ['max-size', 2, 9],
     ]);
   });

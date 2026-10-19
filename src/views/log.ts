@@ -51,9 +51,9 @@ export interface LogIssue extends LogPlace {
   readonly type: IssueType;
   readonly summary: string;
   readonly description: string;
-  readonly startTime: number;
-  /** Null when the issue is at one point in time. */
-  readonly endTime: number | null;
+  readonly startTimestamp: number;
+  /** Null when the issue is at one point in time. For truncation, inferred as the region's end. */
+  readonly endTimestamp: number | null;
   /** The bytes the platform states it dropped, for a skipped block; else null. */
   readonly skippedBytes: number | null;
 }
@@ -61,9 +61,12 @@ export interface LogIssue extends LogPlace {
 /** A part of the log the platform did not write. Times are nanoseconds. */
 export interface LogTruncationRegion extends LogPlace {
   readonly kind: TruncationKind;
-  readonly startTime: number;
-  /** Where the log can be trusted again. */
-  readonly endTime: number;
+  readonly startTimestamp: number;
+  /**
+   * Where the log can be trusted again. Inferred, as the log states no end: the next frame after a
+   * skipped block, the next event after the maximum size, else the log's end.
+   */
+  readonly endTimestamp: number;
   /** The bytes the platform states it dropped, for a skipped block; else null. */
   readonly skippedBytes: number | null;
 }
@@ -264,8 +267,8 @@ class LogView extends RollupView implements ApexLog {
         this.built.truncation.regions.map((region) =>
           Object.freeze({
             kind: region.kind,
-            startTime: region.startTime,
-            endTime: region.endTime,
+            startTimestamp: region.startTime,
+            endTimestamp: region.endTime,
             ...this.place(region),
             skippedBytes: region.skippedBytes,
           }),
@@ -289,8 +292,8 @@ class LogView extends RollupView implements ApexLog {
           type: issue.type,
           summary: issue.summary,
           description: issue.description,
-          startTime: issue.startTime,
-          endTime: issue.endTime,
+          startTimestamp: issue.startTime,
+          endTimestamp: issue.endTime,
           ...this.place(issue),
           skippedBytes: issue.skippedBytes,
         }),

@@ -349,7 +349,7 @@ describe('the end of the log', () => {
     );
     expect(log.children[0]?.endTimestamp).toBe(1000);
     expect(log.issues.map((i) => i.summary)).toEqual(['Max-Size-reached', 'Unexpected-End']);
-    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
       ['max-size', 1000, 1000],
     ]);
   });
@@ -363,7 +363,7 @@ describe('the tree', () => {
       `${at(3)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
     );
     expect(outline(log)).toEqual(['METHOD_ENTRY@1-3', '  CONSTRUCTOR_EXIT@2']);
-    expect(log.issues.map((i) => [i.summary, i.startTime, i.event?.id])).toEqual([
+    expect(log.issues.map((i) => [i.summary, i.startTimestamp, i.event?.id])).toEqual([
       ['Unexpected-Exit', 2, 2],
     ]);
   });
