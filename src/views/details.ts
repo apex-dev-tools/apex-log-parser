@@ -32,7 +32,7 @@ export interface ExplainPlan {
 /** What started a flow interviews frame. */
 export const FLOW_TYPE = {
   Flow: 'flow',
-  ProcessBuilder: 'processBuilder',
+  ProcessBuilder: 'process-builder',
 } as const;
 
 /** What started a flow interviews frame: `details.flowType`. */
@@ -40,7 +40,7 @@ export type FlowType = (typeof FLOW_TYPE)[keyof typeof FLOW_TYPE];
 
 const FLOW_OF_UNIT = new Map<string, FlowType>([
   ['Flow', 'flow'],
-  ['Workflow', 'processBuilder'],
+  ['Workflow', 'process-builder'],
 ]);
 
 /** The flow type a code unit of `unit` type starts; null for any other unit, or none. */
@@ -63,7 +63,7 @@ export interface EventDetails {
   readonly DML_BEGIN: { readonly operation: string | null; readonly sObjectType: string | null };
   /** The kind of code, as `Flow` or `Validation`, from the unit's name. */
   readonly CODE_UNIT_STARTED: { readonly codeUnitType: string | null };
-  /** What started the interviews, from the code unit above them: `Flow` or nested is `flow`, `Workflow` is `processBuilder`. Null for any other unit. */
+  /** What started the interviews, from the code unit above them: `Flow` or nested is `flow`, `Workflow` is `process-builder`. Null for any other unit. */
   readonly FLOW_START_INTERVIEWS_BEGIN: { readonly flowType: FlowType | null };
   /** Bytes, as the line states them: positive for a deallocation. */
   readonly HEAP_ALLOCATE: { readonly bytes: number | null };
