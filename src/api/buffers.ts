@@ -10,7 +10,7 @@ import { apexLog, buildOfLog } from '../views/log.js';
 
 const FORMAT = 'apex-log-buffers';
 /** Goes up on any change to `BuiltData`'s layout. */
-const VERSION = 1;
+const VERSION = 3;
 
 /**
  * A parsed log as data that `postMessage` carries, from `toBuffers`, for `fromBuffers`. Only the

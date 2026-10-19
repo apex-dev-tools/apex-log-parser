@@ -10,6 +10,7 @@ import type {
   DebugCategoryToken,
   DebugLevelSetting,
   DetailsOf,
+  EndedBy,
   EventDetails,
   EventFields,
   EventOf,
@@ -65,6 +66,7 @@ import * as node from '../node.js';
 const PUBLIC_EXPORTS = [
   'DEBUG_CATEGORY',
   'DEBUG_CATEGORY_TOKEN',
+  'ENDED_BY',
   'EVENT_TYPE_NAMES',
   'EVENT_TYPES',
   'eventType',
@@ -91,6 +93,7 @@ interface PublicTypeSurface {
   debugCategoryToken: DebugCategoryToken;
   debugLevelSetting: DebugLevelSetting;
   detailsOf: DetailsOf<'SOQL_EXECUTE_BEGIN'>;
+  endedBy: EndedBy;
   eventDetails: EventDetails;
   eventFields: EventFields;
   eventOf: EventOf<'METHOD_ENTRY'>;

@@ -16,7 +16,17 @@ import { typeIdAt } from '../bytes/typeIds.js';
 import { GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
 import type { LimitMetric, LimitSnapshot } from '../limits.js';
 import { runningTotal } from '../limits.js';
-import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, Store, TOTAL } from '../store/store.js';
+import {
+  COUNTER,
+  COUNTERS,
+  EXTERNAL_LINE,
+  HEAP,
+  NO_LINE,
+  NONE,
+  SELF,
+  Store,
+  TOTAL,
+} from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
 import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
@@ -38,6 +48,7 @@ import {
   HAS_EXITS,
   HEAP_FIELD,
   HEAP_SIGN,
+  HEAP_SLOT,
   HOOK,
   IS_EXIT,
   IS_FRAME,
@@ -98,8 +109,10 @@ export interface Built {
   readonly strings: StringTable;
   readonly issues: Issues;
   readonly parsingErrors: readonly string[];
-  /** The frames the log does not close, in the order they ended. */
-  readonly truncated: readonly number[];
+  /** The frames whose end is inferred, in the order they ended. */
+  readonly unclosedFrames: readonly number[];
+  /** Per `COUNTER`, then `HEAP_SLOT`: 1 when the log states a line that gives the figure. */
+  readonly seen: Uint8Array;
   /** The string ids of the namespaces the log states, in first-stated order. */
   readonly namespaces: readonly number[];
   /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
@@ -129,7 +142,8 @@ export class LogBuilder {
   private readonly store: Store;
   private readonly strings: StringTable;
   private readonly markers: LogMarkers;
-  private readonly truncated: number[] = [];
+  private readonly unclosedFrames: number[] = [];
+  private readonly seen: Uint8Array = new Uint8Array(COUNTERS + 1);
   private readonly namespaces: Namespaces;
   // The open frames, innermost last: each one's id, and its last child's id or `NONE`.
   private readonly frameIds: number[] = [];
@@ -291,7 +305,8 @@ export class LogBuilder {
       strings: this.strings,
       issues,
       parsingErrors,
-      truncated: this.truncated,
+      unclosedFrames: this.unclosedFrames,
+      seen: this.seen,
       namespaces: this.namespaces.order,
       snapshots,
       size: len,
@@ -320,7 +335,7 @@ export class LogBuilder {
       const frame = ids[top]!;
       const onNextLine = NEXT_LINE_EXITS[store.type[frame]!] === 1;
       if (!this.hasNext) {
-        this.closeUnterminated();
+        this.endAtLogEnd(false);
         continue;
       }
       const next = this.nextType;
@@ -331,23 +346,22 @@ export class LogBuilder {
       const exitRows = this.nextRows;
       if (!onNextLine && EXIT_LINE[next] && this.endMethod(frame)) {
         // Also when the line unwinds this frame to close one below it.
-        this.endedBy(frame, next, exitNamespace, exitRows);
+        this.takeExit(frame, next, exitNamespace, exitRows);
         this.pop();
       } else if (onNextLine && (IS_EXIT[next] || nextHasExits)) {
         store.exitStamp[frame] = this.nextTimestamp;
-        this.endedBy(frame, next, exitNamespace, exitRows);
+        this.takeExit(frame, next, exitNamespace, exitRows);
         this.pop();
       } else if (
         this.discontinuity &&
         this.maxSizeTimestamp &&
         this.nextTimestamp > this.maxSizeTimestamp
       ) {
-        store.flags[frame]! |= FLAG.truncated;
-        this.closeUnterminated();
+        this.endAtLogEnd(true);
       } else if (next === EXECUTION_STARTED) {
         // An execution is always top level, so every frame still open lost its exit.
         this.discontinuity = false;
-        this.closeUnterminated();
+        this.endAtLogEnd(false);
       } else {
         const child = this.takeChild(frame, store.depth[frame]! + 1, top);
         // child was added by take, so it has a type
@@ -373,7 +387,7 @@ export class LogBuilder {
   }
 
   /** What a frame takes from the line that closes or unwinds it. */
-  private endedBy(frame: number, exitType: number, exitNamespace: number, exitRows: number): void {
+  private takeExit(frame: number, exitType: number, exitNamespace: number, exitRows: number): void {
     const store = this.store;
     // frame was added by take, so it has a type
     const type = store.type[frame]!;
@@ -383,7 +397,9 @@ export class LogBuilder {
     const rowsAt = ROWS_FROM_EXIT[type]!;
     if (rowsAt < 0) return;
     // An exit of another kind states none of these rows.
-    const rows = ROWS_AT[exitType] === rowsAt ? exitRows : 0;
+    const stated = ROWS_AT[exitType] === rowsAt;
+    if (stated) this.seen[rowsAt] = 1;
+    const rows = stated ? exitRows : 0;
     if (!rows && store.countSlot[frame] === NONE) return;
     const at = store.countsOf(frame) + rowsAt * 2;
     store.counts[at + SELF] = rows;
@@ -391,7 +407,7 @@ export class LogBuilder {
   }
 
   /** The log stops inside the innermost frame, or a new execution or the maximum size ends it. */
-  private closeUnterminated(): void {
+  private endAtLogEnd(atMaxSize: boolean): void {
     const store = this.store;
     const top = this.frameIds.length - 1;
     // only called while a frame is open
@@ -406,12 +422,19 @@ export class LogBuilder {
           : store.exitStamp[last]!;
     const exitStamp = Math.max(this.lastTimestamp, lastEnd);
     store.exitStamp[id] = exitStamp;
-    const atMaxSize = (store.flags[id]! & FLAG.truncated) !== 0;
     this.markers.unexpectedEnd(exitStamp, id, atMaxSize);
     if (atMaxSize) this.maxSizeTimestamp = exitStamp;
-    store.flags[id]! |= FLAG.truncated;
-    this.truncated.push(id);
+    store.flags[id]! |= FLAG.logEnd;
+    this.unclosedFrames.push(id);
     this.pop();
+  }
+
+  /** The next line ends `frame`, though it is not `frame`'s own exit line. */
+  private unwound(frame: number): true {
+    // frame was added by take, so every column holds it
+    this.store.flags[frame]! |= FLAG.unwind;
+    this.unclosedFrames.push(frame);
+    return true;
   }
 
   /** True when the next line closes this frame, or one below it. */
@@ -423,8 +446,8 @@ export class LogBuilder {
       this.fold(frame);
       return true;
     }
-    if (this.discontinuity) return true;
-    for (const below of this.frameIds) if (this.matches(below)) return true;
+    if (this.discontinuity) return this.unwound(frame);
+    for (const below of this.frameIds) if (this.matches(below)) return this.unwound(frame);
     // The exit becomes a child, the next row.
     this.markers.issues.add(this.nextTimestamp, store.count, ISSUE.unexpectedExit);
     return false;
@@ -519,6 +542,9 @@ export class LogBuilder {
     const count = COUNT_AT[type]!;
     const rowsAt = ROWS_AT[type]!;
     const rows = rowsAt < 0 ? 0 : this.nextRows;
+    if (count >= 0) this.seen[count] = 1;
+    if (rowsAt >= 0) this.seen[rowsAt] = 1;
+    if (HEAP_SIGN[type]) this.seen[HEAP_SLOT] = 1;
     if (count >= 0 || rows) {
       const at = store.countsOf(id);
       const counts = store.counts;
@@ -534,7 +560,10 @@ export class LogBuilder {
       heap[at + HEAP.grossSelf] = heap[at + HEAP.grossTotal] = bytes > 0 ? bytes : 0;
       heap[at + HEAP.peak] = this.runningHeap;
     }
-    if (this.nextFlowTotal) this.flowTotals.set(id, this.nextFlowTotal);
+    if (this.nextFlowTotal) {
+      this.seen[this.nextFlowTotal.counter] = 1;
+      this.flowTotals.set(id, this.nextFlowTotal);
+    }
   }
 
   /** Takes the next event, a matched exit line, into the frame it closes: it gets no row. */
@@ -606,8 +635,11 @@ export class LogBuilder {
     const store = this.store;
     const id = this.lastId;
     // id is a row once lastType is a type
-    if (this.lastType === ENTERING_MANAGED_PKG && Number.isNaN(store.exitStamp[id]!)) {
+    // A merged run's end is the last entry's start already, and no event follows either.
+    if (this.lastType === ENTERING_MANAGED_PKG) {
       store.exitStamp[id] = this.lastAt;
+      store.flags[id]! |= FLAG.logEnd;
+      this.unclosedFrames.push(id);
     }
   }
 
