@@ -411,7 +411,10 @@ export interface EventTypeInfo {
   readonly kind: Kind;
   /** The Salesforce debug log category, which indexes `ApexLog.debugLevels`. */
   readonly debugCategory: DebugCategory;
-  /** The debug level at which Salesforce writes this type. */
+  /**
+   * The debug level at which Salesforce writes this type. A `USER_DEBUG` line states its own
+   * level, which the event's `debugLevel` gives.
+   */
   readonly debugLevel: Level;
   /**
    * False when the event's own elapsed time, `duration.self`, uses no application server CPU: time
