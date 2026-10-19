@@ -46,6 +46,7 @@ export type {
   ExplainPlan,
   FlowType,
 } from '../views/details.js';
+export { FLOW_TYPE } from '../views/details.js';
 export type {
   ApexEvent,
   EndedBy,

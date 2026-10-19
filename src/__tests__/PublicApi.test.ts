@@ -71,6 +71,7 @@ const PUBLIC_EXPORTS = [
   'EVENT_TYPE_NAMES',
   'EVENT_TYPES',
   'eventType',
+  'FLOW_TYPE',
   'fromBuffers',
   'ISSUE_TYPE',
   'KIND',

@@ -30,11 +30,17 @@ export interface ExplainPlan {
 }
 
 /** What started a flow interviews frame. */
-export type FlowType = 'flow' | 'processBuilder';
+export const FLOW_TYPE = {
+  Flow: 'flow',
+  ProcessBuilder: 'processBuilder',
+} as const;
+
+/** What started a flow interviews frame: `details.flowType`. */
+export type FlowType = (typeof FLOW_TYPE)[keyof typeof FLOW_TYPE];
 
 const FLOW_OF_UNIT = new Map<string, FlowType>([
-  ['Flow', 'flow'],
-  ['Workflow', 'processBuilder'],
+  ['Flow', FLOW_TYPE.Flow],
+  ['Workflow', FLOW_TYPE.ProcessBuilder],
 ]);
 
 /** The flow type a code unit of `unit` type starts; null for any other unit, or none. */
