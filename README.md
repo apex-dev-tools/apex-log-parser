@@ -5,8 +5,9 @@
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
 
-Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor
-limits and SOQL/DML counts. In Node and in the browser.
+A fast, dependency-free parser for Salesforce Apex debug logs, in JavaScript and TypeScript. It
+turns a debug log into a typed call tree with execution timings, governor limits and SOQL/DML
+counts, in Node.js and the browser.
 
 It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
 VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).

@@ -1,7 +1,7 @@
 {
   "name": "@apexdevtools/apex-log-parser",
   "version": "0.3.0",
-  "description": "Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor limits and SOQL/DML counts. No dependencies.",
+  "description": "Salesforce Apex debug log parser for JavaScript and TypeScript. Turns a debug log into a typed call tree with timings, governor limits and SOQL/DML counts. Node.js and browser, no dependencies.",
   "type": "module",
   "sideEffects": ["./dist/worker-node.js", "./dist/worker-browser.js"],
   "exports": {
@@ -84,10 +84,14 @@
     "sfdc",
     "debug-log",
     "debug-logs",
+    "apex-debug-log",
+    "salesforce-debug-log",
     "apex-log",
     "apex-logs",
     "parser",
     "log-parser",
+    "debug-log-parser",
+    "apex-log-parser",
     "soql",
     "dml",
     "governor-limits",
@@ -95,7 +99,10 @@
     "call-tree",
     "performance",
     "developer-tools",
-    "typescript"
+    "typescript",
+    "javascript",
+    "nodejs",
+    "browser"
   ],
   "pnpm": {
     "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"],
