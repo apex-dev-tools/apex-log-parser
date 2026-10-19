@@ -17,6 +17,7 @@ import type {
   EventType,
   EventTypeInfo,
   ExplainPlan,
+  FlowType,
   FrameEvent,
   GovernorLimits,
   IssueType,
@@ -100,6 +101,7 @@ interface PublicTypeSurface {
   eventType: EventType;
   eventTypeInfo: EventTypeInfo;
   explainPlan: ExplainPlan;
+  flowType: FlowType;
   frameEvent: FrameEvent;
   governorLimits: GovernorLimits;
   issueType: IssueType;

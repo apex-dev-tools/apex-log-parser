@@ -39,7 +39,13 @@ export type {
   RunningUsage,
 } from '../limits.js';
 export { LIMIT_METRICS, LIMIT_UNIT } from '../limits.js';
-export type { AnyDetails, DetailsOf, EventDetails, ExplainPlan } from '../views/details.js';
+export type {
+  AnyDetails,
+  DetailsOf,
+  EventDetails,
+  ExplainPlan,
+  FlowType,
+} from '../views/details.js';
 export type {
   ApexEvent,
   EndedBy,
