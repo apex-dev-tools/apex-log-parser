@@ -283,11 +283,12 @@ describe('truncation', () => {
     ]);
   });
 
+  // Truncation keeps method, constructor, code unit, query and callout pairs, but not system ones.
   it('marks a frame whose exit a skipped block hid as unwound by the exit further out', () => {
     const log = logOf(
       `${at(100)}|EXECUTION_STARTED`,
       `${at(200)}|METHOD_ENTRY|[10]|01p000000000AAA|MyClass.outer()`,
-      `${at(300)}|METHOD_ENTRY|[20]|01p000000000AAA|MyClass.inner()`,
+      `${at(300)}|SYSTEM_METHOD_ENTRY|[20]|System.debug(ANY)`,
       '*** Skipped 1,000 bytes of detailed log',
       `${at(900)}|METHOD_EXIT|[10]|01p000000000AAA|MyClass.outer()`,
       `${at(1000)}|EXECUTION_FINISHED`,
@@ -295,9 +296,9 @@ describe('truncation', () => {
     expect(outline(log)).toEqual([
       'EXECUTION_STARTED@100-1000',
       '  METHOD_ENTRY@200-900',
-      '    METHOD_ENTRY@300-900~',
+      '    SYSTEM_METHOD_ENTRY@300-900~',
     ]);
-    expect(log.unclosedFrames.map((event) => event.text)).toEqual(['MyClass.inner()']);
+    expect(log.unclosedFrames.map((event) => event.text)).toEqual(['System.debug(ANY)']);
   });
 
   it('marks the frames a fatal error leaves as unwound by the code unit that ends', () => {
