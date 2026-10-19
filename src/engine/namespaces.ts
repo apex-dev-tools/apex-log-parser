@@ -10,6 +10,7 @@ import {
   indexOfByte,
   LPAREN,
   lastIndexOfByte,
+  PIPE,
   RPAREN,
   SLASH,
   spellsAscii,
@@ -149,15 +150,17 @@ export class Namespaces {
   private method(fields: ByteFields, signature: number): number {
     const s = fields.startOf(signature);
     if (s < 0) return UNSTATED;
-    const e = fields.endOf(signature);
-    if (startsWithAscii(this.bytes, s, e, TYPE_FOR_NAME)) return UNSTATED;
+    // Not endOf, which scans the whole field; the loop stops at '|'.
+    const lineEnd = fields.lineEnd;
+    if (startsWithAscii(this.bytes, s, lineEnd, TYPE_FOR_NAME)) return UNSTATED;
     // One pass: the first '(', the first '.' anywhere, and the dots before the '('.
     const bytes = this.bytes;
     let bracket = -1;
     let dot = -1;
     let dotsBefore = 0;
-    for (let i = s; i < e && (bracket < 0 || dot < 0); i++) {
+    for (let i = s; i < lineEnd && (bracket < 0 || dot < 0); i++) {
       const c = bytes[i];
+      if (c === PIPE) break;
       if (c === LPAREN) bracket = i;
       else if (c === DOT) {
         if (dot < 0) dot = i;

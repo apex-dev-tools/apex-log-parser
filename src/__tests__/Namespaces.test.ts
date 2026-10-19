@@ -112,6 +112,8 @@ describe('namespaces', () => {
       '07:09:40.0 (30)|METHOD_EXIT|[1]|01p000000000AAA|StaticOuter.staticMethod(StaticOuter.Config)',
       '07:09:40.0 (30)|METHOD_ENTRY|[169]||Database.QueryLocatorIterator.hasNext()',
       '07:09:40.0 (31)|METHOD_EXIT|[169]||Database.QueryLocatorIterator.hasNext()',
+      // The '(' is in the next field, so the signature states no namespace.
+      '07:09:40.0 (31)|METHOD_ENTRY|[1]|01p000000000AAA|ns.OuterClass|run()',
       '07:09:40.0 (31)|CODE_UNIT_FINISHED|execute_anonymous_apex',
       '07:09:40.0 (32)|EXECUTION_FINISHED',
     ].join('\n');
@@ -137,6 +139,7 @@ describe('namespaces', () => {
       '    StaticOuter.StaticOuter() [null]',
       '    StaticOuter.staticMethod(StaticOuter.Config) [null]',
       '    Database.QueryLocatorIterator.hasNext() [null]',
+      '    ns.OuterClass [null]',
     ]);
   });
 
