@@ -42,12 +42,14 @@ export { LIMIT_METRICS, LIMIT_UNIT } from '../limits.js';
 export type { AnyDetails, DetailsOf, EventDetails, ExplainPlan } from '../views/details.js';
 export type {
   ApexEvent,
+  EndedBy,
   EventOf,
   FrameEvent,
   LeafEvent,
   Rollups,
   SelfTotal,
 } from '../views/events.js';
+export { ENDED_BY } from '../views/events.js';
 export type {
   ApexLog,
   Columns,

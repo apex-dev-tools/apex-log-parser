@@ -105,7 +105,7 @@ export class LogMarkers {
     if (issue) this.pendingMaxSize.push(issue);
   }
 
-  /** The log does not close frame `id`, which it ends at `exitStamp` (nanoseconds). */
+  /** The log stopped inside frame `id`, which it ends at `exitStamp` (nanoseconds). */
   unexpectedEnd(exitStamp: number, id: number, atMaxSize: boolean): void {
     this.issues.add(exitStamp, id, ISSUE.unexpectedEnd);
     if (!atMaxSize) return;

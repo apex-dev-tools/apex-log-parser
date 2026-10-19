@@ -39,7 +39,7 @@ describe('a text that holds more than one log', () => {
       expect.objectContaining({
         summary: 'Multiple-Logs',
         type: 'error',
-        startTime: 140,
+        startTimestamp: 140,
         event: log.event(2),
         exitType: 'EXECUTION_FINISHED',
         description:

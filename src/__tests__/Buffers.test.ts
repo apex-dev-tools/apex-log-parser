@@ -77,7 +77,7 @@ function summary(log: ApexLog): unknown {
       dmlCount: e.dmlCount,
       heapAllocated: e.heapAllocated,
       heapPeak: e.heapPeak,
-      isTruncated: e.isTruncated,
+      endedBy: e.isFrame ? e.endedBy : null,
       endTimestamp: e.endTimestamp,
     })),
     columns: Object.fromEntries(Object.entries(log.columns).map(([k, v]) => [k, [...v]])),
@@ -88,7 +88,7 @@ function summary(log: ApexLog): unknown {
       ...log.truncation,
       regions: log.truncation.regions.map((r) => ({ ...r, event: r.event?.id ?? null })),
     },
-    truncatedEvents: ids(log.truncatedEvents),
+    unclosedFrames: ids(log.unclosedFrames),
     issues: log.issues.map((i) => ({ ...i, event: i.event?.id ?? null })),
     parsingErrors: log.parsingErrors,
     limits: log.limits,
@@ -122,10 +122,10 @@ it('the fixture states every part of a build', async () => {
   expect(log.limits.snapshots).toHaveLength(1);
   expect(log.issues.map((i) => i.summary)).toContain('Skipped-Lines');
   expect(log.truncation.regions).toHaveLength(1);
-  expect(log.truncatedEvents.length).toBeGreaterThan(0);
+  expect(log.unclosedFrames.length).toBeGreaterThan(0);
   expect(log.parsingErrors).toHaveLength(1);
   expect(log.heapPeak).toBeGreaterThan(0);
-  expect(log.ofType('FLOW_ELEMENT_BEGIN')[0]?.dmlCount.self).toBe(1);
+  expect(log.ofType('FLOW_ELEMENT_BEGIN')[0]?.dmlCount?.self).toBe(1);
   expect(log.ofType('SOQL_EXECUTE_EXPLAIN')[0]?.details).not.toBeNull();
   expect(log.ofType('FLOW_ELEMENT_ERROR')[0]?.details.elementName).toBe('Update_Account');
   expect(log.ofType('EXCEPTION_THROWN')[0]?.details.isCaught).toBe(true);
@@ -156,7 +156,7 @@ describe.each([
   it('rejects data toBuffers did not make', async () => {
     const { buffers } = toBuffers(await parse(LOG));
     expect(() => fromBuffers({} as LogBuffers)).toThrow('Not buffers that toBuffers made');
-    expect(() => fromBuffers({ ...buffers, version: 0 })).toThrow('this version reads 1');
+    expect(() => fromBuffers({ ...buffers, version: 0 })).toThrow('this version reads 3');
     const data = buffers.data as { store: { typeCount: number } };
     const otherCatalog = { ...data, store: { ...data.store, typeCount: 3 } };
     expect(() => fromBuffers({ ...buffers, data: otherCatalog })).toThrow('another event catalog');
