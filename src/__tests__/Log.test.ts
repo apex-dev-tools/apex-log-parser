@@ -3,6 +3,7 @@
  */
 import { idOfType } from '../catalog/catalog.js';
 import { nodeEngine } from '../engine/node.js';
+import type { EventOf } from '../views/events.js';
 import { apexLog } from '../views/log.js';
 import { at, encode, HEADER, logOf, method } from './helpers.js';
 
@@ -185,6 +186,9 @@ describe('ApexLog', () => {
       `${at(10)}|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101`,
     );
     expect(log.exceptions.map((e) => e.type)).toEqual(['EXCEPTION_THROWN', 'FATAL_ERROR']);
+    expectTypeOf(log.exceptions).toEqualTypeOf<
+      readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[]
+    >();
     expect(log.limits.snapshots).toHaveLength(1);
     expect(log.limits.byNamespace.get('default')?.final.soqlQueries.used).toBe(2);
     expect(log.limits).toBe(log.limits);

@@ -17,6 +17,7 @@ import type {
   EventType,
   EventTypeInfo,
   ExplainPlan,
+  FlowType,
   FrameEvent,
   GovernorLimits,
   IssueType,
@@ -70,6 +71,7 @@ const PUBLIC_EXPORTS = [
   'EVENT_TYPE_NAMES',
   'EVENT_TYPES',
   'eventType',
+  'FLOW_TYPE',
   'fromBuffers',
   'ISSUE_TYPE',
   'KIND',
@@ -100,6 +102,7 @@ interface PublicTypeSurface {
   eventType: EventType;
   eventTypeInfo: EventTypeInfo;
   explainPlan: ExplainPlan;
+  flowType: FlowType;
   frameEvent: FrameEvent;
   governorLimits: GovernorLimits;
   issueType: IssueType;

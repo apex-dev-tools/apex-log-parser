@@ -91,7 +91,7 @@ interface EventBase extends Rollups {
   readonly kind: Kind;
   readonly debugCategory: DebugCategory;
   readonly debugLevel: Level;
-  /** 1 for an event at the top of the log, which is depth 0, as `columns.depth` states. */
+  /** 1 at the top of the log, 1 more per frame above it, as in `columns.depth`. */
   readonly depth: number;
   /** The frame that holds this event; null at the top of the log. */
   readonly parent: FrameEvent | null;

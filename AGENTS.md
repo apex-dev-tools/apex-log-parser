@@ -96,7 +96,8 @@ both.
   declaration states its type; type-only imports are statement-level `import type`.
 - `noUncheckedIndexedAccess` makes each indexed read `T | undefined`, so parsing code carries `!`
   and `?? ''`.
-- `erasableSyntaxOnly` bans enums, so a union gets a const companion.
+- `erasableSyntaxOnly` bans enums, so a union gets a const companion. Its values are kebab-case,
+  unless they are also object keys (camelCase, as `DEBUG_CATEGORY`) or a Salesforce token (`LEVEL`).
 - Import with a `.js` extension.
 - `types: ["vitest/globals"]` in `tsconfig.json` keeps ambient node types out. `src/` uses no
   `node:*` and reads no files at runtime; `src/worker/node.ts` reaches `worker_threads` through the

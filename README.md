@@ -216,7 +216,7 @@ for (let id = 1; id <= log.eventCount; id++) {
 
 Everything comes from the package root: `parse`, `toBuffers`, `fromBuffers`, the event catalog
 (`EVENT_TYPES`, `eventType`), every type, and the const companions that go with them
-(`DEBUG_CATEGORY`, `ENDED_BY`, `EVENT_TYPE_NAMES`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
+(`DEBUG_CATEGORY`, `ENDED_BY`, `EVENT_TYPE_NAMES`, `FLOW_TYPE`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
 `SHAPE`, `TRUNCATION_KIND`). `DEBUG_CATEGORY_TOKEN` gives the header token of each debug category,
 and `LIMIT_METRICS` gives the unit of each limit metric:
 
