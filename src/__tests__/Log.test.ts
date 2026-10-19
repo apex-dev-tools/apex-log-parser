@@ -185,6 +185,9 @@ describe('ApexLog', () => {
       `${at(10)}|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101`,
     );
     expect(log.exceptions.map((e) => e.type)).toEqual(['EXCEPTION_THROWN', 'FATAL_ERROR']);
+    // The type narrows each exception's details, with no cast.
+    const [thrown] = log.exceptions;
+    expect(thrown?.type === 'EXCEPTION_THROWN' && thrown.details.isCaught).toBeNull();
     expect(log.limits.snapshots).toHaveLength(1);
     expect(log.limits.byNamespace.get('default')?.final.soqlQueries.used).toBe(2);
     expect(log.limits).toBe(log.limits);
