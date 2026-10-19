@@ -16,7 +16,17 @@ import { typeIdAt } from '../bytes/typeIds.js';
 import { GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
 import type { LimitMetric, LimitSnapshot } from '../limits.js';
 import { runningTotal } from '../limits.js';
-import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, Store, TOTAL } from '../store/store.js';
+import {
+  COUNTER,
+  COUNTERS,
+  EXTERNAL_LINE,
+  HEAP,
+  NO_LINE,
+  NONE,
+  SELF,
+  Store,
+  TOTAL,
+} from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
 import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
@@ -38,6 +48,7 @@ import {
   HAS_EXITS,
   HEAP_FIELD,
   HEAP_SIGN,
+  HEAP_SLOT,
   HOOK,
   IS_EXIT,
   IS_FRAME,
@@ -100,6 +111,8 @@ export interface Built {
   readonly parsingErrors: readonly string[];
   /** The frames whose end is inferred, in the order they ended. */
   readonly unclosedFrames: readonly number[];
+  /** Per `COUNTER`, then `HEAP_SLOT`: 1 when the log states a line that gives the figure. */
+  readonly seen: Uint8Array;
   /** The string ids of the namespaces the log states, in first-stated order. */
   readonly namespaces: readonly number[];
   /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
@@ -130,6 +143,7 @@ export class LogBuilder {
   private readonly strings: StringTable;
   private readonly markers: LogMarkers;
   private readonly unclosedFrames: number[] = [];
+  private readonly seen: Uint8Array = new Uint8Array(COUNTERS + 1);
   private readonly namespaces: Namespaces;
   // The open frames, innermost last: each one's id, and its last child's id or `NONE`.
   private readonly frameIds: number[] = [];
@@ -292,6 +306,7 @@ export class LogBuilder {
       issues,
       parsingErrors,
       unclosedFrames: this.unclosedFrames,
+      seen: this.seen,
       namespaces: this.namespaces.order,
       snapshots,
       size: len,
@@ -382,7 +397,9 @@ export class LogBuilder {
     const rowsAt = ROWS_FROM_EXIT[type]!;
     if (rowsAt < 0) return;
     // An exit of another kind states none of these rows.
-    const rows = ROWS_AT[exitType] === rowsAt ? exitRows : 0;
+    const stated = ROWS_AT[exitType] === rowsAt;
+    if (stated) this.seen[rowsAt] = 1;
+    const rows = stated ? exitRows : 0;
     if (!rows && store.countSlot[frame] === NONE) return;
     const at = store.countsOf(frame) + rowsAt * 2;
     store.counts[at + SELF] = rows;
@@ -525,6 +542,9 @@ export class LogBuilder {
     const count = COUNT_AT[type]!;
     const rowsAt = ROWS_AT[type]!;
     const rows = rowsAt < 0 ? 0 : this.nextRows;
+    if (count >= 0) this.seen[count] = 1;
+    if (rowsAt >= 0) this.seen[rowsAt] = 1;
+    if (HEAP_SIGN[type]) this.seen[HEAP_SLOT] = 1;
     if (count >= 0 || rows) {
       const at = store.countsOf(id);
       const counts = store.counts;
@@ -540,7 +560,10 @@ export class LogBuilder {
       heap[at + HEAP.grossSelf] = heap[at + HEAP.grossTotal] = bytes > 0 ? bytes : 0;
       heap[at + HEAP.peak] = this.runningHeap;
     }
-    if (this.nextFlowTotal) this.flowTotals.set(id, this.nextFlowTotal);
+    if (this.nextFlowTotal) {
+      this.seen[this.nextFlowTotal.counter] = 1;
+      this.flowTotals.set(id, this.nextFlowTotal);
+    }
   }
 
   /** Takes the next event, a matched exit line, into the frame it closes: it gets no row. */

@@ -285,9 +285,12 @@ const highest = (sources: Iterable<Limits>): Limits => fold(sources, (_m, a, b) 
 /**
  * The whole-log and per-namespace figures from snapshots in log order. Each snapshot is
  * cumulative, so a namespace's last is its final figure. `heapPeak` (bytes) comes from the heap
- * events, because a block states heap as 0.
+ * events, because a block states heap as 0; null when the log records none.
  */
-export function governorLimits(snapshots: LimitSnapshot[], heapPeak: number): GovernorLimits {
+export function governorLimits(
+  snapshots: LimitSnapshot[],
+  heapPeak: number | null,
+): GovernorLimits {
   const byNamespace = new Map<string, NamespaceLimits>();
   let final = emptyLimits();
   let peak = emptyLimits();
@@ -301,6 +304,7 @@ export function governorLimits(snapshots: LimitSnapshot[], heapPeak: number): Go
     final = combined(Array.from(byNamespace.values(), (ns) => ns.final));
     peak = highest([peak, final]);
   }
+  if (heapPeak === null) return { snapshots, final, peak, byNamespace };
   const heap = { ...emptyLimits(), heapSize: value(heapPeak, null) };
   return { snapshots, final, peak: highest([peak, heap]), byNamespace };
 }

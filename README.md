@@ -113,8 +113,9 @@ what it called.
 const log = await parse(logData);
 const { final, peak } = log.limits;
 
-console.log(`SOQL: ${log.soqlCount.total} queries, ${log.soqlRowCount.total} rows`);
-console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} rows`);
+// null when the log's debug levels did not record these lines.
+console.log(`SOQL: ${log.soqlCount?.total} queries, ${log.soqlRowCount?.total} rows`);
+console.log(`DML:  ${log.dmlCount?.total} statements, ${log.dmlRowCount?.total} rows`);
 console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
 console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
 
@@ -123,7 +124,8 @@ console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.durat
 
 for (const query of log.ofType('SOQL_EXECUTE_BEGIN')) {
   // details is typed by the event type: here the aggregations, and the plan when the log states one.
-  console.log(query.lineNumber, query.soqlRowCount.self, query.details.explain?.relativeCost);
+  // soqlRowCount is null for a query with no end line, as one an exception stopped.
+  console.log(query.lineNumber, query.soqlRowCount?.self, query.details.explain?.relativeCost);
 }
 ```
 
@@ -231,14 +233,15 @@ shows them.
 ## Tips
 
 **Capture the log at the right levels.** The parser reports what the log contains. A log captured
-at a low level is missing whole categories of line, and the matching fields stay empty. This is
-the most common surprise:
+at a low level is missing whole categories of line, and the matching fields stay empty: a count or
+heap figure the header's level does not record is `null`, not 0. This is the most common surprise:
 
 | You want | The log needs |
 | --- | --- |
 | `duration` on method events | `APEX_CODE` at `FINE` or above, plus `APEX_PROFILING` |
 | `limits` | `APEX_PROFILING` at `FINE` or above, which writes the `CUMULATIVE_LIMIT_USAGE` block |
-| SOQL and DML events | `DB` at `INFO` or above |
+| SOQL and DML events and counts | `DB` at `INFO` or above |
+| `heapAllocated`, `heapGross`, `heapPeak` | `APEX_CODE` at `FINER` or above |
 | Flow and Process Builder limit lines | `WORKFLOW` at `FINER` |
 
 **All-zero limits mean "not reported".** Without a `LIMIT_USAGE_FOR_NS` block, every

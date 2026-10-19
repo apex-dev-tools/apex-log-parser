@@ -125,7 +125,7 @@ it('the fixture states every part of a build', async () => {
   expect(log.unclosedFrames.length).toBeGreaterThan(0);
   expect(log.parsingErrors).toHaveLength(1);
   expect(log.heapPeak).toBeGreaterThan(0);
-  expect(log.ofType('FLOW_ELEMENT_BEGIN')[0]?.dmlCount.self).toBe(1);
+  expect(log.ofType('FLOW_ELEMENT_BEGIN')[0]?.dmlCount?.self).toBe(1);
   expect(log.ofType('SOQL_EXECUTE_EXPLAIN')[0]?.details).not.toBeNull();
   expect(log.ofType('FLOW_ELEMENT_ERROR')[0]?.details.elementName).toBe('Update_Account');
   expect(log.ofType('EXCEPTION_THROWN')[0]?.details.isCaught).toBe(true);
@@ -156,7 +156,7 @@ describe.each([
   it('rejects data toBuffers did not make', async () => {
     const { buffers } = toBuffers(await parse(LOG));
     expect(() => fromBuffers({} as LogBuffers)).toThrow('Not buffers that toBuffers made');
-    expect(() => fromBuffers({ ...buffers, version: 0 })).toThrow('this version reads 2');
+    expect(() => fromBuffers({ ...buffers, version: 0 })).toThrow('this version reads 3');
     const data = buffers.data as { store: { typeCount: number } };
     const otherCatalog = { ...data, store: { ...data.store, typeCount: 3 } };
     expect(() => fromBuffers({ ...buffers, data: otherCatalog })).toThrow('another event catalog');

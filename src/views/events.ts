@@ -6,8 +6,18 @@ import type { Source } from '../bytes/source.js';
 import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
 import type { EventFields } from '../catalog/fields.js';
 import type { DebugCategory, EventType, EventTypeInfo, Kind, Level } from '../catalog/types.js';
+import { LEVEL } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
-import { ENDS_ON_NEXT, FLAG, isFrameRow } from '../engine/tables.js';
+import {
+  COUNT_AT,
+  ENDS_ON_NEXT,
+  FLAG,
+  HEAP_SIGN,
+  HEAP_SLOT,
+  isFrameRow,
+  ROWS_AT,
+  ROWS_FROM_EXIT,
+} from '../engine/tables.js';
 import type { Store } from '../store/store.js';
 import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
@@ -43,17 +53,34 @@ export interface Rollups {
    */
   readonly endTimestamp: number;
   readonly duration: SelfTotal;
-  readonly dmlCount: SelfTotal;
-  readonly soqlCount: SelfTotal;
-  readonly soslCount: SelfTotal;
-  readonly dmlRowCount: SelfTotal;
-  readonly soqlRowCount: SelfTotal;
-  readonly soslRowCount: SelfTotal;
-  readonly thrownCount: SelfTotal;
-  readonly heapAllocated: SelfTotal;
-  readonly heapGross: SelfTotal;
-  /** The highest live heap inside: a maximum, not a sum. */
-  readonly heapPeak: number;
+  /** Null when the header's level does not record its lines and the log holds none. */
+  readonly dmlCount: SelfTotal | null;
+  /** Null when the header's level does not record its lines and the log holds none. */
+  readonly soqlCount: SelfTotal | null;
+  /** Null when the header's level does not record its lines and the log holds none. */
+  readonly soslCount: SelfTotal | null;
+  /** Null when the header's level does not record its lines and the log holds none. */
+  readonly dmlRowCount: SelfTotal | null;
+  /**
+   * Null when the header's level does not record its lines and the log holds none. Also null on a query with no end line, which
+   * states its rows; a total above it sums the rows the log states.
+   */
+  readonly soqlRowCount: SelfTotal | null;
+  /**
+   * Null when the header's level does not record its lines and the log holds none. Also null on a search with no end line, which
+   * states its rows; a total above it sums the rows the log states.
+   */
+  readonly soslRowCount: SelfTotal | null;
+  /** Null when the header's level does not record its lines and the log holds none. */
+  readonly thrownCount: SelfTotal | null;
+  /** Null when the header's level does not record its lines and the log holds none. Heap lines need Apex Code `FINER`. */
+  readonly heapAllocated: SelfTotal | null;
+  /** Null when the header's level does not record its lines and the log holds none. Heap lines need Apex Code `FINER`. */
+  readonly heapGross: SelfTotal | null;
+  /**
+   * The highest live heap inside: a maximum, not a sum. Null when the header's level does not record its lines and the log holds none.
+   */
+  readonly heapPeak: number | null;
 }
 
 /** What every event states. */
@@ -155,6 +182,28 @@ export type EventOf<T extends EventType> = T extends EventType
   : never;
 
 const ZERO: SelfTotal = Object.freeze({ self: 0, total: 0 });
+// Ordered from the least to the most detailed, as `LEVEL` states them.
+const LEVELS: readonly Level[] = Object.values(LEVEL);
+const INFERRED_END = FLAG.logEnd | FLAG.unwind;
+
+/**
+ * Per counter, then `HEAP_SLOT`: 1 when the log can state the figure. The header's level records a
+ * line that gives it, or states no level for its category, or the log holds one anyway, as a class
+ * trace flag can raise the level.
+ */
+function recordedOf({ seen, debugLevels }: Built): Uint8Array {
+  const recorded = seen.slice();
+  for (const info of EVENT_TYPES) {
+    const level = debugLevels[info.debugCategory];
+    if (level && LEVELS.indexOf(level) < LEVELS.indexOf(info.debugLevel)) continue;
+    const t = info.typeId;
+    // t is a type id, so it indexes every table
+    if (COUNT_AT[t]! >= 0) recorded[COUNT_AT[t]!] = 1;
+    if (ROWS_AT[t]! >= 0) recorded[ROWS_AT[t]!] = 1;
+    if (HEAP_SIGN[t]) recorded[HEAP_SLOT] = 1;
+  }
+  return recorded;
+}
 const NO_CHILDREN: readonly ApexEvent[] = Object.freeze([]);
 
 /** The events of one build, each made on first read and then the same object. */
@@ -166,8 +215,11 @@ export class LogEvents {
   readonly lines: EventLines;
   private readonly views: (ApexEvent | undefined)[];
   private vars: LogVariables | null = null;
+  readonly recorded: Uint8Array;
 
-  constructor({ store, strings, source, issues }: Built) {
+  constructor(built: Built) {
+    const { store, strings, source, issues } = built;
+    this.recorded = recordedOf(built);
     this.store = store;
     this.strings = strings;
     this.source = source;
@@ -208,7 +260,7 @@ export class LogEvents {
  * The time and rollups of one row, read from the store: the log's (row 0) or an event's. Each `!`
  * below reads a column at `id`, a row the store holds.
  */
-export class RollupView implements Rollups {
+export abstract class RollupView implements Rollups {
   readonly id: number;
   protected readonly store: Store;
 
@@ -216,6 +268,9 @@ export class RollupView implements Rollups {
     this.store = store;
     this.id = id;
   }
+
+  /** The build's `recordedOf`, read through the view that owns it, so no event holds a copy. */
+  protected abstract get recorded(): Uint8Array;
 
   get startTimestamp(): number {
     return this.store.timestamp[this.id]!;
@@ -229,55 +284,63 @@ export class RollupView implements Rollups {
     return { self: this.store.durationSelf[this.id]!, total: this.store.durationTotal(this.id) };
   }
 
-  get dmlCount(): SelfTotal {
+  get dmlCount(): SelfTotal | null {
     return this.count(COUNTER.dml);
   }
 
-  get soqlCount(): SelfTotal {
+  get soqlCount(): SelfTotal | null {
     return this.count(COUNTER.soql);
   }
 
-  get soslCount(): SelfTotal {
+  get soslCount(): SelfTotal | null {
     return this.count(COUNTER.sosl);
   }
 
-  get dmlRowCount(): SelfTotal {
+  get dmlRowCount(): SelfTotal | null {
     return this.count(COUNTER.dmlRows);
   }
 
-  get soqlRowCount(): SelfTotal {
+  get soqlRowCount(): SelfTotal | null {
     return this.count(COUNTER.soqlRows);
   }
 
-  get soslRowCount(): SelfTotal {
+  get soslRowCount(): SelfTotal | null {
     return this.count(COUNTER.soslRows);
   }
 
-  get thrownCount(): SelfTotal {
+  get thrownCount(): SelfTotal | null {
     return this.count(COUNTER.thrown);
   }
 
-  get heapAllocated(): SelfTotal {
+  get heapAllocated(): SelfTotal | null {
     return this.heap(HEAP.allocatedSelf, HEAP.allocatedTotal);
   }
 
-  get heapGross(): SelfTotal {
+  get heapGross(): SelfTotal | null {
     return this.heap(HEAP.grossSelf, HEAP.grossTotal);
   }
 
-  get heapPeak(): number {
+  get heapPeak(): number | null {
+    if (!this.recorded[HEAP_SLOT]) return null;
     const at = this.store.heapIndex(this.id);
     return at < 0 ? 0 : this.store.heap[at + HEAP.peak]!;
   }
 
-  private count(counter: number): SelfTotal {
-    const at = this.store.countIndex(this.id);
+  private count(counter: number): SelfTotal | null {
+    const store = this.store;
+    if (!this.recorded[counter]) return null;
+    // Its end line states its rows, so with none they are not stated. Row 0 is no type's.
+    if (ROWS_FROM_EXIT[store.type[this.id]!] === counter && store.flags[this.id]! & INFERRED_END) {
+      return null;
+    }
+    const at = store.countIndex(this.id);
     if (at < 0) return ZERO;
-    const counts = this.store.counts;
+    const counts = store.counts;
     return { self: counts[at + counter * 2 + SELF]!, total: counts[at + counter * 2 + TOTAL]! };
   }
 
-  private heap(self: number, total: number): SelfTotal {
+  private heap(self: number, total: number): SelfTotal | null {
+    if (!this.recorded[HEAP_SLOT]) return null;
     const at = this.store.heapIndex(this.id);
     if (at < 0) return ZERO;
     const heap = this.store.heap;
@@ -299,6 +362,10 @@ class EventView extends RollupView {
     super(store, id);
     this.events = events;
     this.strings = strings;
+  }
+
+  protected get recorded(): Uint8Array {
+    return this.events.recorded;
   }
 
   private get info(): EventTypeInfo {

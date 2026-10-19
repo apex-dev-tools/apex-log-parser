@@ -177,6 +177,10 @@ class LogView extends RollupView implements ApexLog {
     this.all = new LogEvents(built);
   }
 
+  protected get recorded(): Uint8Array {
+    return this.all.recorded;
+  }
+
   /** `buildOfLog`'s way past `private`, so the field stays out of the public type. */
   static buildOf(log: LogView): Built {
     return log.built;

@@ -5,7 +5,7 @@ import type { Hook, RowsOf } from '../catalog/catalog.js';
 import { EVENT_TYPES, GRAMMAR, idOfType } from '../catalog/catalog.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import type { Store } from '../store/store.js';
-import { COUNTER } from '../store/store.js';
+import { COUNTER, COUNTERS } from '../store/store.js';
 import { RULE } from './namespaces.js';
 
 // The catalog's rules as one number per type id, so the scan reads a byte, not an object.
@@ -41,6 +41,9 @@ const ROWS_OF: { readonly [R in RowsOf]: number } = {
   sosl: COUNTER.soslRows,
   dml: COUNTER.dmlRows,
 };
+
+/** The heap figures' slot in `Built.seen`, after the counters. */
+export const HEAP_SLOT: number = COUNTERS;
 
 /** 1 for a frame-shaped type. A row of one is a leaf when its flags hold `notEntry`. */
 export const IS_FRAME: Uint8Array = new Uint8Array(TYPES);

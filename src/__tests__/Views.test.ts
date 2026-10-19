@@ -68,7 +68,8 @@ describe('events', () => {
     );
     const run = frame(log.event(1));
     // The log is row 0, and rolls up the same figures as the one frame under it.
-    const totals = (e: ApexEvent | ApexLog): number[] => COUNTERS.map((name) => e[name].total);
+    const totals = (e: ApexEvent | ApexLog): (number | null)[] =>
+      COUNTERS.map((name) => e[name]?.total ?? null);
     expect(totals(log)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(totals(run)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(run.dmlCount).not.toBe(run.dmlCount);
@@ -84,7 +85,8 @@ describe('events', () => {
       60,
       60,
       { self: 0, total: 0 },
-      0,
+      // HEADER's Apex Code FINE does not record heap lines.
+      null,
     ]);
   });
 });

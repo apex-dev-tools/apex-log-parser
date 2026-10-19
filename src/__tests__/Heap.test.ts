@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { ApexEvent, FrameEvent } from '../views/events.js';
-import { parse } from './helpers.js';
+import { at, parse } from './helpers.js';
 
 const START = '09:18:22.6 (100)|EXECUTION_STARTED\n\n';
 const END = '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
@@ -69,7 +69,7 @@ describe('heap rollups', () => {
     const figures = ['Stats.compute()', 'Data.load()', 'View.render()', 'Root.run()'].map(
       (text) => {
         const e = byText(log.events, text);
-        return [e?.heapAllocated.self, e?.heapAllocated.total, e?.heapGross.total, e?.heapPeak];
+        return [e?.heapAllocated?.self, e?.heapAllocated?.total, e?.heapGross?.total, e?.heapPeak];
       },
     );
     expect(figures).toEqual([
@@ -105,7 +105,7 @@ describe('heap rollups', () => {
         END,
     );
     // `toBe` compares with `Object.is`, so it fails on -0.
-    expect(m.children[0]?.heapAllocated.total).toBe(0);
+    expect(m.children[0]?.heapAllocated?.total).toBe(0);
   });
 
   it.each([
@@ -168,5 +168,39 @@ describe('the heap limit', () => {
 
   it('peaks across every block, not at the last one', () => {
     expect(parse(withBlocks(0, 500000, 0)).limits.peak.heapSize.used).toBe(500000);
+  });
+
+  it('states no heap figures when the debug level does not record them', () => {
+    const log = parse(
+      [
+        '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,INFO',
+        `${at(10)}|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()`,
+        `${at(20)}|METHOD_EXIT|[1]|01p000000000AAA|MyClass.run()`,
+      ].join('\n'),
+    );
+    expect([log.heapPeak, log.heapAllocated, log.heapGross]).toEqual([null, null, null]);
+    expect([log.event(1)?.heapPeak, log.soqlCount]).toEqual([null, { self: 0, total: 0 }]);
+  });
+
+  it('counts heap lines a class trace flag raised the level for', () => {
+    const log = parse(
+      ['64.0 APEX_CODE,FINE;APEX_PROFILING,INFO', `${at(10)}|HEAP_ALLOCATE|[1]|Bytes:8`].join('\n'),
+    );
+    expect(log.debugLevels.apexCode).toBe('FINE');
+    expect(log.heapAllocated).toEqual({ self: 8, total: 8 });
+  });
+
+  it('keeps a stated zero when a trace flag raised a level the header leaves low', () => {
+    const log = parse(
+      [
+        '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,NONE',
+        `${at(10)}|SOQL_EXECUTE_BEGIN|[1]|Aggregations:0|SELECT Id FROM Account`,
+        `${at(20)}|SOQL_EXECUTE_END|[1]|Rows:0`,
+      ].join('\n'),
+    );
+    expect(log.debugLevels.database).toBe('NONE');
+    expect(log.soqlCount).toEqual({ self: 0, total: 1 });
+    expect(log.soqlRowCount).toEqual({ self: 0, total: 0 });
+    expect(log.dmlCount).toBeNull();
   });
 });

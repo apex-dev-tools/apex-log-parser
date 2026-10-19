@@ -365,4 +365,20 @@ describe('truncation', () => {
     ]);
     expect(log.unclosedFrames.map((event) => event.startTimestamp)).toEqual([300]);
   });
+
+  it('states no rows for a query the log states no end line for', () => {
+    const log = logOf(
+      `${at(100)}|METHOD_ENTRY|[10]|01p000000000AAA|MyClass.run()`,
+      `${at(200)}|SOQL_EXECUTE_BEGIN|[11]|Aggregations:0|SELECT Id FROM Account`,
+      `${at(300)}|EXCEPTION_THROWN|[11]|System.QueryException: x`,
+      `${at(400)}|METHOD_EXIT|[10]|01p000000000AAA|MyClass.run()`,
+    );
+    const [query] = log.ofType('SOQL_EXECUTE_BEGIN');
+    expect([query?.isFrame && query.endedBy, query?.soqlCount, query?.soqlRowCount]).toEqual([
+      'unwind',
+      { self: 1, total: 1 },
+      null,
+    ]);
+    expect(log.soqlRowCount).toEqual({ self: 0, total: 0 });
+  });
 });
