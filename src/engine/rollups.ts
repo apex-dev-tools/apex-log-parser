@@ -18,8 +18,8 @@ export interface FlowTotal {
 }
 
 /**
- * The last top-level package entry, when it merged into the run before it. v0 set the log's
- * times before the merge, so they still see it.
+ * The last top-level package entry, when it merged into the run before it. Before 0.4, the
+ * log's times were set before the merge, so they still see it.
  */
 export interface MergedTail {
   /** Nanoseconds. */
