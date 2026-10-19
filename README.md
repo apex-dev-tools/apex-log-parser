@@ -284,7 +284,7 @@ globalThis.setImmediate ??= setImmediate;
 globalThis.structuredClone ??= (value) => deserialize(serialize(value));
 ```
 
-To upgrade from v0, see the v1 entry in the [CHANGELOG](./CHANGELOG.md).
+To upgrade from a version before 0.4, see the 0.4.0 entry in the [CHANGELOG](./CHANGELOG.md).
 
 ## Contributing
 
