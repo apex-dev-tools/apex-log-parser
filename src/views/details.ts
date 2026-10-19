@@ -39,8 +39,8 @@ export const FLOW_TYPE = {
 export type FlowType = (typeof FLOW_TYPE)[keyof typeof FLOW_TYPE];
 
 const FLOW_OF_UNIT = new Map<string, FlowType>([
-  ['Flow', FLOW_TYPE.Flow],
-  ['Workflow', FLOW_TYPE.ProcessBuilder],
+  ['Flow', 'flow'],
+  ['Workflow', 'processBuilder'],
 ]);
 
 /** The flow type a code unit of `unit` type starts; null for any other unit, or none. */
