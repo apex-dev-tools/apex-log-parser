@@ -216,11 +216,12 @@ describe('typeIdAt', () => {
 
   it.each([
     '',
-    'METHOD_ENTR',
-    'METHOD_ENTRYX',
     'METHOD_ENTRZ',
-    'method_entry',
     'NOT_A_TYPE',
+    // The probe key of SOQL_ and SOSL_EXECUTE_BEGIN, so only the full compare tells it apart.
+    'SOXL_EXECUTE_BEGIN',
+    // Bytes from 0x80 up make the key negative.
+    'MÉTHOD_ENTRY',
     'X'.repeat(60),
   ])('finds no type named %j', (name) => {
     const bytes = at(1, name);
