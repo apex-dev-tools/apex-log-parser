@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [codspeedPlugin()],
   test: {
     globals: true,
+    // One worker runs many files; no suite relies on a fresh module state.
+    isolate: false,
     include: [
       'src/**/__tests__/**/*.test.ts',
       'scripts/__tests__/**/*.test.ts',
