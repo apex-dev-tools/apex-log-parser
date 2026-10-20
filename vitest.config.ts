@@ -11,10 +11,6 @@ export default defineConfig({
       'scripts/__tests__/**/*.test.ts',
       'benchmarks/__tests__/**/*.test.ts',
     ],
-    benchmark: {
-      include: ['benchmarks/**/*.bench.ts'],
-      // The tracking behind this warning runs inside the measured code: about 4× slower.
-      suppressExportGetterWarnings: true,
-    },
+    benchmark: { include: ['benchmarks/**/*.bench.ts'] },
   },
 });
