@@ -51,9 +51,9 @@ export interface LogIssue extends LogPlace {
   readonly type: IssueType;
   readonly summary: string;
   readonly description: string;
-  readonly startTime: number;
-  /** Null when the issue is at one point in time. */
-  readonly endTime: number | null;
+  readonly startTimestamp: number;
+  /** Null when the issue is at one point in time. For truncation, inferred as the region's end. */
+  readonly endTimestamp: number | null;
   /** The bytes the platform states it dropped, for a skipped block; else null. */
   readonly skippedBytes: number | null;
 }
@@ -61,9 +61,12 @@ export interface LogIssue extends LogPlace {
 /** A part of the log the platform did not write. Times are nanoseconds. */
 export interface LogTruncationRegion extends LogPlace {
   readonly kind: TruncationKind;
-  readonly startTime: number;
-  /** Where the log can be trusted again. */
-  readonly endTime: number;
+  readonly startTimestamp: number;
+  /**
+   * Where the log can be trusted again. Inferred, as the log states no end: the next frame after a
+   * skipped block, the next event after the maximum size, else the log's end.
+   */
+  readonly endTimestamp: number;
   /** The bytes the platform states it dropped, for a skipped block; else null. */
   readonly skippedBytes: number | null;
 }
@@ -97,13 +100,13 @@ export interface ApexLog extends Rollups {
   readonly size: number;
   /** Milliseconds since midnight, from the first event's line; null when it states none. */
   readonly startTime: number | null;
-  /** The platform did not write part of the log. A frame with no exit does not count. */
+  /** The platform did not write part of the log. An unclosed frame does not count. */
   readonly isTruncated: boolean;
   /** The parts of the log the platform did not write. */
   readonly truncation: LogTruncation;
-  /** The frames the log does not close, in the order they ended. */
-  readonly truncatedEvents: readonly FrameEvent[];
-  /** In start time order. */
+  /** The frames whose end is inferred, `endedBy` `'unwind'` or `'log-end'`, in the order they ended. */
+  readonly unclosedFrames: readonly FrameEvent[];
+  /** In start time order. One per type and summary, the first the log states; every skipped block. */
   readonly issues: readonly LogIssue[];
   /** The lines the parser could not read, one message each. */
   readonly parsingErrors: readonly string[];
@@ -112,7 +115,7 @@ export interface ApexLog extends Rollups {
   /** Every namespace the log states, in first-stated order. */
   readonly namespaces: readonly string[];
   /** Every `EXCEPTION_THROWN` and `FATAL_ERROR`, in id order. */
-  readonly exceptions: readonly ApexEvent[];
+  readonly exceptions: readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[];
   /** The code units at the top of the log or of an execution: where work starts. */
   readonly entryPoints: readonly EventOf<'CODE_UNIT_STARTED'>[];
   /** The user the `USER_INFO` line states; null when the log has none. */
@@ -160,11 +163,11 @@ class LogView extends RollupView implements ApexLog {
     frames?: Int32Array;
     issues?: readonly LogIssue[];
     truncation?: LogTruncation;
-    truncatedEvents?: readonly FrameEvent[];
+    unclosedFrames?: readonly FrameEvent[];
     parsingErrors?: readonly string[];
     limits?: GovernorLimits;
     namespaces?: readonly string[];
-    exceptions?: readonly ApexEvent[];
+    exceptions?: readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[];
     entryPoints?: readonly EventOf<'CODE_UNIT_STARTED'>[];
     userInfo?: UserInfo | null;
     debugLevels?: Partial<Record<DebugCategory, Level>>;
@@ -175,6 +178,10 @@ class LogView extends RollupView implements ApexLog {
     super(built.store, 0);
     this.built = built;
     this.all = new LogEvents(built);
+  }
+
+  protected get recorded(): Uint8Array {
+    return this.all.recorded;
   }
 
   /** `buildOfLog`'s way past `private`, so the field stays out of the public type. */
@@ -260,8 +267,8 @@ class LogView extends RollupView implements ApexLog {
         this.built.truncation.regions.map((region) =>
           Object.freeze({
             kind: region.kind,
-            startTime: region.startTime,
-            endTime: region.endTime,
+            startTimestamp: region.startTime,
+            endTimestamp: region.endTime,
             ...this.place(region),
             skippedBytes: region.skippedBytes,
           }),
@@ -271,10 +278,10 @@ class LogView extends RollupView implements ApexLog {
     }));
   }
 
-  get truncatedEvents(): readonly FrameEvent[] {
+  get unclosedFrames(): readonly FrameEvent[] {
     // The engine lists frames only, and each one is a row.
-    return (this.memo.truncatedEvents ??= Object.freeze(
-      this.built.truncated.map((id) => this.all.event(id) as FrameEvent),
+    return (this.memo.unclosedFrames ??= Object.freeze(
+      this.built.unclosedFrames.map((id) => this.all.event(id) as FrameEvent),
     ));
   }
 
@@ -285,8 +292,8 @@ class LogView extends RollupView implements ApexLog {
           type: issue.type,
           summary: issue.summary,
           description: issue.description,
-          startTime: issue.startTime,
-          endTime: issue.endTime,
+          startTimestamp: issue.startTime,
+          endTimestamp: issue.endTime,
           ...this.place(issue),
           skippedBytes: issue.skippedBytes,
         }),
@@ -310,7 +317,7 @@ class LogView extends RollupView implements ApexLog {
     ));
   }
 
-  get exceptions(): readonly ApexEvent[] {
+  get exceptions(): readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[] {
     return (this.memo.exceptions ??= this.ofType('EXCEPTION_THROWN', 'FATAL_ERROR'));
   }
 

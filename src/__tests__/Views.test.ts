@@ -51,9 +51,26 @@ describe('events', () => {
       { self: 0, total: 0 },
     ]);
     // The namespace rules give `ns.MyClass.run()` no namespace of its own, nor the code unit one.
-    expect([run.lineNumber, run.namespace, run.isTruncated]).toEqual([1, null, false]);
+    expect([run.lineNumber, run.namespace, run.isFrame && run.endedBy]).toEqual([1, null, 'exit']);
     expect([run.kind, run.debugCategory, run.debugLevel]).toEqual(['method', 'apexCode', 'FINE']);
     expect(log.event(1)?.lineNumber).toBe('EXTERNAL');
+  });
+
+  it('gives a USER_DEBUG the level its line states, else the type level', () => {
+    const log = logOf(
+      `${at(1)}|USER_DEBUG|[1]|ERROR|failed`,
+      `${at(2)}|USER_DEBUG|[2]|FINE|went on`,
+      `${at(3)}|USER_DEBUG|[3]|NONE|stated`,
+      `${at(4)}|USER_DEBUG|[4]|LOUD|not a level`,
+      `${at(5)}|USER_DEBUG|[5]`,
+    );
+    expect([...log.events].map((e) => e.debugLevel)).toEqual([
+      'ERROR',
+      'FINE',
+      'NONE',
+      'DEBUG',
+      'DEBUG',
+    ]);
   });
 
   it('maps every counter to its own rollup, and gives a new object on each read', () => {
@@ -68,7 +85,8 @@ describe('events', () => {
     );
     const run = frame(log.event(1));
     // The log is row 0, and rolls up the same figures as the one frame under it.
-    const totals = (e: ApexEvent | ApexLog): number[] => COUNTERS.map((name) => e[name].total);
+    const totals = (e: ApexEvent | ApexLog): (number | null)[] =>
+      COUNTERS.map((name) => e[name]?.total ?? null);
     expect(totals(log)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(totals(run)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(run.dmlCount).not.toBe(run.dmlCount);
@@ -84,7 +102,8 @@ describe('events', () => {
       60,
       60,
       { self: 0, total: 0 },
-      0,
+      // HEADER's Apex Code FINE does not record heap lines.
+      null,
     ]);
   });
 });

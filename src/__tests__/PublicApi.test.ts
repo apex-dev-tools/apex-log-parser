@@ -10,12 +10,14 @@ import type {
   DebugCategoryToken,
   DebugLevelSetting,
   DetailsOf,
+  EndedBy,
   EventDetails,
   EventFields,
   EventOf,
   EventType,
   EventTypeInfo,
   ExplainPlan,
+  FlowType,
   FrameEvent,
   GovernorLimits,
   IssueType,
@@ -65,9 +67,11 @@ import * as node from '../node.js';
 const PUBLIC_EXPORTS = [
   'DEBUG_CATEGORY',
   'DEBUG_CATEGORY_TOKEN',
+  'ENDED_BY',
   'EVENT_TYPE_NAMES',
   'EVENT_TYPES',
   'eventType',
+  'FLOW_TYPE',
   'fromBuffers',
   'ISSUE_TYPE',
   'KIND',
@@ -91,12 +95,14 @@ interface PublicTypeSurface {
   debugCategoryToken: DebugCategoryToken;
   debugLevelSetting: DebugLevelSetting;
   detailsOf: DetailsOf<'SOQL_EXECUTE_BEGIN'>;
+  endedBy: EndedBy;
   eventDetails: EventDetails;
   eventFields: EventFields;
   eventOf: EventOf<'METHOD_ENTRY'>;
   eventType: EventType;
   eventTypeInfo: EventTypeInfo;
   explainPlan: ExplainPlan;
+  flowType: FlowType;
   frameEvent: FrameEvent;
   governorLimits: GovernorLimits;
   issueType: IssueType;

@@ -1,12 +1,13 @@
 # src/engine/AGENTS.md
 
-For coding agents working on the engine. The root [AGENTS.md](../../AGENTS.md) still applies.
+For coding agents working on the engine. The root [AGENTS.md](../../AGENTS.md) and
+[src/AGENTS.md](../AGENTS.md) still apply.
 
 ## Layout
 
-- `builder.ts` — builds the tree in one pass, with v0's rules and v0's order of side effects. A
-  matched exit line gets no row: it folds into the frame it closes. A package entry v0's merge
-  removed gets none either. Stops at a second log and reports it as an issue.
+- `builder.ts` — builds the tree in one pass, with pre-0.4 rules and order of side effects. A
+  matched exit line gets no row: it folds into the frame it closes. A package entry the pre-0.4
+  merge removed gets none either. Stops at a second log and reports it as an issue.
 - `tables.ts` — the per-type tables the builder and the views read; the two frame tests on a row.
 - `markers.ts` — work off the hot path: issues, parsing errors, limit blocks, hooks.
 - `rollups.ts` — the passes after the build: the log's times, the rollups, the flow residuals.

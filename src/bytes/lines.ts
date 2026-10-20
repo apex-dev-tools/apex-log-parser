@@ -5,6 +5,7 @@ import {
   COLON,
   CR,
   DOT,
+  LF,
   LPAREN,
   NINE,
   PIPE,
@@ -47,7 +48,7 @@ export function continuationText(text: string): string {
     text.at(-1) !== '\n';
   if (clean) return text;
   const lines = text.split('\n');
-  // Only a CR before an LF ends a line; the log's last line keeps its CR, as in v0.
+  // Only a CR before an LF ends a line; the log's last line keeps its CR, as before 0.4.
   return lines
     .map((line, i) => (i < lines.length - 1 && line.endsWith('\r') ? line.slice(0, -1) : line))
     .filter((line) => line !== '' && !TRUNCATION_MARKER.test(line) && !statesType(line))
@@ -85,6 +86,89 @@ export function isTypeName(bytes: Uint8Array, start: number, end: number): boole
     if (!((c >= UPPER_A && c <= UPPER_Z) || c === UNDERSCORE)) return false;
   }
   return true;
+}
+
+// The SWAR lanes, as in browser.ts. Imported from one module, they made the scan 10% slower.
+const ONES = 0x01010101;
+const HIGHS = 0x80808080;
+const LFS = 0x0a0a0a0a;
+const PIPES = 0x7c7c7c7c;
+/** The most pipes `LineScanner` records per line; the cursor finds any later ones itself. */
+const PIPE_CAP = 16;
+
+/**
+ * Finds a line's end and its first pipes in one pass, four bytes at a time (SWAR), so no field
+ * search reads the line again. One scanner serves every line of one log.
+ */
+export class LineScanner {
+  /** The first `pipeCount` pipes on the line `next` scanned last. */
+  readonly pipes: Int32Array = new Int32Array(PIPE_CAP);
+  private recorded = 0;
+  private readonly bytes: Uint8Array;
+  private readonly words: Int32Array;
+
+  /** How many pipes `pipes` holds for the line `next` scanned last. */
+  get pipeCount(): number {
+    return this.recorded;
+  }
+
+  /** Every pipe on the line `next` scanned last is in `pipes`. */
+  get complete(): boolean {
+    return this.recorded < PIPE_CAP;
+  }
+
+  constructor(bytes: Uint8Array) {
+    this.bytes = bytes;
+    // Over the whole buffer, so a word index is the byte address over 4 whatever the view's offset.
+    this.words = new Int32Array(bytes.buffer, 0, bytes.buffer.byteLength >>> 2);
+  }
+
+  /**
+   * The `\n` at or after `start`, or the log's length when there is none, not -1 as
+   * `Source.lineEnd`. Overwrites `pipes` with the line's first pipes.
+   */
+  next(start: number): number {
+    const bytes = this.bytes;
+    const pipes = this.pipes;
+    const len = bytes.length;
+    const offset = bytes.byteOffset;
+    let n = 0;
+    let i = start;
+    for (; i < len && (offset + i) & 3; i++) {
+      const c = bytes[i];
+      if (c === LF) break;
+      if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
+    }
+    if (i < len && bytes[i] !== LF) {
+      const words = this.words;
+      // Words below `last` end inside the view.
+      const last = (offset + len) >>> 2;
+      for (let w = (offset + i) >>> 2; w < last; w++) {
+        // w < last, so the word is inside the buffer
+        const x = words[w]!;
+        const lf = x ^ LFS;
+        const pipe = x ^ PIPES;
+        if ((((lf - ONES) & ~lf) | ((pipe - ONES) & ~pipe)) & HIGHS) {
+          const at = (w << 2) - offset;
+          for (let k = at; k < at + 4; k++) {
+            const c = bytes[k];
+            if (c === LF) {
+              this.recorded = n;
+              return k;
+            }
+            if (c === PIPE && n < PIPE_CAP) pipes[n++] = k;
+          }
+        }
+      }
+      for (i = (last << 2) - offset; i < len; i++) {
+        const c = bytes[i];
+        if (c === LF) break;
+        if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
+      }
+    }
+    this.recorded = n;
+    return i;
+  }
 }
 
 /** The start of the first timestamped line, or -1 when there is none. */

@@ -43,9 +43,9 @@ describe('truncation', () => {
 
     const region = parse(log).truncation.regions[0];
 
-    expect(region?.startTime).toBe(200);
+    expect(region?.startTimestamp).toBe(200);
     // The following METHOD_ENTRY (800), not the HEAP_ALLOCATE detail line (500).
-    expect(region?.endTime).toBe(800);
+    expect(region?.endTimestamp).toBe(800);
     expect(region?.skippedBytes).toBe(500);
   });
 
@@ -64,7 +64,7 @@ describe('truncation', () => {
     expect(apexLog.truncation.regions[0]?.skippedBytes).toBeNull();
     expect(apexLog.truncation.totalSkippedBytes).toBe(0);
     // Both frames the log stopped inside, innermost first.
-    expect(apexLog.truncatedEvents.map((event) => event.type)).toEqual([
+    expect(apexLog.unclosedFrames.map((event) => event.type)).toEqual([
       'METHOD_ENTRY',
       'EXECUTION_STARTED',
     ]);
@@ -108,12 +108,12 @@ describe('truncation', () => {
 
     const outer = firstChild(parse(log).children[0]);
 
-    expect(outer?.isTruncated).toBe(true);
+    expect(outer?.isFrame && outer.endedBy).toBe('log-end');
     expect(outer?.endTimestamp).toBe(900);
     expect(outer?.duration).toMatchObject({ total: 700, self: 100 });
   });
 
-  it('closes every open frame when a new execution starts', () => {
+  it('ends every unclosed frame when a new execution starts', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n' +
       '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|01p|First.unit\n' +
@@ -130,17 +130,17 @@ describe('truncation', () => {
       'EXECUTION_STARTED',
       'EXECUTION_STARTED',
     ]);
-    expect(apexLog.truncatedEvents.map((event) => event.text)).toEqual([
+    expect(apexLog.unclosedFrames.map((event) => event.text)).toEqual([
       'MyClass.run()',
       'First.unit',
       // An execution's line states no text.
       null,
     ]);
-    expect(apexLog.children[1]?.isTruncated).toBe(false);
-    expect(apexLog.truncatedEvents.map((event) => event.endTimestamp)).toEqual([300, 300, 300]);
+    expect(apexLog.children[1]?.isFrame && apexLog.children[1].endedBy).toBe('exit');
+    expect(apexLog.unclosedFrames.map((event) => event.endTimestamp)).toEqual([300, 300, 300]);
   });
 
-  it('never ends an open frame before a child that closes on the next execution', () => {
+  it('never ends an unclosed frame before a child that closes on the next execution', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n' +
       '09:18:22.6 (200)|CODE_UNIT_STARTED|[EXTERNAL]|Workflow:Account\n' +
@@ -170,7 +170,7 @@ describe('truncation', () => {
     const apexLog = parse(log);
     const second = apexLog.children[1];
 
-    expect(second?.isTruncated).toBe(false);
+    expect(second?.isFrame && second.endedBy).toBe('exit');
     expect(second?.endTimestamp).toBe(460);
     expect(apexLog.issues.map((issue) => issue.summary)).toContain('Unexpected-Exit');
   });
@@ -186,7 +186,7 @@ describe('truncation', () => {
 
     expect(apexLog.isTruncated).toBe(false);
     expect(apexLog.truncation).toEqual({ regions: [], totalSkippedBytes: 0 });
-    expect(apexLog.truncatedEvents).toEqual([]);
+    expect(apexLog.unclosedFrames).toEqual([]);
   });
 
   it('reports a skip line that follows an event which takes wrapped text', () => {
@@ -251,7 +251,7 @@ describe('truncation', () => {
     );
     expect(outline(log)).toEqual(['METHOD_ENTRY@1-2!', '  STATEMENT_EXECUTE@2', 'FATAL_ERROR@3']);
     // Replaced once the frame ends, so it follows the Unexpected-End issue at the same time.
-    expect(log.issues.map((i) => [i.summary, i.startTime, i.event?.id])).toEqual([
+    expect(log.issues.map((i) => [i.summary, i.startTimestamp, i.event?.id])).toEqual([
       ['Unexpected-End', 2, 1],
       ['Max-Size-reached', 2, 1],
       ['System.LimitException', 3, 3],
@@ -266,7 +266,7 @@ describe('truncation', () => {
       `${at(5)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
       `${at(9)}|STATEMENT_EXECUTE|[3]`,
     );
-    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
       ['max-size', 2, 5],
     ]);
   });
@@ -275,11 +275,110 @@ describe('truncation', () => {
     const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
     const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, cut, `${at(9)}|STATEMENT_EXECUTE|[3]`);
     expect(log.parsingErrors).toEqual([`Invalid line number: ${cut}`]);
-    expect(log.issues.map((i) => [i.summary, i.event?.id, i.startTime])).toEqual([
+    expect(log.issues.map((i) => [i.summary, i.event?.id, i.startTimestamp])).toEqual([
       ['Max-Size-reached', 2, 2],
     ]);
-    expect(log.truncation.regions.map((r) => [r.kind, r.startTime, r.endTime])).toEqual([
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
       ['max-size', 2, 9],
     ]);
+  });
+
+  // Truncation keeps method, constructor, code unit, query and callout pairs, but not system ones.
+  it('marks a frame whose exit a skipped block hid as unwound by the exit further out', () => {
+    const log = logOf(
+      `${at(100)}|EXECUTION_STARTED`,
+      `${at(200)}|METHOD_ENTRY|[10]|01p000000000AAA|MyClass.outer()`,
+      `${at(300)}|SYSTEM_METHOD_ENTRY|[20]|System.debug(ANY)`,
+      '*** Skipped 1,000 bytes of detailed log',
+      `${at(900)}|METHOD_EXIT|[10]|01p000000000AAA|MyClass.outer()`,
+      `${at(1000)}|EXECUTION_FINISHED`,
+    );
+    expect(outline(log)).toEqual([
+      'EXECUTION_STARTED@100-1000',
+      '  METHOD_ENTRY@200-900',
+      '    SYSTEM_METHOD_ENTRY@300-900~',
+    ]);
+    expect(log.unclosedFrames.map((event) => event.text)).toEqual(['System.debug(ANY)']);
+  });
+
+  it('marks the frames a fatal error leaves as unwound by the code unit that ends', () => {
+    const log = logOf(
+      `${at(100)}|EXECUTION_STARTED`,
+      `${at(150)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
+      `${at(200)}|METHOD_ENTRY|[10]|01p000000000AAA|MyClass.outer()`,
+      `${at(300)}|METHOD_ENTRY|[20]|01p000000000AAA|MyClass.inner()`,
+      `${at(350)}|EXCEPTION_THROWN|[21]|System.NullPointerException: x`,
+      `${at(400)}|FATAL_ERROR|System.NullPointerException: x`,
+      `${at(450)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
+      `${at(500)}|EXECUTION_FINISHED`,
+    );
+    expect(outline(log)).toEqual([
+      'EXECUTION_STARTED@100-500',
+      '  CODE_UNIT_STARTED@150-450',
+      '    METHOD_ENTRY@200-450~',
+      '      METHOD_ENTRY@300-450~',
+      '        EXCEPTION_THROWN@350',
+      '        FATAL_ERROR@400',
+    ]);
+    // In the order they ended: innermost first.
+    expect(log.unclosedFrames.map((event) => event.text)).toEqual([
+      'MyClass.inner()',
+      'MyClass.outer()',
+    ]);
+    expect(log.issues.map((issue) => issue.summary)).not.toContain('Unexpected-End');
+  });
+
+  it('marks a method open when its code unit ends as unwound', () => {
+    const log = logOf(
+      `${at(150)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
+      `${at(200)}|METHOD_ENTRY|[10]|01p000000000AAA|MyClass.outer()`,
+      `${at(450)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
+    );
+    expect(outline(log)).toEqual(['CODE_UNIT_STARTED@150-450', '  METHOD_ENTRY@200-450~']);
+  });
+
+  it('lists unwound and log-ended frames together, in the order they ended', () => {
+    const log = logOf(
+      `${at(200)}|METHOD_ENTRY|[10]|01p000000000AAA|MyClass.outer()`,
+      `${at(300)}|METHOD_ENTRY|[20]|01p000000000AAA|MyClass.inner()`,
+      `${at(400)}|METHOD_EXIT|[10]|01p000000000AAA|MyClass.outer()`,
+      `${at(500)}|METHOD_ENTRY|[30]|01p000000000AAA|MyClass.last()`,
+    );
+    expect(
+      log.unclosedFrames.map((event) => [event.text, event.endedBy, event.endTimestamp]),
+    ).toEqual([
+      ['MyClass.inner()', 'unwind', 400],
+      ['MyClass.last()', 'log-end', 500],
+    ]);
+  });
+
+  it('states a package entry as ended by the next event, and the last one by the log end', () => {
+    const log = logOf(
+      `${at(100)}|ENTERING_MANAGED_PKG|ns`,
+      `${at(200)}|STATEMENT_EXECUTE|[1]`,
+      `${at(300)}|ENTERING_MANAGED_PKG|other`,
+    );
+    expect(log.children.map((event) => (event.isFrame ? event.endedBy : null))).toEqual([
+      'next',
+      null,
+      'log-end',
+    ]);
+    expect(log.unclosedFrames.map((event) => event.startTimestamp)).toEqual([300]);
+  });
+
+  it('states no rows for a query the log states no end line for', () => {
+    const log = logOf(
+      `${at(100)}|METHOD_ENTRY|[10]|01p000000000AAA|MyClass.run()`,
+      `${at(200)}|SOQL_EXECUTE_BEGIN|[11]|Aggregations:0|SELECT Id FROM Account`,
+      `${at(300)}|EXCEPTION_THROWN|[11]|System.QueryException: x`,
+      `${at(400)}|METHOD_EXIT|[10]|01p000000000AAA|MyClass.run()`,
+    );
+    const [query] = log.ofType('SOQL_EXECUTE_BEGIN');
+    expect([query?.isFrame && query.endedBy, query?.soqlCount, query?.soqlRowCount]).toEqual([
+      'unwind',
+      { self: 1, total: 1 },
+      null,
+    ]);
+    expect(log.soqlRowCount).toEqual({ self: 0, total: 0 });
   });
 });

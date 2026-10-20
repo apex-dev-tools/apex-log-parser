@@ -1,11 +1,12 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { CR, LPAREN, PIPE, SPACE, STAR, ZERO } from '../bytes/ascii.js';
+import { CR, LPAREN, SPACE, STAR, ZERO } from '../bytes/ascii.js';
 import { ByteFields, digits } from '../bytes/cursor.js';
 import {
   firstEventLine,
   isTypeName,
+  LineScanner,
   lineText,
   TRUNCATION_MARKER,
   timestampClose,
@@ -16,7 +17,17 @@ import { typeIdAt } from '../bytes/typeIds.js';
 import { GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
 import type { LimitMetric, LimitSnapshot } from '../limits.js';
 import { runningTotal } from '../limits.js';
-import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, Store, TOTAL } from '../store/store.js';
+import {
+  COUNTER,
+  COUNTERS,
+  EXTERNAL_LINE,
+  HEAP,
+  NO_LINE,
+  NONE,
+  SELF,
+  Store,
+  TOTAL,
+} from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
 import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
@@ -38,6 +49,7 @@ import {
   HAS_EXITS,
   HEAP_FIELD,
   HEAP_SIGN,
+  HEAP_SLOT,
   HOOK,
   IS_EXIT,
   IS_FRAME,
@@ -98,8 +110,10 @@ export interface Built {
   readonly strings: StringTable;
   readonly issues: Issues;
   readonly parsingErrors: readonly string[];
-  /** The frames the log does not close, in the order they ended. */
-  readonly truncated: readonly number[];
+  /** The frames whose end is inferred, in the order they ended. */
+  readonly unclosedFrames: readonly number[];
+  /** Per `COUNTER`, then `HEAP_SLOT`: 1 when the log states a line that gives the figure. */
+  readonly seen: Uint8Array;
   /** The string ids of the namespaces the log states, in first-stated order. */
   readonly namespaces: readonly number[];
   /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
@@ -117,7 +131,7 @@ export interface Built {
 }
 
 /**
- * Builds the event tree in one pass, with v0's rules and v0's order of side effects. Lines
+ * Builds the event tree in one pass, with pre-0.4 rules and order of side effects. Lines
  * are read one event ahead: taking an event reads every line up to the next one, so the work that
  * follows an event (its text, then the next event's own) runs before the tree places that next
  * event.
@@ -125,11 +139,13 @@ export interface Built {
 export class LogBuilder {
   private readonly source: Source;
   private readonly bytes: Uint8Array;
+  private readonly lines: LineScanner;
   private readonly fields: ByteFields;
   private readonly store: Store;
   private readonly strings: StringTable;
   private readonly markers: LogMarkers;
-  private readonly truncated: number[] = [];
+  private readonly unclosedFrames: number[] = [];
+  private readonly seen: Uint8Array = new Uint8Array(COUNTERS + 1);
   private readonly namespaces: Namespaces;
   // The open frames, innermost last: each one's id, and its last child's id or `NONE`.
   private readonly frameIds: number[] = [];
@@ -188,6 +204,7 @@ export class LogBuilder {
   constructor(source: Source) {
     this.source = source;
     this.bytes = source.bytes;
+    this.lines = new LineScanner(source.bytes);
     this.fields = new ByteFields(source);
     this.store = new Store(source.bytes.length);
     this.strings = new StringTable(source);
@@ -291,7 +308,8 @@ export class LogBuilder {
       strings: this.strings,
       issues,
       parsingErrors,
-      truncated: this.truncated,
+      unclosedFrames: this.unclosedFrames,
+      seen: this.seen,
       namespaces: this.namespaces.order,
       snapshots,
       size: len,
@@ -320,7 +338,7 @@ export class LogBuilder {
       const frame = ids[top]!;
       const onNextLine = NEXT_LINE_EXITS[store.type[frame]!] === 1;
       if (!this.hasNext) {
-        this.closeUnterminated();
+        this.endAtLogEnd(false);
         continue;
       }
       const next = this.nextType;
@@ -331,23 +349,22 @@ export class LogBuilder {
       const exitRows = this.nextRows;
       if (!onNextLine && EXIT_LINE[next] && this.endMethod(frame)) {
         // Also when the line unwinds this frame to close one below it.
-        this.endedBy(frame, next, exitNamespace, exitRows);
+        this.takeExit(frame, next, exitNamespace, exitRows);
         this.pop();
       } else if (onNextLine && (IS_EXIT[next] || nextHasExits)) {
         store.exitStamp[frame] = this.nextTimestamp;
-        this.endedBy(frame, next, exitNamespace, exitRows);
+        this.takeExit(frame, next, exitNamespace, exitRows);
         this.pop();
       } else if (
         this.discontinuity &&
         this.maxSizeTimestamp &&
         this.nextTimestamp > this.maxSizeTimestamp
       ) {
-        store.flags[frame]! |= FLAG.truncated;
-        this.closeUnterminated();
+        this.endAtLogEnd(true);
       } else if (next === EXECUTION_STARTED) {
         // An execution is always top level, so every frame still open lost its exit.
         this.discontinuity = false;
-        this.closeUnterminated();
+        this.endAtLogEnd(false);
       } else {
         const child = this.takeChild(frame, store.depth[frame]! + 1, top);
         // child was added by take, so it has a type
@@ -373,7 +390,7 @@ export class LogBuilder {
   }
 
   /** What a frame takes from the line that closes or unwinds it. */
-  private endedBy(frame: number, exitType: number, exitNamespace: number, exitRows: number): void {
+  private takeExit(frame: number, exitType: number, exitNamespace: number, exitRows: number): void {
     const store = this.store;
     // frame was added by take, so it has a type
     const type = store.type[frame]!;
@@ -383,7 +400,9 @@ export class LogBuilder {
     const rowsAt = ROWS_FROM_EXIT[type]!;
     if (rowsAt < 0) return;
     // An exit of another kind states none of these rows.
-    const rows = ROWS_AT[exitType] === rowsAt ? exitRows : 0;
+    const stated = ROWS_AT[exitType] === rowsAt;
+    if (stated) this.seen[rowsAt] = 1;
+    const rows = stated ? exitRows : 0;
     if (!rows && store.countSlot[frame] === NONE) return;
     const at = store.countsOf(frame) + rowsAt * 2;
     store.counts[at + SELF] = rows;
@@ -391,7 +410,7 @@ export class LogBuilder {
   }
 
   /** The log stops inside the innermost frame, or a new execution or the maximum size ends it. */
-  private closeUnterminated(): void {
+  private endAtLogEnd(atMaxSize: boolean): void {
     const store = this.store;
     const top = this.frameIds.length - 1;
     // only called while a frame is open
@@ -406,12 +425,19 @@ export class LogBuilder {
           : store.exitStamp[last]!;
     const exitStamp = Math.max(this.lastTimestamp, lastEnd);
     store.exitStamp[id] = exitStamp;
-    const atMaxSize = (store.flags[id]! & FLAG.truncated) !== 0;
     this.markers.unexpectedEnd(exitStamp, id, atMaxSize);
     if (atMaxSize) this.maxSizeTimestamp = exitStamp;
-    store.flags[id]! |= FLAG.truncated;
-    this.truncated.push(id);
+    store.flags[id]! |= FLAG.logEnd;
+    this.unclosedFrames.push(id);
     this.pop();
+  }
+
+  /** The next line ends `frame`, though it is not `frame`'s own exit line. */
+  private unwound(frame: number): true {
+    // frame was added by take, so every column holds it
+    this.store.flags[frame]! |= FLAG.unwind;
+    this.unclosedFrames.push(frame);
+    return true;
   }
 
   /** True when the next line closes this frame, or one below it. */
@@ -423,8 +449,8 @@ export class LogBuilder {
       this.fold(frame);
       return true;
     }
-    if (this.discontinuity) return true;
-    for (const below of this.frameIds) if (this.matches(below)) return true;
+    if (this.discontinuity) return this.unwound(frame);
+    for (const below of this.frameIds) if (this.matches(below)) return this.unwound(frame);
     // The exit becomes a child, the next row.
     this.markers.issues.add(this.nextTimestamp, store.count, ISSUE.unexpectedExit);
     return false;
@@ -445,8 +471,8 @@ export class LogBuilder {
 
   /**
    * Places the next event under `parent`, whose open-frame slot is `top`, or -1 for the log. A
-   * package entry in the namespace of the run before it merges into that run, as v0's merge did,
-   * and gets no row: the result is then `NONE`.
+   * package entry in the namespace of the run before it merges into that run, as the pre-0.4
+   * merge did, and gets no row: the result is then `NONE`.
    */
   private takeChild(parent: number, depth: number, top: number): number {
     const store = this.store;
@@ -483,7 +509,7 @@ export class LogBuilder {
 
   /** The next package entry extends `into` instead of getting a row. */
   private mergePackage(into: number): void {
-    // `exitStamp || timestamp`, as in v0: the event after it moves this on, when there is one.
+    // `exitStamp || timestamp`, as before 0.4: the event after it moves this on, when there is one.
     this.store.exitStamp[into] = this.nextTimestamp;
     this.lastTimestamp = this.nextTimestamp;
     this.lastFolded = false;
@@ -519,6 +545,9 @@ export class LogBuilder {
     const count = COUNT_AT[type]!;
     const rowsAt = ROWS_AT[type]!;
     const rows = rowsAt < 0 ? 0 : this.nextRows;
+    if (count >= 0) this.seen[count] = 1;
+    if (rowsAt >= 0) this.seen[rowsAt] = 1;
+    if (HEAP_SIGN[type]) this.seen[HEAP_SLOT] = 1;
     if (count >= 0 || rows) {
       const at = store.countsOf(id);
       const counts = store.counts;
@@ -534,7 +563,10 @@ export class LogBuilder {
       heap[at + HEAP.grossSelf] = heap[at + HEAP.grossTotal] = bytes > 0 ? bytes : 0;
       heap[at + HEAP.peak] = this.runningHeap;
     }
-    if (this.nextFlowTotal) this.flowTotals.set(id, this.nextFlowTotal);
+    if (this.nextFlowTotal) {
+      this.seen[this.nextFlowTotal.counter] = 1;
+      this.flowTotals.set(id, this.nextFlowTotal);
+    }
   }
 
   /** Takes the next event, a matched exit line, into the frame it closes: it gets no row. */
@@ -570,11 +602,10 @@ export class LogBuilder {
     this.hasNext = false;
     while (this.pos < len) {
       const start = this.pos;
-      let eol = this.source.lineEnd(start);
-      const last = eol < 0;
-      if (last) eol = len;
+      const eol = this.lines.next(start);
+      const last = eol >= len;
       this.pos = eol + 1;
-      // A CR before the line's LF is part of its line end; the last line keeps one, as in v0.
+      // A CR before the line's LF is part of its line end; the last line keeps one, as before 0.4.
       const end = !last && eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
       if (end === start) continue;
       const read = this.readEvent(start, end);
@@ -606,19 +637,23 @@ export class LogBuilder {
     const store = this.store;
     const id = this.lastId;
     // id is a row once lastType is a type
-    if (this.lastType === ENTERING_MANAGED_PKG && Number.isNaN(store.exitStamp[id]!)) {
+    // A merged run's end is the last entry's start already, and no event follows either.
+    if (this.lastType === ENTERING_MANAGED_PKG) {
       store.exitStamp[id] = this.lastAt;
+      store.flags[id]! |= FLAG.logEnd;
+      this.unclosedFrames.push(id);
     }
   }
 
   /** Reads the line as the next event, when it starts one. */
   private readEvent(start: number, end: number): number {
     const bytes = this.bytes;
-    let p1 = start;
-    while (p1 < end && bytes[p1] !== PIPE) p1++;
-    if (p1 >= end) return READ.notEvent;
-    let p2 = p1 + 1;
-    while (p2 < end && bytes[p2] !== PIPE) p2++;
+    const pipes = this.lines.pipes;
+    const count = this.lines.pipeCount;
+    if (count === 0) return READ.notEvent;
+    // count is at least 1, so pipes holds the first
+    const p1 = pipes[0]!;
+    const p2 = count > 1 ? pipes[1]! : end;
     const type = typeIdAt(bytes, p1 + 1, p2);
     if (type < 0) {
       if (!isTypeName(bytes, p1 + 1, p2)) return READ.notEvent;
@@ -628,7 +663,7 @@ export class LogBuilder {
     }
     const timestamp = timestampIn(bytes, start, p1);
     if (Number.isNaN(timestamp)) {
-      // v0 threw here and ended the parse.
+      // Before 0.4, this threw and ended the parse.
       this.markers.lineError('Invalid log line', start, end);
       return READ.error;
     }
@@ -636,7 +671,7 @@ export class LogBuilder {
     let flags = 0;
     let line = NO_LINE;
     const fields = this.fields;
-    fields.resetFound(start, end, p1, p2);
+    fields.resetLine(start, end, this.lines);
     // type is a type id, so it indexes the tables
     const lineField = LINE_FIELD[type]!;
     if (lineField >= 0) {
@@ -663,7 +698,7 @@ export class LogBuilder {
     let heap = 0;
     const sign = HEAP_SIGN[type]!;
     if (sign) {
-      // Anything but `Bytes:` and a number reads as no bytes, as in v0.
+      // Anything but `Bytes:` and a number reads as no bytes, as before 0.4.
       const stated = fields.int(HEAP_FIELD[type]!, HEAP_PREFIX);
       heap = stated === null || Number.isNaN(stated) ? 0 : sign * stated;
       // Clamped, so a free the log kept without its allocation cannot swallow later ones.

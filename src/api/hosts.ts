@@ -20,6 +20,7 @@ export const yieldToNode = (): Promise<void> => new Promise((resolve) => setImme
  * (not Safari). A message is the fallback: a timeout of 0 is clamped to 4 ms after a few nested calls.
  */
 export function yieldToBrowser(): Promise<void> {
+  // biome-ignore lint/complexity/useOptionalChain: `scheduler` can be undeclared, and `scheduler?.yield` then throws a ReferenceError.
   if (typeof scheduler !== 'undefined' && scheduler.yield) return scheduler.yield();
   return new Promise((resolve) => {
     const { port1, port2 } = new MessageChannel();

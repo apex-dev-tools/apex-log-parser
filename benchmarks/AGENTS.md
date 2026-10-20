@@ -17,7 +17,7 @@ applies.
   which the caller made. `--max-heap-growth=<percent>` fails the run on heap growth. The `heap` CI
   job runs it that way on each pull request, with the base's `--json` as the head's `--baseline`,
   so the head must keep reading the base's JSON shape.
-- `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run, before v1 removed it:
+- `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run before 0.4 removed it:
   the 8 to 100 MB synthetic logs. Pass it as `--baseline`. To measure the legacy parser again, use
   a 0.x release from npm, as `npm:@apexdevtools/apex-log-parser@0.3.0`; 0.2.0 is before v0.3's
   heap work, so it does not give these figures. The release notes compare as a consumer parses

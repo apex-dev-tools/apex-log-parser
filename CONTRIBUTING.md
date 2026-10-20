@@ -69,7 +69,7 @@ Run `pnpm run lint:fix` before committing to auto-format.
 
 ## Adding New Event Types
 
-See [Adding an event type](./AGENTS.md#adding-an-event-type) in `AGENTS.md`, which covers the
+See [Adding an event type](./src/AGENTS.md#adding-an-event-type) in `src/AGENTS.md`, which covers the
 catalog entry and the traps.
 
 ## Project Structure

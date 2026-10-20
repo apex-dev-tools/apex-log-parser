@@ -19,6 +19,16 @@ describe('event text', () => {
     expect(log.event(1)?.text).toBe(log.event(1)?.text);
   });
 
+  it('reads a line with more fields than a line scan records', () => {
+    const parts = Array.from({ length: 20 }, (_, i) => `p${i}`);
+    const log = logOf(
+      `${at(1)}|USER_DEBUG|[1]|DEBUG|${parts.join('|')}`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+    );
+    expect(pick(log, 'text')).toEqual([`DEBUG | ${parts.join(' | ')}`, null]);
+    expect([...log.events].map((e) => e.lineNumber)).toEqual([1, 2]);
+  });
+
   it('states the first line as the log does, without its line ending or continuation lines', () => {
     const log = parse(
       [
@@ -118,16 +128,16 @@ describe('event text', () => {
       ...interviews(9, 'MyProcess'),
       `${at(14)}|CODE_UNIT_FINISHED|Workflow:Account`,
       ...interviews(15, 'Alone'),
-      // Truncated: the log ends inside it.
+      // Unclosed: the log ends inside it.
       `${at(20)}|FLOW_START_INTERVIEWS_BEGIN|1`,
       `${at(21)}|FLOW_START_INTERVIEW_BEGIN|01I000000000AAA|Cut`,
     );
     const frames = log.ofType('FLOW_START_INTERVIEWS_BEGIN');
-    expect(frames.map((e) => [e.text, e.isTruncated])).toEqual([
-      ['MyFlow', false],
-      ['MyProcess', false],
-      ['Alone', false],
-      ['Cut', true],
+    expect(frames.map((e) => [e.text, e.isFrame ? e.endedBy : null])).toEqual([
+      ['MyFlow', 'exit'],
+      ['MyProcess', 'exit'],
+      ['Alone', 'exit'],
+      ['Cut', 'log-end'],
     ]);
   });
 });

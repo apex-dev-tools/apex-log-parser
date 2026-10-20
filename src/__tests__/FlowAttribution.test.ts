@@ -37,17 +37,17 @@ describe('flow database attribution', () => {
     const bulkElement = apexLog.ofType('FLOW_BULK_ELEMENT_BEGIN')[0];
 
     // The 75 ms CPU line is not a DB metric, so every counter stays at what its own line states.
-    expect(bulkElement?.soqlCount.self).toBe(1);
-    expect(bulkElement?.soqlRowCount.self).toBe(1);
-    expect(bulkElement?.dmlCount.self).toBe(1);
-    expect(bulkElement?.dmlRowCount.self).toBe(1);
-    expect(bulkElement?.soslCount.self).toBe(0);
-    expect(bulkElement?.soslRowCount.self).toBe(0);
+    expect(bulkElement?.soqlCount?.self).toBe(1);
+    expect(bulkElement?.soqlRowCount?.self).toBe(1);
+    expect(bulkElement?.dmlCount?.self).toBe(1);
+    expect(bulkElement?.dmlRowCount?.self).toBe(1);
+    expect(bulkElement?.soslCount?.self).toBe(0);
+    expect(bulkElement?.soslRowCount?.self).toBe(0);
 
-    expect(apexLog.soqlCount.total).toBe(1);
-    expect(apexLog.soqlRowCount.total).toBe(1);
-    expect(apexLog.dmlCount.total).toBe(1);
-    expect(apexLog.dmlRowCount.total).toBe(1);
+    expect(apexLog.soqlCount?.total).toBe(1);
+    expect(apexLog.soqlRowCount?.total).toBe(1);
+    expect(apexLog.dmlCount?.total).toBe(1);
+    expect(apexLog.dmlRowCount?.total).toBe(1);
   });
 
   it('seeds the (non-bulk) element self counters from FLOW_ELEMENT_LIMIT_USAGE deltas', () => {
@@ -61,9 +61,9 @@ describe('flow database attribution', () => {
     const apexLog = parse(log);
     const element = apexLog.ofType('FLOW_ELEMENT_BEGIN')[0];
 
-    expect(element?.dmlCount.self).toBe(1);
-    expect(element?.dmlRowCount.self).toBe(1);
-    expect(apexLog.dmlCount.total).toBe(1);
+    expect(element?.dmlCount?.self).toBe(1);
+    expect(element?.dmlRowCount?.self).toBe(1);
+    expect(apexLog.dmlCount?.total).toBe(1);
   });
 
   it('attributes the leading delta, not the running total, when a later element reports a higher total', () => {
@@ -79,8 +79,8 @@ describe('flow database attribution', () => {
     const apexLog = parse(log);
     const elements = apexLog.ofType('FLOW_BULK_ELEMENT_BEGIN');
 
-    expect(elements.map((e) => e.dmlCount.self)).toEqual([1, 1]);
-    expect(apexLog.dmlCount.total).toBe(2);
+    expect(elements.map((e) => e.dmlCount?.self)).toEqual([1, 1]);
+    expect(apexLog.dmlCount?.total).toBe(2);
   });
 
   it('reconciles bulk element deltas against the CUMULATIVE_LIMIT_USAGE snapshot', () => {
@@ -97,10 +97,10 @@ describe('flow database attribution', () => {
     const apexLog = parse(log);
     const snapshot = apexLog.limits.snapshots.at(-1);
 
-    expect(apexLog.soqlCount.total).toBe(snapshot?.limits.soqlQueries.used);
-    expect(apexLog.soqlRowCount.total).toBe(snapshot?.limits.queryRows.used);
-    expect(apexLog.dmlCount.total).toBe(snapshot?.limits.dmlStatements.used);
-    expect(apexLog.dmlRowCount.total).toBe(snapshot?.limits.dmlRows.used);
+    expect(apexLog.soqlCount?.total).toBe(snapshot?.limits.soqlQueries.used);
+    expect(apexLog.soqlRowCount?.total).toBe(snapshot?.limits.queryRows.used);
+    expect(apexLog.dmlCount?.total).toBe(snapshot?.limits.dmlStatements.used);
+    expect(apexLog.dmlRowCount?.total).toBe(snapshot?.limits.dmlRows.used);
   });
 
   it('attributes only the residual when the element subtree logged its own statements', () => {
@@ -118,9 +118,9 @@ describe('flow database attribution', () => {
     const element = apexLog.ofType('FLOW_ELEMENT_BEGIN')[0];
 
     // The reported 2 covers the 1 query the subtree logged, so only 1 is attributed.
-    expect(element?.soqlCount.self).toBe(1);
-    expect(element?.soqlCount.total).toBe(2);
-    expect(apexLog.soqlCount.total).toBe(2);
+    expect(element?.soqlCount?.self).toBe(1);
+    expect(element?.soqlCount?.total).toBe(2);
+    expect(apexLog.soqlCount?.total).toBe(2);
   });
 
   it('attributes nothing when the element subtree already logged the whole reported count', () => {
@@ -139,8 +139,8 @@ describe('flow database attribution', () => {
     const element = apexLog.ofType('FLOW_ELEMENT_BEGIN')[0];
     const snapshot = apexLog.limits.snapshots.at(-1);
 
-    expect(element?.soqlCount.self).toBe(0);
-    expect(apexLog.soqlCount.total).toBe(snapshot?.limits.soqlQueries.used);
+    expect(element?.soqlCount?.self).toBe(0);
+    expect(apexLog.soqlCount?.total).toBe(snapshot?.limits.soqlQueries.used);
   });
 
   it('clamps the summed deltas to the rise in the running total when a line repeats', () => {
@@ -155,8 +155,8 @@ describe('flow database attribution', () => {
     const element = apexLog.ofType('FLOW_ELEMENT_BEGIN')[0];
 
     // The deltas sum to 2 but the total only rose by 1, so only 1 is attributed.
-    expect(element?.dmlCount.self).toBe(1);
-    expect(apexLog.dmlCount.total).toBe(1);
+    expect(element?.dmlCount?.self).toBe(1);
+    expect(apexLog.dmlCount?.total).toBe(1);
   });
 
   it('attributes a nested element residual to the enclosing element before it is measured', () => {
@@ -173,10 +173,10 @@ describe('flow database attribution', () => {
     const [outer, inner] = apexLog.ofType('FLOW_ELEMENT_BEGIN');
 
     // The subflow reports the same statement its child reported, so it is counted once.
-    expect(inner?.dmlCount.self).toBe(1);
-    expect(outer?.dmlCount.self).toBe(0);
-    expect(outer?.dmlCount.total).toBe(1);
-    expect(apexLog.dmlCount.total).toBe(1);
+    expect(inner?.dmlCount?.self).toBe(1);
+    expect(outer?.dmlCount?.self).toBe(0);
+    expect(outer?.dmlCount?.total).toBe(1);
+    expect(apexLog.dmlCount?.total).toBe(1);
   });
 
   it('attributes the usage of a flow element the log truncated before its END line', () => {
@@ -187,8 +187,8 @@ describe('flow database attribution', () => {
     const apexLog = parse(log);
     const bulkElement = apexLog.ofType('FLOW_BULK_ELEMENT_BEGIN')[0];
 
-    expect(bulkElement?.dmlCount.self).toBe(1);
-    expect(apexLog.dmlCount.total).toBe(1);
+    expect(bulkElement?.dmlCount?.self).toBe(1);
+    expect(apexLog.dmlCount?.total).toBe(1);
   });
 
   it('does not crash and does not fabricate counts at FINE level (no _LIMIT_USAGE lines emitted)', () => {
@@ -201,8 +201,8 @@ describe('flow database attribution', () => {
     const apexLog = parse(log);
     const bulkElement = apexLog.ofType('FLOW_BULK_ELEMENT_BEGIN')[0];
 
-    expect(bulkElement?.soqlCount.self).toBe(0);
-    expect(bulkElement?.dmlCount.self).toBe(0);
-    expect(apexLog.dmlCount.total).toBe(0);
+    expect(bulkElement?.soqlCount?.self).toBe(0);
+    expect(bulkElement?.dmlCount?.self).toBe(0);
+    expect(apexLog.dmlCount?.total).toBe(0);
   });
 });

@@ -67,10 +67,10 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
     apexLog = parse('');
   });
 
-  it('parses with no errors, issues or unclosed events', () => {
+  it('parses with no errors, issues or unclosed frames', () => {
     expect(apexLog.parsingErrors).toEqual([]);
     expect(apexLog.issues).toEqual([]);
-    expect(apexLog.truncatedEvents).toEqual([]);
+    expect(apexLog.unclosedFrames).toEqual([]);
   });
 
   it('holds the events it is named for', () => {

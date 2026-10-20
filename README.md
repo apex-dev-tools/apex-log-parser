@@ -1,20 +1,22 @@
-# @apexdevtools/apex-log-parser
+# Apex Log Parser
 
 [![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
-[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](./LICENSE)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://github.com/apex-dev-tools/apex-log-parser/blob/main/LICENSE)
 
-Turn a Salesforce Apex debug log into a typed event tree with execution timings, governor
-limits and SOQL/DML counts. In Node and in the browser.
+Fast Apex log parser for Salesforce debug logs: a typed call tree with timings, governor limits
+and SOQL/DML counts. TypeScript, Node.js and browser.
+
+It parses a 100 MB debug log in about 200 ms, with no dependencies.
 
 It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
 VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).
 
 ## Features
 
-- **Fast and small.** On synthetic logs of 8 to 100 MB, it parses 5–8× faster than v0.3 and keeps
-  6× less memory.
+- **Fast and small.** Parses a 100 MB log in about 200 ms, against 829 ms in v0.3, and holds
+  37 MB of memory against 812 MB. See [Performance](#performance).
 - **Responsive.** `parse` is async and works in time slices of 5 ms, so the page or the event
   loop stays responsive. Stop it with an `AbortSignal`, and follow it with `onProgress`.
 - **Any source.** A string, bytes, a `Blob`, a `fetch` `Response`, a `ReadableStream` or an async
@@ -94,6 +96,8 @@ Note the shape:
   `children` is always empty.
 - `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not events of their own. Each closes its
   matching entry and sets that event's `endTimestamp` and `duration`. A leaf's `endTimestamp` is its `startTimestamp`.
+- A frame's `endedBy` says whether the log states its end (`'exit'`, `'next'`) or the parser
+  inferred it (`'unwind'`, `'log-end'`). `log.unclosedFrames` lists the inferred ones.
 - `text` is null when the line states nothing, as for `EXECUTION_STARTED`. Use `text ?? type` for
   a label.
 
@@ -111,8 +115,9 @@ what it called.
 const log = await parse(logData);
 const { final, peak } = log.limits;
 
-console.log(`SOQL: ${log.soqlCount.total} queries, ${log.soqlRowCount.total} rows`);
-console.log(`DML:  ${log.dmlCount.total} statements, ${log.dmlRowCount.total} rows`);
+// null when the log's debug levels did not record these lines.
+console.log(`SOQL: ${log.soqlCount?.total} queries, ${log.soqlRowCount?.total} rows`);
+console.log(`DML:  ${log.dmlCount?.total} statements, ${log.dmlRowCount?.total} rows`);
 console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
 console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
 
@@ -121,7 +126,8 @@ console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.durat
 
 for (const query of log.ofType('SOQL_EXECUTE_BEGIN')) {
   // details is typed by the event type: here the aggregations, and the plan when the log states one.
-  console.log(query.lineNumber, query.soqlRowCount.self, query.details.explain?.relativeCost);
+  // soqlRowCount is null for a query with no end line, as one an exception stopped.
+  console.log(query.lineNumber, query.soqlRowCount?.self, query.details.explain?.relativeCost);
 }
 ```
 
@@ -211,7 +217,7 @@ for (let id = 1; id <= log.eventCount; id++) {
 
 Everything comes from the package root: `parse`, `toBuffers`, `fromBuffers`, the event catalog
 (`EVENT_TYPES`, `eventType`), every type, and the const companions that go with them
-(`DEBUG_CATEGORY`, `EVENT_TYPE_NAMES`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
+(`DEBUG_CATEGORY`, `ENDED_BY`, `EVENT_TYPE_NAMES`, `FLOW_TYPE`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
 `SHAPE`, `TRUNCATION_KIND`). `DEBUG_CATEGORY_TOKEN` gives the header token of each debug category,
 and `LIMIT_METRICS` gives the unit of each limit metric:
 
@@ -221,7 +227,7 @@ import { eventType, parse, type ApexLog } from '@apexdevtools/apex-log-parser';
 
 `ApexLog` is the log. Besides its rollups and `children`, it has `event(id)`, `ofType()`, `at(ns)`,
 `columns`, `limits`, `namespaces`, `debugLevels`, `debugLevelSettings`, `userInfo`, `entryPoints`,
-`exceptions`, `truncation`, `truncatedEvents`, `issues` and `parsingErrors`.
+`exceptions`, `truncation`, `unclosedFrames`, `issues` and `parsingErrors`.
 
 The type declarations in the package document every field, event type and type, so your editor
 shows them.
@@ -229,14 +235,15 @@ shows them.
 ## Tips
 
 **Capture the log at the right levels.** The parser reports what the log contains. A log captured
-at a low level is missing whole categories of line, and the matching fields stay empty. This is
-the most common surprise:
+at a low level is missing whole categories of line, and the matching fields stay empty: a count or
+heap figure the header's level does not record is `null`, not 0. This is the most common surprise:
 
 | You want | The log needs |
 | --- | --- |
 | `duration` on method events | `APEX_CODE` at `FINE` or above, plus `APEX_PROFILING` |
 | `limits` | `APEX_PROFILING` at `FINE` or above, which writes the `CUMULATIVE_LIMIT_USAGE` block |
-| SOQL and DML events | `DB` at `INFO` or above |
+| SOQL and DML events and counts | `DB` at `INFO` or above |
+| `heapAllocated`, `heapGross`, `heapPeak` | `APEX_CODE` at `FINER` or above |
 | Flow and Process Builder limit lines | `WORKFLOW` at `FINER` |
 
 **All-zero limits mean "not reported".** Without a `LIMIT_USAGE_FOR_NS` block, every
@@ -256,6 +263,36 @@ log or an unexpected exit.
 
 **Null means "not stated".** A value the log does not state is `null`, never `0` or `''`, so you
 can tell the two apart.
+
+## Performance
+
+_Measured on a 12-core M4 Pro, 24 GB RAM, Node.js 24.20.0._
+
+Synthetic debug logs, the median of 5 runs. Each log is in memory before the timer
+starts: as bytes for v0.4, and as a string for v0.2 and v0.3, which read only strings. Memory is
+what the parsed log holds, without the log's own bytes or string.
+
+Parse time:
+
+| Log size | v0.2 | v0.3 | v0.4 |
+| --- | --- | --- | --- |
+| 8 MB | 106 ms | 86 ms | 20 ms |
+| 20 MB | 274 ms | 221 ms | 47 ms |
+| 50 MB | 550 ms | 426 ms | 101 ms |
+| 75 MB | 831 ms | 632 ms | 150 ms |
+| 100 MB | 1,116 ms | 829 ms | 200 ms |
+
+Memory:
+
+| Log size | v0.2 | v0.3 | v0.4 |
+| --- | --- | --- | --- |
+| 8 MB | 104 MB | 77 MB | 4 MB |
+| 20 MB | 259 MB | 190 MB | 11 MB |
+| 50 MB | 555 MB | 408 MB | 19 MB |
+| 75 MB | 828 MB | 608 MB | 28 MB |
+| 100 MB | 1,105 MB | 812 MB | 37 MB |
+
+To measure on your machine, clone the repository and run `pnpm run bench:large`.
 
 ## Requirements
 
@@ -278,11 +315,11 @@ globalThis.setImmediate ??= setImmediate;
 globalThis.structuredClone ??= (value) => deserialize(serialize(value));
 ```
 
-To upgrade from v0, see the v1 entry in the [CHANGELOG](./CHANGELOG.md).
+To upgrade from a version before 0.4, see the 0.4.0 entry in the [CHANGELOG](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CHANGELOG.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, coding standards, and the PR process.
+See [CONTRIBUTING.md](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CONTRIBUTING.md) for development setup, coding standards, and the PR process.
 
 ## License
 

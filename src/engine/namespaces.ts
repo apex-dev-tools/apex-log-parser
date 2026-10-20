@@ -10,6 +10,7 @@ import {
   indexOfByte,
   LPAREN,
   lastIndexOfByte,
+  PIPE,
   RPAREN,
   SLASH,
   spellsAscii,
@@ -21,7 +22,9 @@ import type { StringTable } from '../store/strings.js';
 
 /** The line states no namespace, so the event takes its frame's. */
 export const UNSTATED = -1;
-/** v0's `'default'`: the line states no namespace, and the event takes none from its frame. */
+/**
+ * `'default'` before 0.4: the line states no namespace, and the event takes none from its frame.
+ */
 export const DEFAULT = -2;
 
 /** A rule's id in `RULE`, so the engine switches on a number. */
@@ -49,7 +52,7 @@ const UNIT_TYPES = [
 ];
 
 /**
- * Each event's own namespace, by v0's rules, read from the line's bytes. A rule that looks a
+ * Each event's own namespace, by pre-0.4 rules, read from the line's bytes. A rule that looks a
  * namespace up asks whether the log stated it before this line.
  */
 export class Namespaces {
@@ -59,6 +62,10 @@ export class Namespaces {
   private readonly strings: StringTable;
   private seen: Uint8Array = new Uint8Array(64);
   private defaultSeen = false;
+  // The last prefix found stated; a length of 0 matches none. A stated namespace stays stated.
+  private lastStart = 0;
+  private lastLen = 0;
+  private lastNamespace = UNSTATED;
 
   constructor(bytes: Uint8Array, strings: StringTable) {
     this.bytes = bytes;
@@ -116,10 +123,21 @@ export class Namespaces {
   /** Bytes `start` to `end` as a namespace the log stated before this line, or `UNSTATED`. */
   private stated(start: number, end: number): number {
     if (start >= end) return UNSTATED;
-    if (spellsAscii(this.bytes, start, end, DEFAULT_TEXT))
-      return this.defaultSeen ? DEFAULT : UNSTATED;
+    const bytes = this.bytes;
+    const len = end - start;
+    if (len === this.lastLen) {
+      const last = this.lastStart;
+      let k = 0;
+      while (k < len && bytes[last + k] === bytes[start + k]) k++;
+      if (k === len) return this.lastNamespace;
+    }
+    if (spellsAscii(bytes, start, end, DEFAULT_TEXT)) return this.defaultSeen ? DEFAULT : UNSTATED;
     const id = this.strings.lookup(start, end);
-    return id >= 0 && this.seen[id] === 1 ? id : UNSTATED;
+    if (id < 0 || this.seen[id] !== 1) return UNSTATED;
+    this.lastStart = start;
+    this.lastLen = len;
+    this.lastNamespace = id;
+    return id;
   }
 
   /** The namespace in bytes `start` to `end`: none when empty, and `'default'` as `DEFAULT`. */
@@ -132,15 +150,17 @@ export class Namespaces {
   private method(fields: ByteFields, signature: number): number {
     const s = fields.startOf(signature);
     if (s < 0) return UNSTATED;
-    const e = fields.endOf(signature);
-    if (startsWithAscii(this.bytes, s, e, TYPE_FOR_NAME)) return UNSTATED;
+    // Not endOf, which scans the whole field; the loop stops at '|'.
+    const lineEnd = fields.lineEnd;
+    if (startsWithAscii(this.bytes, s, lineEnd, TYPE_FOR_NAME)) return UNSTATED;
     // One pass: the first '(', the first '.' anywhere, and the dots before the '('.
     const bytes = this.bytes;
     let bracket = -1;
     let dot = -1;
     let dotsBefore = 0;
-    for (let i = s; i < e && (bracket < 0 || dot < 0); i++) {
+    for (let i = s; i < lineEnd && (bracket < 0 || dot < 0); i++) {
       const c = bytes[i];
+      if (c === PIPE) break;
       if (c === LPAREN) bracket = i;
       else if (c === DOT) {
         if (dot < 0) dot = i;
@@ -172,7 +192,7 @@ export class Namespaces {
     if (s < 0) return UNSTATED;
     const e = fields.endOf(className);
     const dot = indexOfByte(this.bytes, DOT, s, e);
-    // v0's slice(0, indexOf('.')): with no dot, every byte but the last.
+    // The pre-0.4 slice(0, indexOf('.')): with no dot, every byte but the last.
     const possible = dot < 0 ? e - 1 : dot;
     const known = this.stated(s, possible);
     if (known !== UNSTATED) return known;
@@ -181,7 +201,7 @@ export class Namespaces {
   }
 
   private codeUnit(fields: ByteFields, unit: number, name: number, typeRef: number): number {
-    // v0's `a || b || c`: the first of them that is not empty.
+    // The pre-0.4 `a || b || c`: the first of them that is not empty.
     const typeField = this.firstStated(fields, typeRef, name, unit);
     const ts = typeField < 0 ? 0 : fields.startOf(typeField);
     const te = typeField < 0 ? 0 : fields.endOf(typeField);
@@ -215,7 +235,7 @@ export class Namespaces {
         const dot = indexOfByte(this.bytes, DOT, ns, ne);
         if (dot < 0) break;
         const scheme = findAscii(this.bytes, APEX_SCHEME, ns, ne);
-        // v0's indexOf('apex://') + 7 is 6 when the name has no scheme.
+        // The pre-0.4 indexOf('apex://') + 7 is 6 when the name has no scheme.
         const from = scheme < 0 ? ns + 6 : scheme + APEX_SCHEME.length;
         found = from < dot ? this.id(from, dot) : UNSTATED;
         break;
@@ -231,7 +251,7 @@ export class Namespaces {
       }
       default: {
         const bracket = lastIndexOfByte(this.bytes, LPAREN, ns, ne);
-        // v0 split the name up to and including its last '(' on '.'.
+        // The pre-0.4 parser split the name up to and including its last '(' on '.'.
         const end = bracket < 0 ? ne : bracket + 1;
         const parts = countByte(this.bytes, DOT, ns, end) + 1;
         // With two parts, the second ends at `end`; a dot there leaves it empty, never '('.
@@ -260,7 +280,7 @@ export class Namespaces {
     if (first < 0) return DEFAULT;
     const second = indexOfByte(this.bytes, SLASH, first + 1, end);
     if (second < 0) return DEFAULT;
-    // v0's substring() swapped its bounds when the first is the larger.
+    // The pre-0.4 substring() swapped its bounds when the first is the larger.
     const from = second + 1;
     return this.id(Math.min(from, sep), Math.max(from, sep));
   }
