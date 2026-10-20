@@ -115,8 +115,9 @@ both.
 - Never paste a log from an org. Fixtures use `ns`, `MyClass`, `user@example.com` and ids
   zero-filled after the key prefix (`005000000000AAA`).
 - Conventional commits, one concern per commit.
-- A change a consumer can see gets a changeset. Changesets writes `CHANGELOG.md`; never edit it by
-  hand.
+- A changeset states only the changes that matter most to a consumer: the public API, speed, heap.
+  It is not a list of every change; a small fix needs none. Changesets writes `CHANGELOG.md`; never
+  edit it by hand.
 - File issues and pull requests through the templates in `.github/`. One filed without a template:
   fix it in place; never close and refile.
 

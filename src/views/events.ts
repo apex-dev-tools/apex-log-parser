@@ -90,6 +90,11 @@ interface EventBase extends Rollups {
   readonly type: EventType;
   readonly kind: Kind;
   readonly debugCategory: DebugCategory;
+  /**
+   * The level a `USER_DEBUG` line states, as `System.debug(LoggingLevel.ERROR, ...)` gives it. For
+   * any other type, a line with no level, or a level this parser does not know, the type's
+   * `eventType(type).debugLevel`. `field('level')` gives the raw text.
+   */
   readonly debugLevel: Level;
   /** 1 at the top of the log, 1 more per frame above it, as in `columns.depth`. */
   readonly depth: number;
@@ -386,7 +391,7 @@ class EventView extends RollupView {
   }
 
   get debugLevel(): Level {
-    return this.info.debugLevel;
+    return this.events.lines.statedLevel(this.id) ?? this.info.debugLevel;
   }
 
   get isFrame(): boolean {

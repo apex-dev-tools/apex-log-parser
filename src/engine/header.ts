@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { DebugCategory, Level } from '../catalog/types.js';
-import { DEBUG_CATEGORY, LEVEL } from '../catalog/types.js';
+import { DEBUG_CATEGORY, isLevel } from '../catalog/types.js';
 
 /** One `TOKEN,LEVEL` entry of the header's settings line, as the log states it. */
 export interface DebugLevelSetting {
@@ -43,7 +43,6 @@ export interface UserInfo {
 /** A settings line: the version, then `TOKEN,LEVEL` entries split by `;`. */
 export const SETTINGS_LINE: RegExp = /^\d+\.\d+\sAPEX_CODE,\w+;APEX_PROFILING,.+$/;
 
-const LEVELS: ReadonlySet<string> = new Set<string>(Object.values(LEVEL));
 const CATEGORY_BY_TOKEN: ReadonlyMap<string, DebugCategory> = new Map(
   Object.entries(DEBUG_CATEGORY),
 );
@@ -70,7 +69,7 @@ export function debugSettings(header: string): DebugSettings {
     settings.push({ token, level, category });
     // An unknown category is data the caller can still show, not an error.
     if (!category) continue;
-    if (level && LEVELS.has(level)) levels[category] = level as Level;
+    if (isLevel(level)) levels[category] = level;
     else errors.push(`Unsupported debug level: ${entry}`);
   }
   return { levels, settings, errors };
