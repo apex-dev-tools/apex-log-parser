@@ -1,21 +1,22 @@
-# @apexdevtools/apex-log-parser
+# Apex Log Parser
 
 [![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://github.com/apex-dev-tools/apex-log-parser/blob/main/LICENSE)
 
-A fast, dependency-free parser for Salesforce Apex debug logs, in JavaScript and TypeScript. It
-turns a debug log into a typed call tree with execution timings, governor limits and SOQL/DML
-counts, in Node.js and the browser.
+Fast Apex log parser for Salesforce debug logs: a typed call tree with timings, governor limits
+and SOQL/DML counts. TypeScript, Node.js and browser.
+
+It parses a 100 MB debug log in about 200 ms, with no dependencies.
 
 It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
 VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).
 
 ## Features
 
-- **Fast and small.** On synthetic logs of 8 to 100 MB, it parses 5–8× faster than v0.3 and keeps
-  6× less memory.
+- **Fast and small.** Parses a 100 MB log in about 200 ms, against 829 ms in v0.3, and holds
+  37 MB of memory against 812 MB. See [Performance](#performance).
 - **Responsive.** `parse` is async and works in time slices of 5 ms, so the page or the event
   loop stays responsive. Stop it with an `AbortSignal`, and follow it with `onProgress`.
 - **Any source.** A string, bytes, a `Blob`, a `fetch` `Response`, a `ReadableStream` or an async
@@ -262,6 +263,36 @@ log or an unexpected exit.
 
 **Null means "not stated".** A value the log does not state is `null`, never `0` or `''`, so you
 can tell the two apart.
+
+## Performance
+
+_Measured on a 12-core M4 Pro, 24 GB RAM, Node.js 24.20.0._
+
+Synthetic debug logs, the median of 5 runs. Each log is in memory before the timer
+starts: as bytes for v0.4, and as a string for v0.2 and v0.3, which read only strings. Memory is
+what the parsed log holds, without the log's own bytes or string.
+
+Parse time:
+
+| Log size | v0.2 | v0.3 | v0.4 |
+| --- | --- | --- | --- |
+| 8 MB | 106 ms | 86 ms | 20 ms |
+| 20 MB | 274 ms | 221 ms | 47 ms |
+| 50 MB | 550 ms | 426 ms | 101 ms |
+| 75 MB | 831 ms | 632 ms | 150 ms |
+| 100 MB | 1,116 ms | 829 ms | 200 ms |
+
+Memory:
+
+| Log size | v0.2 | v0.3 | v0.4 |
+| --- | --- | --- | --- |
+| 8 MB | 104 MB | 77 MB | 4 MB |
+| 20 MB | 259 MB | 190 MB | 11 MB |
+| 50 MB | 555 MB | 408 MB | 19 MB |
+| 75 MB | 828 MB | 608 MB | 28 MB |
+| 100 MB | 1,105 MB | 812 MB | 37 MB |
+
+To measure on your machine, clone the repository and run `pnpm run bench:large`.
 
 ## Requirements
 
