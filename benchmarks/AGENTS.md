@@ -16,7 +16,10 @@ applies.
   `--baseline=<path>` on the other to compare them. Its heap figure leaves out the log's bytes,
   which the caller made. `--max-heap-growth=<percent>` fails the run on heap growth. The `heap` CI
   job runs it that way on each pull request, with the base's `--json` as the head's `--baseline`,
-  so the head must keep reading the base's JSON shape.
+  so the head must keep reading the base's JSON shape. `--peak` also states the most memory a cold
+  parse needs: the median, over `--runs` fresh processes (`scripts/peak.ts`), of the process's
+  high-water resident memory (RSS) less what it held before. GC timing moves one reading, so
+  compare medians.
 - `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run before 0.4 removed it:
   the 8 to 100 MB synthetic logs. Pass it as `--baseline`. To measure the legacy parser again, use
   a 0.x release from npm, as `npm:@apexdevtools/apex-log-parser@0.3.0`; 0.2.0 is before v0.3's
