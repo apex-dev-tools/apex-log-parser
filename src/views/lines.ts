@@ -11,6 +11,8 @@ import {
   fieldPosition,
   idOfType,
 } from '../catalog/catalog.js';
+import type { Level } from '../catalog/types.js';
+import { isLevel } from '../catalog/types.js';
 import type { Issues } from '../engine/issues.js';
 import { throwOutcomes } from '../engine/throws.js';
 import type { Store } from '../store/store.js';
@@ -23,6 +25,8 @@ const CODE_UNIT_STARTED = idOfType('CODE_UNIT_STARTED');
 const EXPLAIN = idOfType('SOQL_EXECUTE_EXPLAIN');
 const ASSIGNMENT = idOfType('VARIABLE_ASSIGNMENT');
 const VALUE = fieldPosition(ASSIGNMENT, 'value').at;
+const USER_DEBUG = idOfType('USER_DEBUG');
+const USER_LEVEL = fieldPosition(USER_DEBUG, 'level').at;
 
 /**
  * Reads each row's line from the source, on demand: its text, raw line and fields. One cursor
@@ -71,6 +75,13 @@ export class EventLines {
     const f = this.at(id);
     if (type === ASSIGNMENT && at >= VALUE) return this.assignmentField(f, at === VALUE);
     return (last ? f.from(at, '|') : f.at(at)) || null;
+  }
+
+  /** The level a `USER_DEBUG` line states; null for another type, or a level this parser does not know. */
+  statedLevel(id: number): Level | null {
+    if (this.typeOf(id) !== USER_DEBUG) return null;
+    const level = this.at(id).at(USER_LEVEL);
+    return isLevel(level) ? level : null;
   }
 
   /** A write's value runs to its trailing address, if any, so a value that holds `|` stays whole. */
