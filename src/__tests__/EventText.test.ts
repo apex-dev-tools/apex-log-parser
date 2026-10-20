@@ -19,6 +19,16 @@ describe('event text', () => {
     expect(log.event(1)?.text).toBe(log.event(1)?.text);
   });
 
+  it('reads a line with more fields than a line scan records', () => {
+    const parts = Array.from({ length: 20 }, (_, i) => `p${i}`);
+    const log = logOf(
+      `${at(1)}|USER_DEBUG|[1]|DEBUG|${parts.join('|')}`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+    );
+    expect(pick(log, 'text')).toEqual([`DEBUG | ${parts.join(' | ')}`, null]);
+    expect([...log.events].map((e) => e.lineNumber)).toEqual([1, 2]);
+  });
+
   it('states the first line as the log does, without its line ending or continuation lines', () => {
     const log = parse(
       [

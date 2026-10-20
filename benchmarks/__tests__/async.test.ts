@@ -15,15 +15,18 @@ const LOG = [
 
 describe('longestTurn', () => {
   it('reads the longest task the work ran, not its whole time', async () => {
+    const start = performance.now();
     const worst = await longestTurn(async () => {
       for (const ms of [15, 20, 15]) {
         block(ms);
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
     });
-    // The whole work takes 50 ms or more.
+    const total = performance.now() - start;
     expect(worst).toBeGreaterThanOrEqual(20);
-    expect(worst).toBeLessThan(40);
+    // Each block holds the wall clock in its own turn, so the two 15 ms ones stay outside the worst
+    // under any load; a fixed bound fails when the OS pauses the process.
+    expect(total - worst).toBeGreaterThanOrEqual(29);
   });
 });
 

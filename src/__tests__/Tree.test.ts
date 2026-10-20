@@ -430,4 +430,18 @@ describe('parsing errors', () => {
     ]);
     expect(log.event(3)?.lineNumber).toBeNull();
   });
+
+  it.each([
+    ['no (', '09:00:00.0|STATEMENT_EXECUTE|[1]'],
+    ['no closing )', '09:00:00.0 (55|STATEMENT_EXECUTE|[1]'],
+    ['a non-digit in ()', '09:00:00.0 (5a)|STATEMENT_EXECUTE|[1]'],
+    ['text between ( and )', '09:00:00.0 (4) (5)|STATEMENT_EXECUTE|[1]'],
+    ['an empty ()', '09:00:00.0 ()|STATEMENT_EXECUTE|[1]'],
+    ['a number past 2^53', '09:00:00.0 (9007199254740992)|STATEMENT_EXECUTE|[1]'],
+  ])('reports an event line whose time has %s, and keeps no event for it', (_name, line) => {
+    // USER_DEBUG takes text, so a line read as text would join it, with no error.
+    const log = logOf(`${at(1)}|USER_DEBUG|[1]|DEBUG|x`, line, `${at(9)}|STATEMENT_EXECUTE|[2]`);
+    expect(outline(log)).toEqual(['USER_DEBUG@1', 'STATEMENT_EXECUTE@9']);
+    expect(log.parsingErrors).toEqual([`Invalid log line: ${line}`]);
+  });
 });
