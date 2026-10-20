@@ -6,9 +6,9 @@ applies.
 ## Layout
 
 - `parse.bench.ts` — the `pnpm run bench` suite, which CodSpeed runs on every pull request. It
-  times the build from bytes; `bench:async` times `parse()`. It runs through
-  `vitest.bench.config.ts`, which imports the parser natively through tsx: Vite's module runner
-  reads each import through a getter, about 4× slower. A bare `vitest bench` uses the runner.
+  times the build from bytes; `bench:async` times `parse()`. It uses CodSpeed's default setup, with
+  Vite's module runner. The runner reads each import through a getter, so the suite is slower than
+  a consumer's build. `bench:large` times the parser as Node runs it.
 - `fixtures/` — the synthetic logs. `fixtures.ts` generates them from a seed, with placeholder
   content only. Its profiles (small, developer and large) take their event mix, depth and wrapped
   lines from `profiles.json`, which holds only numbers measured from real logs. A new hot path in
