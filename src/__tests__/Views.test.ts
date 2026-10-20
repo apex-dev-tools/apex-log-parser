@@ -56,6 +56,23 @@ describe('events', () => {
     expect(log.event(1)?.lineNumber).toBe('EXTERNAL');
   });
 
+  it('gives a USER_DEBUG the level its line states, else the type level', () => {
+    const log = logOf(
+      `${at(1)}|USER_DEBUG|[1]|ERROR|failed`,
+      `${at(2)}|USER_DEBUG|[2]|FINE|went on`,
+      `${at(3)}|USER_DEBUG|[3]|NONE|stated`,
+      `${at(4)}|USER_DEBUG|[4]|LOUD|not a level`,
+      `${at(5)}|USER_DEBUG|[5]`,
+    );
+    expect([...log.events].map((e) => e.debugLevel)).toEqual([
+      'ERROR',
+      'FINE',
+      'NONE',
+      'DEBUG',
+      'DEBUG',
+    ]);
+  });
+
   it('maps every counter to its own rollup, and gives a new object on each read', () => {
     const log = logOf(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,

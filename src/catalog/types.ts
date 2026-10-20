@@ -352,6 +352,13 @@ export const LEVEL = {
 /** A Salesforce debug level. */
 export type Level = (typeof LEVEL)[keyof typeof LEVEL];
 
+const LEVELS: ReadonlySet<string> = new Set<string>(Object.values(LEVEL));
+
+/** True when `text` is one of the `LEVEL` values, as the log writes it. */
+export function isLevel(text: string | null): text is Level {
+  return text !== null && LEVELS.has(text);
+}
+
 /** The ways an event type sits in the tree. */
 export const SHAPE = {
   Frame: 'frame',
@@ -404,7 +411,10 @@ export interface EventTypeInfo {
   readonly kind: Kind;
   /** The Salesforce debug log category, which indexes `ApexLog.debugLevels`. */
   readonly debugCategory: DebugCategory;
-  /** The debug level at which Salesforce writes this type. */
+  /**
+   * The debug level at which Salesforce writes this type. A `USER_DEBUG` line states its own
+   * level, which the event's `debugLevel` gives.
+   */
   readonly debugLevel: Level;
   /**
    * False when the event's own elapsed time, `duration.self`, uses no application server CPU: time

@@ -2,22 +2,19 @@
 '@apexdevtools/apex-log-parser': minor
 ---
 
-**Breaking:** new parser, now the default. The old one is removed.
+**Breaking:** new parser and a new API. The old parser is removed.
 
-**5–8× faster, 6× less memory vs v0.3** (8–100 MB logs). A 100 MB log: 182 ms and 141 MB, was 1,215 ms and 812 MB.
+It still gives the event tree, with times, SOQL, DML and SOSL counts, and governor limits for the whole log and per namespace. What is new:
 
-How it works now, and what breaks:
+- **5–8× faster, 6× less memory vs v0.3** (8–100 MB logs). A 100 MB log: 182 ms and 141 MB, was 1,215 ms and 812 MB.
+- **Streaming.** Reads a string, bytes, a `Blob`, a `Response` or a stream, not only a string.
+- **Off the main thread.** Parses in 5 ms slices, with cancel and progress, or in a worker.
+- **Variables.** The locals, `this` and statics each event could see, with their last write.
 
-- **Async.** `const log = await parse(text)`. Takes a string, bytes, `Blob`, `Response`, stream or async iterable. Runs in 5 ms slices; `signal` cancels, `onProgress` reports. Optional `worker` option, and `toBuffers`/`fromBuffers` to move a log between threads.
-- **Views, not classes.** Event classes and `ApexLogParser` are gone, so no `instanceof`. Use `event.type`, or `event.kind` for a group. `ofType('SOQL_EXECUTE_BEGIN')` finds events and types `details` (was `limitUsage`). `ApexLog` is a type, not an event.
-- **Variables.** `event.variables` on any event of a `FINEST` log: the locals its frame could see, `this` and its fields, and every static by then, by class, each with its last write. A query answers from the Apex frame that issued it. `event.objectAt(address)` reads the object at an address as the event stood: its class, value and fields.
-- **Caught throws.** `details.isCaught` on `EXCEPTION_THROWN`: `false` if a `FATAL_ERROR` follows, `true` if another row does, `null` if the log cannot tell.
-- **How a frame ended.** An event's `isTruncated` is now `endedBy` on frames: `'exit'`, `'next'`, `'unwind'` or `'log-end'`. `truncatedEvents` is now `unclosedFrames`. A frame a later exit line unwinds, as after an exception or a skipped block, is now `'unwind'` and listed in `unclosedFrames`.
-- **Frames and leaves.** `isParent` is now `isFrame`. A leaf has no children. Exit lines (`METHOD_EXIT`) are not events: they set `endTimestamp` and `duration` on their frame.
-- **Ids.** `eventIndex` is now `id`: from 1, valid for one parse. `log.event(id)`, `log.events`. `log.columns` gives times and tree links as typed arrays.
-- **Times.** `timestamp` → `startTimestamp`, `exitStamp` → `endTimestamp`. A leaf ends where it starts. On issues and truncation regions, `startTime`/`endTime` → `startTimestamp`/`endTimestamp`, so `startTime` is only the log's wall-clock start.
-- **`null` means not stated.** Not `''`, `0` or `'default'`: `text`, `namespace`, `lineNumber`, a limit's `limit`. The counts and heap figures are null when the header's debug level does not record their lines and the log holds none, as heap below Apex Code `FINER`. A query's or search's row count is null when the log states no end line for it.
-- **`FLOW_ELEMENT_ERROR`.** `text` is the message only; it ended with the element type and name, now `details.elementType` and `details.elementName`.
-- **Removed:** `suffix`, `category`, `executionEndTime`, parser state on events (`isExit`, `acceptsText` and so on). `cpuType` is now `eventType(type).consumesCpuTime`. `hasValidSymbols` is now `isApexCall`.
-- **Renamed:** `logIssues` → `issues`, `governorLimits` → `limits`, `LOG_LEVEL` → `LEVEL`. `./next` paths are gone: import from the root.
-- **Types:** `LogEventType` → `EventType`, `LogLevel` → `Level`, `GovernorSnapshot` → `LimitSnapshot`, `Truncation` → `LogTruncation`, `TruncationRegion` → `LogTruncationRegion`, `LimitMetricKey` → `LimitMetric`, `LimitObservation` → `LimitUsage`, `RunningTotalObservation` → `RunningUsage`. Removed: `LIMIT_METRIC`, `ALL_LIMIT_METRICS`, `LimitMetricUnit`, `LimitMetricMeta`, `DebugLevels`, `LineNumber`. New: `FlowType` and `FLOW_TYPE`, the values of `details.flowType`. `exceptions` is typed by event type, so `details` needs no cast.
+What breaks:
+
+- **Async.** `const log = await parse(text)`.
+- **Views, not classes.** No event classes, `ApexLogParser` or `instanceof`. Use `event.type`, `event.kind` or `log.ofType(type)`.
+- **Exit lines are not events.** They set the end and duration of their frame.
+- **`null` means not stated**, not `''`, `0` or `'default'`.
+- **Renamed:** `eventIndex` → `id`, `timestamp` → `startTimestamp`, `exitStamp` → `endTimestamp`, `isParent` → `isFrame`, `isTruncated` → `endedBy`, `logIssues` → `issues`, `governorLimits` → `limits`. Import from the root; `./next` is gone. The compiler finds the rest.
