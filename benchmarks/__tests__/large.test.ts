@@ -1,6 +1,30 @@
-import { heapGrowth, report } from '../scripts/large.js';
+import { makeLog, profileLog } from '../fixtures/fixtures.js';
+import { heapGrowth, measurePeak, report } from '../scripts/large.js';
 
 describe('bench-large', () => {
+  it('adds the peak, with its change when the baseline states one', () => {
+    const results = [
+      { name: 'parse_20mb', ms: 1000, heapBytes: 300_000_000, peakBytes: 900_000_000 },
+      { name: 'parse_100mb', ms: 2000, heapBytes: 600_000_000, peakBytes: 1_500_000_000 },
+    ];
+    const baseline = [
+      { name: 'parse_20mb', ms: 1000, heapBytes: 300_000_000, peakBytes: 1_000_000_000 },
+      { name: 'parse_100mb', ms: 2000, heapBytes: 600_000_000 },
+    ];
+
+    // The time and heap wording belongs to the test below.
+    expect(report(results, baseline).map((line) => line.slice(line.indexOf(', peak')))).toEqual([
+      ', peak RSS 900 MB (was 1000 MB, 1.1× less, -10.0%)',
+      ', peak RSS 1500 MB (no baseline peak)',
+    ]);
+  });
+
+  it('measures the peak of a parse in a fresh process', () => {
+    // Large enough to raise the process's high-water mark, which a tiny log does not.
+    const log = makeLog(profileLog('developer', 2, 4_000_000));
+    expect(measurePeak(log, 1)).toBeGreaterThan(0);
+  }, 60_000);
+
   it('reports each log, with its change from the baseline', () => {
     const results = [
       { name: 'parse_20mb', ms: 1100, heapBytes: 330_000_000 },
