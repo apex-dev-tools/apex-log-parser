@@ -17,7 +17,8 @@ timings, governor limits, SOQL/DML/SOSL counts. No runtime dependencies. ESM onl
     `scripts/__tests__/CatalogDocs.test.ts` fail when either drifts from the event database.
   - `bytes/` — reads the bytes: a `Source` per build (`node.ts`, `browser.ts`), the `ByteFields`
     cursor, the type id lookup. `ascii.ts`: the byte constants and searches all readers share.
-    `lines.ts`: the line tests (timestamp, type name, first event line). Every `Fields` adapter
+    `lines.ts`: the line tests (timestamp, type name, first event line), and the `LineScanner`,
+    which finds each line's end and first pipes in one pass for the builder. Every `Fields` adapter
     passes `__tests__/fieldsContract.ts`.
   - `store/` — events as typed-array columns, sparse count and heap pools, and the string table of
     interned byte ranges. `tags.ts` reads a value's type tag, which holds across realms where
