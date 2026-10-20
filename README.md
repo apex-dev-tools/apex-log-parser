@@ -8,14 +8,14 @@
 Fast Apex log parser for Salesforce debug logs: a typed call tree with timings, governor limits
 and SOQL/DML counts. TypeScript, Node.js and browser.
 
-It parses a 100 MB debug log in about 200 ms, with no dependencies.
+It parses a 100 MB debug log in about 170 ms, with no dependencies.
 
 It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
 VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).
 
 ## Features
 
-- **Fast and small.** Parses a 100 MB log in about 200 ms, against 829 ms in v0.3, and holds
+- **Fast and small.** Parses a 100 MB log in about 170 ms, against 829 ms in v0.3, and holds
   37 MB of memory against 812 MB. See [Performance](#performance).
 - **Responsive.** `parse` is async and works in time slices of 5 ms, so the page or the event
   loop stays responsive. Stop it with an `AbortSignal`, and follow it with `onProgress`.
@@ -276,11 +276,11 @@ Parse time:
 
 | Log size | v0.2 | v0.3 | v0.4 |
 | --- | --- | --- | --- |
-| 8 MB | 106 ms | 86 ms | 20 ms |
-| 20 MB | 274 ms | 221 ms | 47 ms |
-| 50 MB | 550 ms | 426 ms | 101 ms |
-| 75 MB | 831 ms | 632 ms | 150 ms |
-| 100 MB | 1,116 ms | 829 ms | 200 ms |
+| 8 MB | 106 ms | 86 ms | 18 ms |
+| 20 MB | 274 ms | 221 ms | 42 ms |
+| 50 MB | 550 ms | 426 ms | 85 ms |
+| 75 MB | 831 ms | 632 ms | 128 ms |
+| 100 MB | 1,116 ms | 829 ms | 171 ms |
 
 Memory:
 
