@@ -1,11 +1,12 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { CR, LPAREN, PIPE, SPACE, STAR, ZERO } from '../bytes/ascii.js';
+import { CR, LPAREN, SPACE, STAR, ZERO } from '../bytes/ascii.js';
 import { ByteFields, digits } from '../bytes/cursor.js';
 import {
   firstEventLine,
   isTypeName,
+  LineScanner,
   lineText,
   TRUNCATION_MARKER,
   timestampClose,
@@ -138,6 +139,7 @@ export interface Built {
 export class LogBuilder {
   private readonly source: Source;
   private readonly bytes: Uint8Array;
+  private readonly lines: LineScanner;
   private readonly fields: ByteFields;
   private readonly store: Store;
   private readonly strings: StringTable;
@@ -202,6 +204,7 @@ export class LogBuilder {
   constructor(source: Source) {
     this.source = source;
     this.bytes = source.bytes;
+    this.lines = new LineScanner(source.bytes);
     this.fields = new ByteFields(source);
     this.store = new Store(source.bytes.length);
     this.strings = new StringTable(source);
@@ -599,9 +602,8 @@ export class LogBuilder {
     this.hasNext = false;
     while (this.pos < len) {
       const start = this.pos;
-      let eol = this.source.lineEnd(start);
-      const last = eol < 0;
-      if (last) eol = len;
+      const eol = this.lines.next(start);
+      const last = eol >= len;
       this.pos = eol + 1;
       // A CR before the line's LF is part of its line end; the last line keeps one, as before 0.4.
       const end = !last && eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
@@ -646,11 +648,12 @@ export class LogBuilder {
   /** Reads the line as the next event, when it starts one. */
   private readEvent(start: number, end: number): number {
     const bytes = this.bytes;
-    let p1 = start;
-    while (p1 < end && bytes[p1] !== PIPE) p1++;
-    if (p1 >= end) return READ.notEvent;
-    let p2 = p1 + 1;
-    while (p2 < end && bytes[p2] !== PIPE) p2++;
+    const pipes = this.lines.pipes;
+    const count = this.lines.pipeCount;
+    if (count === 0) return READ.notEvent;
+    // count is at least 1, so pipes holds the first
+    const p1 = pipes[0]!;
+    const p2 = count > 1 ? pipes[1]! : end;
     const type = typeIdAt(bytes, p1 + 1, p2);
     if (type < 0) {
       if (!isTypeName(bytes, p1 + 1, p2)) return READ.notEvent;
@@ -668,7 +671,7 @@ export class LogBuilder {
     let flags = 0;
     let line = NO_LINE;
     const fields = this.fields;
-    fields.resetFound(start, end, p1, p2);
+    fields.resetLine(start, end, this.lines);
     // type is a type id, so it indexes the tables
     const lineField = LINE_FIELD[type]!;
     if (lineField >= 0) {

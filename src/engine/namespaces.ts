@@ -10,6 +10,7 @@ import {
   indexOfByte,
   LPAREN,
   lastIndexOfByte,
+  PIPE,
   RPAREN,
   SLASH,
   spellsAscii,
@@ -61,6 +62,10 @@ export class Namespaces {
   private readonly strings: StringTable;
   private seen: Uint8Array = new Uint8Array(64);
   private defaultSeen = false;
+  // The last prefix found stated; a length of 0 matches none. A stated namespace stays stated.
+  private lastStart = 0;
+  private lastLen = 0;
+  private lastNamespace = UNSTATED;
 
   constructor(bytes: Uint8Array, strings: StringTable) {
     this.bytes = bytes;
@@ -118,10 +123,21 @@ export class Namespaces {
   /** Bytes `start` to `end` as a namespace the log stated before this line, or `UNSTATED`. */
   private stated(start: number, end: number): number {
     if (start >= end) return UNSTATED;
-    if (spellsAscii(this.bytes, start, end, DEFAULT_TEXT))
-      return this.defaultSeen ? DEFAULT : UNSTATED;
+    const bytes = this.bytes;
+    const len = end - start;
+    if (len === this.lastLen) {
+      const last = this.lastStart;
+      let k = 0;
+      while (k < len && bytes[last + k] === bytes[start + k]) k++;
+      if (k === len) return this.lastNamespace;
+    }
+    if (spellsAscii(bytes, start, end, DEFAULT_TEXT)) return this.defaultSeen ? DEFAULT : UNSTATED;
     const id = this.strings.lookup(start, end);
-    return id >= 0 && this.seen[id] === 1 ? id : UNSTATED;
+    if (id < 0 || this.seen[id] !== 1) return UNSTATED;
+    this.lastStart = start;
+    this.lastLen = len;
+    this.lastNamespace = id;
+    return id;
   }
 
   /** The namespace in bytes `start` to `end`: none when empty, and `'default'` as `DEFAULT`. */
@@ -134,15 +150,17 @@ export class Namespaces {
   private method(fields: ByteFields, signature: number): number {
     const s = fields.startOf(signature);
     if (s < 0) return UNSTATED;
-    const e = fields.endOf(signature);
-    if (startsWithAscii(this.bytes, s, e, TYPE_FOR_NAME)) return UNSTATED;
+    // Not endOf, which scans the whole field; the loop stops at '|'.
+    const lineEnd = fields.lineEnd;
+    if (startsWithAscii(this.bytes, s, lineEnd, TYPE_FOR_NAME)) return UNSTATED;
     // One pass: the first '(', the first '.' anywhere, and the dots before the '('.
     const bytes = this.bytes;
     let bracket = -1;
     let dot = -1;
     let dotsBefore = 0;
-    for (let i = s; i < e && (bracket < 0 || dot < 0); i++) {
+    for (let i = s; i < lineEnd && (bracket < 0 || dot < 0); i++) {
       const c = bytes[i];
+      if (c === PIPE) break;
       if (c === LPAREN) bracket = i;
       else if (c === DOT) {
         if (dot < 0) dot = i;

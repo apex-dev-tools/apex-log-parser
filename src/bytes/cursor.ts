@@ -3,6 +3,7 @@
  */
 import type { Fields } from '../catalog/types.js';
 import { CR, LBRACKET, MINUS, matchesAscii, PIPE, RBRACKET, ZERO } from './ascii.js';
+import type { LineScanner } from './lines.js';
 import { continuationText } from './lines.js';
 import type { Source } from './source.js';
 
@@ -25,7 +26,8 @@ export function digits(bytes: Uint8Array, start: number, end: number): number {
 
 /**
  * `Fields` over a source's bytes. One cursor serves every line: `reset` points it at the next one.
- * Field offsets are found only as far as a read needs, and numbers are read from the bytes.
+ * Field offsets are found only as far as a read needs, past any a line scan already found, and
+ * numbers are read from the bytes.
  */
 export class ByteFields implements Fields {
   private readonly source: Source;
@@ -77,15 +79,25 @@ export class ByteFields implements Fields {
   }
 
   /**
-   * As `reset`, for a line whose first `|` is at `pipe1`, before `end`, and whose second is at
-   * `pipe2`, or `end` for none.
+   * As `reset`, for the line `lines` scanned last, which ends at `end`: its fields start found. Any
+   * pipe it did not record, the cursor finds as reads need it.
    */
-  resetFound(start: number, end: number, pipe1: number, pipe2: number): void {
-    this.reset(start, end);
-    this.starts[1] = pipe1 + 1;
-    this.found = 2;
-    if (pipe2 < end) this.starts[this.found++] = pipe2 + 1;
-    else this.complete = true;
+  resetLine(
+    start: number,
+    end: number,
+    lines: LineScanner,
+    continuationStart: number = end,
+    continuationEnd: number = end,
+  ): void {
+    this.reset(start, end, continuationStart, continuationEnd);
+    const pipes = lines.pipes;
+    const count = lines.pipeCount;
+    while (count >= this.starts.length) this.grow();
+    const starts = this.starts;
+    // k < count, which is within pipes
+    for (let k = 0; k < count; k++) starts[k + 1] = pipes[k]! + 1;
+    this.found = count + 1;
+    this.complete = lines.complete;
   }
 
   /** Where the line ends in the source, before its line ending and any continuation lines. */

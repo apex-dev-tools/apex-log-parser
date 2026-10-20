@@ -4,6 +4,7 @@
 
 import { BrowserSource } from '../bytes/browser.js';
 import { ByteFields } from '../bytes/cursor.js';
+import { LineScanner } from '../bytes/lines.js';
 import { NodeSource } from '../bytes/node.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
@@ -13,11 +14,11 @@ import { encode } from './helpers.js';
 
 /**
  * `text` at byte `offset` of a larger buffer, so a view's offset is not word aligned. The padding is
- * line ends, so a search that reads outside the view finds one.
+ * `fill`, line ends by default, so a search that reads outside the view finds one.
  */
-function at(offset: number, text: string): Uint8Array {
+function at(offset: number, text: string, fill = 0x0a): Uint8Array {
   const body = encode(text);
-  const buffer = new Uint8Array(offset + body.length + 7).fill(0x0a);
+  const buffer = new Uint8Array(offset + body.length + 7).fill(fill);
   buffer.set(body, offset);
   return buffer.subarray(offset, offset + body.length);
 }
@@ -63,22 +64,39 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
     expect(sourceOf(bytes).text(1, bytes.length - 1)).toBe(text);
   });
 
-  describeFieldsContract('ByteFields', (line, continuation = '', onContinuation) => {
-    const lineBytes = encode(line).length;
-    const bytes = at(1, continuation ? `${line}\n${continuation}` : line);
-    const source = sourceOf(bytes);
-    const watched: Source = {
-      bytes,
-      lineEnd: (from) => source.lineEnd(from),
-      text: (start, end) => {
-        if (end > lineBytes) onContinuation?.();
-        return source.text(start, end);
-      },
+  /** A cursor over `line`, then `continuation`, pointed at the line by `point`. */
+  const fieldsOver =
+    (point: (fields: ByteFields, bytes: Uint8Array, lineBytes: number, from: number) => void) =>
+    (line: string, continuation = '', onContinuation?: () => void): ByteFields => {
+      const lineBytes = encode(line).length;
+      const bytes = at(1, continuation ? `${line}\n${continuation}` : line);
+      const source = sourceOf(bytes);
+      const watched: Source = {
+        bytes,
+        lineEnd: (from) => source.lineEnd(from),
+        text: (start, end) => {
+          if (end > lineBytes) onContinuation?.();
+          return source.text(start, end);
+        },
+      };
+      const fields = new ByteFields(watched);
+      point(fields, bytes, lineBytes, continuation ? lineBytes + 1 : lineBytes);
+      return fields;
     };
-    const fields = new ByteFields(watched);
-    fields.reset(0, lineBytes, continuation ? lineBytes + 1 : lineBytes, bytes.length);
-    return fields;
-  });
+
+  describeFieldsContract(
+    'ByteFields',
+    fieldsOver((fields, bytes, lineBytes, from) => fields.reset(0, lineBytes, from, bytes.length)),
+  );
+
+  describeFieldsContract(
+    'ByteFields after a line scan',
+    fieldsOver((fields, bytes, lineBytes, from) => {
+      const lines = new LineScanner(bytes);
+      lines.next(0);
+      fields.resetLine(0, lineBytes, lines, from, bytes.length);
+    }),
+  );
 
   it.each([
     ['a CRLF log', 'line\r\none\r\n\r\n  \r\ntwo\r\n', 6, 'one\n  \ntwo'],
@@ -120,21 +138,69 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
     expect([fields.count, fields.at(0), fields.at(1)]).toEqual([1, 'c', '']);
   });
 
-  it.each(['a|b|c|d', 'a|b', 'a|', 'a||c'])(
-    'reads %j the same when given its first two pipes',
-    (line) => {
-      // A line after another, so offsets in the source are not offsets in the line.
-      const text = `x|y\n${line}`;
-      const bytes = at(1, text);
-      const fields = new ByteFields(sourceOf(bytes));
-      const pipe1 = text.indexOf('|', 4);
-      const pipe2 = text.indexOf('|', pipe1 + 1);
-      fields.resetFound(4, bytes.length, pipe1, pipe2 < 0 ? bytes.length : pipe2);
-      const parts = line.split('|');
-      expect(parts.map((_, i) => fields.at(i))).toEqual(parts);
-      expect([fields.count, fields.startOf(parts.length)]).toEqual([parts.length, -1]);
+  it.each([
+    'a|b|c|d',
+    'a|b',
+    'a|',
+    'a||c',
+    'a',
+    // More pipes than a line scan records.
+    Array.from({ length: 20 }, (_, i) => `f${i}`).join('|'),
+  ])('reads %j the same when given the pipes a line scan found', (line) => {
+    // A line after another, so offsets in the source are not offsets in the line.
+    const bytes = at(1, `x|y\n${line}`);
+    const lines = new LineScanner(bytes);
+    const end = lines.next(4);
+    const fields = new ByteFields(sourceOf(bytes));
+    fields.resetLine(4, end, lines);
+    const parts = line.split('|');
+    expect(parts.map((_, i) => fields.at(i))).toEqual(parts);
+    expect([fields.count, fields.startOf(parts.length)]).toEqual([parts.length, -1]);
+  });
+});
+
+describe('LineScanner', () => {
+  type Line = [end: number, pipes: number[]];
+  const scanned = (bytes: Uint8Array): Line[] => {
+    const lines = new LineScanner(bytes);
+    const out: Line[] = [];
+    for (let start = 0; start < bytes.length; ) {
+      const end = lines.next(start);
+      out.push([end, [...lines.pipes.subarray(0, lines.pipeCount)]]);
+      start = end + 1;
+    }
+    return out;
+  };
+  const expected = (bytes: Uint8Array): Line[] => {
+    const out: Line[] = [];
+    for (let start = 0; start < bytes.length; ) {
+      let end = start;
+      const pipes: number[] = [];
+      for (; end < bytes.length && bytes[end] !== 0x0a; end++) {
+        if (bytes[end] === 0x7c && pipes.length < 16) pipes.push(end);
+      }
+      out.push([end, pipes]);
+      start = end + 1;
+    }
+    return out;
+  };
+
+  it.each([0, 1, 2, 3, 5])(
+    'finds each line end and its first 16 pipes in a view at offset %i',
+    (offset) => {
+      const text = ['', 'a|b', '|', `${'x'.repeat(9)}${'|'.repeat(20)}`, 'é|日本|', 'c\r', 'no|end']
+        .join('\n')
+        .repeat(5);
+      // Padded with pipes, so a read outside the view records one.
+      const bytes = at(offset, text, 0x7c);
+      expect(scanned(bytes)).toEqual(expected(bytes));
     },
   );
+
+  it('finds no line end and no pipe in an empty log', () => {
+    const lines = new LineScanner(new Uint8Array(0));
+    expect([lines.next(0), lines.pipeCount]).toEqual([0, 0]);
+  });
 });
 
 describe('typeIdAt', () => {
@@ -148,11 +214,16 @@ describe('typeIdAt', () => {
     }
   });
 
-  it.each(['', 'METHOD_ENTR', 'METHOD_ENTRYX', 'method_entry', 'NOT_A_TYPE'])(
-    'finds no type named %j',
-    (name) => {
-      const bytes = at(1, name);
-      expect(typeIdAt(bytes, 0, bytes.length)).toBe(-1);
-    },
-  );
+  it.each([
+    '',
+    'METHOD_ENTR',
+    'METHOD_ENTRYX',
+    'METHOD_ENTRZ',
+    'method_entry',
+    'NOT_A_TYPE',
+    'X'.repeat(60),
+  ])('finds no type named %j', (name) => {
+    const bytes = at(1, name);
+    expect(typeIdAt(bytes, 0, bytes.length)).toBe(-1);
+  });
 });

@@ -1,6 +1,7 @@
 # src/views/AGENTS.md
 
-For coding agents working on the views. The root [AGENTS.md](../../AGENTS.md) still applies.
+For coding agents working on the views. The root [AGENTS.md](../../AGENTS.md) and
+[src/AGENTS.md](../AGENTS.md) still apply.
 
 ## Layout
 

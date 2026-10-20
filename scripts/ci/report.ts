@@ -33,7 +33,7 @@ const GATE_ADVICE: Record<keyof Gates, string> = {
     'Fix the scraper or `data/salesforce-debug-log-events.schema.json`.',
   verify:
     '`pnpm run ci` is red. A newly documented event needs a catalog entry — ' +
-    'see "Adding an event type" in `AGENTS.md`. Fix that on this branch.',
+    'see "Adding an event type" in `src/AGENTS.md`. Fix that on this branch.',
 };
 
 function failed(gates: Gates): (keyof Gates)[] {
