@@ -12,7 +12,7 @@ import {
   flowElementErrorAfter,
   flowInterviewsErrorAfter,
   limitsForNamespaceAfter,
-  lineText,
+  lineNumberText,
   managedPackageText,
   methodExitText,
   rule,
@@ -219,12 +219,12 @@ const joinPresent = <const K extends string>(separator: string, ...names: K[]): 
 const traceFlagsText = rule(
   ['line', 'className', 'traceFlags'],
   (line, className, traceFlags) => (f) =>
-    `${f.at(className)}, line:${lineText(f.at(line))} - ${f.at(traceFlags)}`,
+    `${f.at(className)}, line:${lineNumberText(f.at(line))} - ${f.at(traceFlags)}`,
 );
-const queryMoreText = rule(['line'], (line) => (f) => `line: ${lineText(f.at(line))}`);
+const queryMoreText = rule(['line'], (line) => (f) => `line: ${lineNumberText(f.at(line))}`);
 const savepointText = rule(
   ['line', 'savepoint'],
-  (line, savepoint) => (f) => `${f.at(savepoint)}, line: ${lineText(f.at(line))}`,
+  (line, savepoint) => (f) => `${f.at(savepoint)}, line: ${lineNumberText(f.at(line))}`,
 );
 /** `<appNamespace>.<the rest, joined by ' : '>`. */
 const notificationText = <const K extends string>(...rest: K[]): TextSpec<K | 'appNamespace'> =>
@@ -1119,7 +1119,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'soql',
     text: rule(
       ['line', 'iterations'],
-      (line, iterations) => (f) => `line: ${lineText(f.at(line))}, iterations:${f.at(iterations)}`,
+      (line, iterations) => (f) =>
+        `line: ${lineNumberText(f.at(line))}, iterations:${f.at(iterations)}`,
     ),
   },
   QUERY_SQL_LOG: { debugCategory: 'apexCode', level: 'INFO', kind: 'soql' },
