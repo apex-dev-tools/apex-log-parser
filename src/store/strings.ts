@@ -1,13 +1,22 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { hashBytes } from '../bytes/hash.js';
 import type { Source } from '../bytes/source.js';
 import { tagOf } from '../tags.js';
 import { resized } from './columns.js';
 
 const EMPTY = -1;
 const MIN_SLOTS = 256;
+
+/** A 32-bit hash of bytes `start` to `end`, mixed so its low bits suit a power-of-two table. */
+function hashBytes(bytes: Uint8Array, start: number, end: number): number {
+  let h = 0;
+  for (let i = start; i < end; i++) {
+    // i < end, which is inside the caller's view
+    h = (Math.imul(h, 31) + bytes[i]!) | 0;
+  }
+  return h ^ (h >>> 15);
+}
 
 /** What `StringTable.text` reads: each id's byte range in the source. */
 export interface StringState {
