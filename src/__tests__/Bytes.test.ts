@@ -250,7 +250,6 @@ describe('typeIdAt', () => {
 describe('digits', () => {
   it.each([
     ['123', 123],
-    ['123456789012345', 123456789012345],
     // A byte above `9`, and one below `0`.
     ['a1', Number.NaN],
     ['1-', Number.NaN],

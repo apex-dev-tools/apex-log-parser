@@ -16,12 +16,12 @@ export function digits(bytes: Uint8Array, start: number, end: number): number {
   for (let i = start; i < end; i++) {
     // i < end, which is inside the line
     const d = bytes[i]! - ZERO;
-    if (d < 0 || d > 9) return Number.NaN;
+    // One unsigned compare: a byte below `0` wraps to a large number.
+    if (d >>> 0 > 9) return Number.NaN;
     n = n * 10 + d;
-    // Past this, n * 10 + d is no longer exact, and every later value is larger still.
-    if (n > Number.MAX_SAFE_INTEGER) return Number.NaN;
   }
-  return n;
+  // n never shrinks, so a value that ever passed 2^53 - 1 ends past it.
+  return n <= Number.MAX_SAFE_INTEGER ? n : Number.NaN;
 }
 
 /**
