@@ -95,16 +95,19 @@ export function isTypeName(bytes: Uint8Array, start: number, end: number): boole
   for (let i = start; i < end; i++) {
     // i < end, which is inside the line
     const c = bytes[i]!;
-    if (!((c >= UPPER_A && c <= UPPER_Z) || c === UNDERSCORE)) return false;
+    // One unsigned compare: a byte below `A` wraps to a large number.
+    if (!((c - UPPER_A) >>> 0 <= UPPER_Z - UPPER_A || c === UNDERSCORE)) return false;
   }
   return true;
 }
 
-// The SWAR lanes, as in browser.ts. Imported from one module, they made the scan 10% slower.
+// The SWAR lanes, local as in browser.ts: imported from one module, they made the scan 10% slower.
 const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
 const PIPES = 0x7c7c7c7c;
+/** A word's first byte is its lowest, so a bit's position gives its byte. Else, byte by byte. */
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 /** The most pipes `LineScanner` records per line; the cursor finds any later ones itself. */
 const PIPE_CAP = 16;
 
@@ -151,7 +154,7 @@ export class LineScanner {
       if (c === LF) break;
       if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
     }
-    if (i < len && bytes[i] !== LF) {
+    if (LITTLE_ENDIAN && i < len && bytes[i] !== LF) {
       const words = this.words;
       // Words below `last` end inside the view.
       const last = (offset + len) >>> 2;
@@ -160,23 +163,29 @@ export class LineScanner {
         const x = words[w]!;
         const lf = x ^ LFS;
         const pipe = x ^ PIPES;
-        if ((((lf - ONES) & ~lf) | ((pipe - ONES) & ~pipe)) & HIGHS) {
-          const at = (w << 2) - offset;
-          for (let k = at; k < at + 4; k++) {
-            const c = bytes[k];
-            if (c === LF) {
-              this.recorded = n;
-              return k;
-            }
-            if (c === PIPE && n < PIPE_CAP) pipes[n++] = k;
+        // OR in the high bits first, so no borrow crosses a byte and only a 0 byte keeps 0x80.
+        const lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS;
+        const pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS;
+        let hits = lfBits | pipeBits;
+        if (!hits) continue;
+        const at = (w << 2) - offset;
+        // Lowest bit first, so a pipe after the line end is never recorded.
+        for (; hits; hits &= hits - 1) {
+          const bit = hits & -hits;
+          const pos = at + 3 - (Math.clz32(bit) >>> 3);
+          if (bit & lfBits) {
+            this.recorded = n;
+            return pos;
           }
+          if (n < PIPE_CAP) pipes[n++] = pos;
         }
       }
-      for (i = (last << 2) - offset; i < len; i++) {
-        const c = bytes[i];
-        if (c === LF) break;
-        if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
-      }
+      i = (last << 2) - offset;
+    }
+    for (; i < len; i++) {
+      const c = bytes[i];
+      if (c === LF) break;
+      if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
     }
     this.recorded = n;
     return i;
