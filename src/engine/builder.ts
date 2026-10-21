@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { CR, SPACE, STAR, ZERO } from '../bytes/ascii.js';
+import { CR, inRange, NINE, SPACE, STAR, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import {
   firstEventLine,
@@ -204,12 +204,12 @@ export class LogBuilder {
   constructor(source: Source) {
     this.source = source;
     this.bytes = source.bytes;
-    this.lines = new LineScanner(source.bytes);
+    this.lines = new LineScanner(source);
     this.fields = new ByteFields(source);
     this.store = new Store(source.bytes.length);
     this.strings = new StringTable(source);
     this.markers = new LogMarkers(source, this.store, this.strings);
-    this.namespaces = new Namespaces(source.bytes, this.strings);
+    this.namespaces = new Namespaces(source, this.strings);
   }
 
   /** Bytes scanned so far: where the next unread line starts. */
@@ -654,14 +654,14 @@ export class LogBuilder {
     // count is at least 1, so pipes holds the first
     const p1 = pipes[0]!;
     const p2 = count > 1 ? pipes[1]! : end;
-    const type = typeIdAt(bytes, p1 + 1, p2);
+    const type = typeIdAt(this.source, p1 + 1, p2);
     if (type < 0) {
       if (!isTypeName(bytes, p1 + 1, p2)) return READ.notEvent;
       this.unknownStart = p1 + 1;
       this.unknownEnd = p2;
       return READ.unknownType;
     }
-    const timestamp = timestampIn(bytes, start, p1);
+    const timestamp = timestampIn(this.source, start, p1);
     if (Number.isNaN(timestamp)) {
       // Before 0.4, this threw and ended the parse.
       this.markers.lineError('Invalid timestamp', start, end);
@@ -782,11 +782,11 @@ export class LogBuilder {
   private opensNextLog(start: number, end: number): boolean {
     const bytes = this.bytes;
     // Byte tests before any decode: this runs on every line that is not an event.
-    const first = bytes[start]! - ZERO;
-    if (first < 0 || first > 9) return false;
+    // An empty last line starts past the end, where `undefined` would pass `inRange`.
+    if (!inRange(bytes[start] ?? -1, ZERO, NINE)) return false;
     const close = timestampClose(bytes, this.pos);
     if (close < 0) return false;
-    if (!(timestampIn(bytes, this.pos, close + 1) < this.lastAt)) return false;
+    if (!(timestampIn(this.source, this.pos, close + 1) < this.lastAt)) return false;
     return SETTINGS_LINE.test(this.source.text(start, end));
   }
 }

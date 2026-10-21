@@ -2,27 +2,13 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { Fields } from '../catalog/types.js';
-import { CR, LBRACKET, MINUS, matchesAscii, PIPE, RBRACKET, ZERO } from './ascii.js';
+import { CR, LBRACKET, MINUS, matchesAscii, PIPE, RBRACKET } from './ascii.js';
 import type { LineScanner } from './lines.js';
 import { continuationText } from './lines.js';
 import type { Source } from './source.js';
+import { digits } from './words.js';
 
 const EXTERNAL = 'EXTERNAL';
-
-/** The unsigned decimal in bytes `start` to `end`, or NaN when it is not one or is not safe. */
-export function digits(bytes: Uint8Array, start: number, end: number): number {
-  if (start >= end) return Number.NaN;
-  let n = 0;
-  for (let i = start; i < end; i++) {
-    // i < end, which is inside the line
-    const d = bytes[i]! - ZERO;
-    // One unsigned compare: a byte below `0` wraps to a large number.
-    if (d >>> 0 > 9) return Number.NaN;
-    n = n * 10 + d;
-  }
-  // n never shrinks, so a value that ever passed 2^53 - 1 ends past it.
-  return n <= Number.MAX_SAFE_INTEGER ? n : Number.NaN;
-}
 
 /**
  * `Fields` over a source's bytes. One cursor serves every line: `reset` points it at the next one.
@@ -169,7 +155,7 @@ export class ByteFields implements Fields {
       return Number.NaN;
     if (end - start === EXTERNAL.length + 2 && matchesAscii(this.bytes, start + 1, EXTERNAL))
       return 'EXTERNAL';
-    return digits(this.bytes, start + 1, end - 1);
+    return digits(this.source, start + 1, end - 1);
   }
 
   int(i: number, prefix = ''): number | null {
@@ -180,8 +166,8 @@ export class ByteFields implements Fields {
     if (end - start < prefix.length) return Number.NaN;
     if (!matchesAscii(this.bytes, start, prefix)) return Number.NaN;
     start += prefix.length;
-    if (start < end && this.bytes[start] === MINUS) return -digits(this.bytes, start + 1, end);
-    return digits(this.bytes, start, end);
+    if (start < end && this.bytes[start] === MINUS) return -digits(this.source, start + 1, end);
+    return digits(this.source, start, end);
   }
 
   private grow(): void {
