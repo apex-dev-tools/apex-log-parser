@@ -3,10 +3,10 @@
  */
 import type { EventType } from '../catalog/types.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
-import { hashBytes } from './hash.js';
 
-// A power of two, at least twice the number of names, so a probe ends after a few slots.
-const SLOTS = 1024;
+// At least twice the number of names, so a probe ends after a few slots.
+const SLOT_BITS = 10;
+const SLOTS = 1 << SLOT_BITS;
 const MASK = SLOTS - 1;
 
 /** Every name's bytes, end to end; name `id` is `pool[offsets[id]]` to `pool[offsets[id + 1]]`. */
@@ -15,9 +15,18 @@ const pool = new Uint8Array(EVENT_TYPE_NAMES.reduce((n, name) => n + name.length
 /** The type id in each slot, or -1 for an empty slot. */
 const slots = new Int16Array(SLOTS).fill(-1);
 
-/** The first slot to probe for the name in bytes `start` to `end`. */
-const slotOf = (bytes: Uint8Array, start: number, end: number): number =>
-  hashBytes(bytes, start, end) & MASK;
+/**
+ * The first slot to probe for the name in bytes `start` to `end`. The key is the length and the
+ * first, middle and last bytes, not every byte: names with the same key cost a further probe.
+ */
+const slotOf = (bytes: Uint8Array, start: number, end: number): number => {
+  const len = end - start;
+  // No name is empty, and typeIdAt passes none, so the three reads are inside the name.
+  const key =
+    len | (bytes[start]! << 8) | (bytes[start + (len >> 1)]! << 16) | (bytes[end - 1]! << 24);
+  // Fibonacci hashing: the top bits of the product mix every key bit; the low bits do not.
+  return Math.imul(key, 0x9e3779b1) >>> (32 - SLOT_BITS);
+};
 
 if (EVENT_TYPE_NAMES.length * 2 > SLOTS) throw new Error('typeIds: too many event types for SLOTS');
 for (const [id, name] of EVENT_TYPE_NAMES.entries()) {
@@ -58,7 +67,9 @@ for (const name of FREQUENT) {
 /** The type id of the event type named by bytes `start` to `end`, or -1 when no type has the name. */
 export function typeIdAt(bytes: Uint8Array, start: number, end: number): number {
   const len = end - start;
-  const first = len < firstByLength.length ? firstByLength[len]! : -1;
+  // No name is empty or past the longest, so len then indexes firstByLength.
+  if (len === 0 || len >= firstByLength.length) return -1;
+  const first = firstByLength[len]!;
   if (first >= 0) {
     // first is a type id, so it indexes offsets
     const at = offsets[first]!;
