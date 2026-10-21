@@ -3,7 +3,7 @@
  */
 
 import { BrowserSource } from '../bytes/browser.js';
-import { ByteFields } from '../bytes/cursor.js';
+import { ByteFields, digits } from '../bytes/cursor.js';
 import { LineScanner } from '../bytes/lines.js';
 import { NodeSource } from '../bytes/node.js';
 import type { Source } from '../bytes/source.js';
@@ -225,5 +225,20 @@ describe('typeIdAt', () => {
   ])('finds no type named %j', (name) => {
     const bytes = at(1, name);
     expect(typeIdAt(bytes, 0, bytes.length)).toBe(-1);
+  });
+});
+
+describe('digits', () => {
+  it.each([
+    ['123', 123],
+    ['123456789012345', 123456789012345],
+    // A byte above `9` or below `0`, in a pair and in the odd first digit.
+    ['a1', Number.NaN],
+    ['1-', Number.NaN],
+    ['a12', Number.NaN],
+    ['-12', Number.NaN],
+  ])('reads %j as %d', (text, n) => {
+    const bytes = at(1, text);
+    expect(digits(bytes, 0, bytes.length)).toBe(n);
   });
 });
