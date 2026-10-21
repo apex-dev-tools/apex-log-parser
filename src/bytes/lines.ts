@@ -71,7 +71,19 @@ export function timestampClose(bytes: Uint8Array, start: number): number {
 
 /** The nanoseconds in `(…)` of field 0, bytes `start` to `end`, or NaN when it states none. */
 export function timestampIn(bytes: Uint8Array, start: number, end: number): number {
-  let i = start;
+  // Skip the `HH:MM:SS.` of the time of day, unless a `(` in it would have ended the search there.
+  const skip =
+    end - start >= 9 &&
+    bytes[start + 2] === COLON &&
+    bytes[start + 5] === COLON &&
+    bytes[start + 8] === DOT &&
+    bytes[start] !== LPAREN &&
+    bytes[start + 1] !== LPAREN &&
+    bytes[start + 3] !== LPAREN &&
+    bytes[start + 4] !== LPAREN &&
+    bytes[start + 6] !== LPAREN &&
+    bytes[start + 7] !== LPAREN;
+  let i = skip ? start + 9 : start;
   while (i < end && bytes[i] !== LPAREN) i++;
   if (i >= end || bytes[end - 1] !== RPAREN) return Number.NaN;
   return digits(bytes, i + 1, end - 1);

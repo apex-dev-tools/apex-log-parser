@@ -3,8 +3,8 @@
  */
 
 import { BrowserSource } from '../bytes/browser.js';
-import { ByteFields } from '../bytes/cursor.js';
-import { LineScanner } from '../bytes/lines.js';
+import { ByteFields, digits } from '../bytes/cursor.js';
+import { LineScanner, timestampIn } from '../bytes/lines.js';
 import { NodeSource } from '../bytes/node.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
@@ -234,14 +234,42 @@ describe('typeIdAt', () => {
 
   it.each([
     '',
-    'METHOD_ENTR',
-    'METHOD_ENTRYX',
     'METHOD_ENTRZ',
-    'method_entry',
     'NOT_A_TYPE',
+    // The probe key of SOQL_ and SOSL_EXECUTE_BEGIN, so only the full compare tells it apart.
+    'SOXL_EXECUTE_BEGIN',
+    // Bytes from 0x80 up make the key negative.
+    'MÉTHOD_ENTRY',
     'X'.repeat(60),
   ])('finds no type named %j', (name) => {
     const bytes = at(1, name);
     expect(typeIdAt(bytes, 0, bytes.length)).toBe(-1);
+  });
+});
+
+describe('digits', () => {
+  it.each([
+    ['123', 123],
+    ['123456789012345', 123456789012345],
+    // A byte above `9`, and one below `0`.
+    ['a1', Number.NaN],
+    ['1-', Number.NaN],
+  ])('reads %j as %d', (text, n) => {
+    const bytes = at(1, text);
+    expect(digits(bytes, 0, bytes.length)).toBe(n);
+  });
+});
+
+describe('timestampIn', () => {
+  it('reads the nanoseconds after the time of day', () => {
+    const bytes = at(1, '12:34:56.789 (12345678901)');
+    expect(timestampIn(bytes, 0, bytes.length)).toBe(12345678901);
+  });
+
+  // A `(` in the time of day ends the search there, so the line states no timestamp.
+  it.each([0, 1, 2, 3, 4, 5, 6, 7, 8])('reads none with a ( at byte %i', (k) => {
+    const time = '12:00:00.';
+    const bytes = at(1, `${time.slice(0, k)}(${time.slice(k + 1)}0 (5)`);
+    expect(timestampIn(bytes, 0, bytes.length)).toBeNaN();
   });
 });
