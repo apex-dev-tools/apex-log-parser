@@ -81,6 +81,8 @@ export const HEAP_SIGN: Int8Array = new Int8Array(TYPES);
 export const FLOW_TOTAL_FIELD: Int8Array = new Int8Array(TYPES).fill(-1);
 /** `CLOSES[frame * TYPES + exit]` is 1 when an `exit` line closes a `frame`. */
 export const CLOSES: Uint8Array = new Uint8Array(TYPES * TYPES);
+/** A type that runs Apex: an event of one is a frame to a caller unless its line made it a leaf. */
+export const IS_APEX_CALL: Uint8Array = new Uint8Array(TYPES);
 /** The flow elements the residual pass credits. */
 export const FLOW_ELEMENT: Uint8Array = new Uint8Array(TYPES);
 
@@ -96,6 +98,7 @@ for (const info of EVENT_TYPES) {
   HAS_EXITS[t] = g.closes === 'exit' || g.closes === 'next-line' ? 1 : 0;
   ACCEPTS_TEXT[t] = g.acceptsText ? 1 : 0;
   DISCONTINUITY[t] = g.discontinuity ? 1 : 0;
+  IS_APEX_CALL[t] = g.isApexCall ? 1 : 0;
   LINE_FIELD[t] = g.lineField;
   NAMESPACE_RULE[t] = g.namespace ? RULE[g.namespace] : 0;
   NAMESPACE_POSITIONS[t] = g.namespaceFields;
