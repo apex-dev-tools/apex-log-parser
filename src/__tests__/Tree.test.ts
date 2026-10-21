@@ -442,6 +442,6 @@ describe('parsing errors', () => {
     // USER_DEBUG takes text, so a line read as text would join it, with no error.
     const log = logOf(`${at(1)}|USER_DEBUG|[1]|DEBUG|x`, line, `${at(9)}|STATEMENT_EXECUTE|[2]`);
     expect(outline(log)).toEqual(['USER_DEBUG@1', 'STATEMENT_EXECUTE@9']);
-    expect(log.parsingErrors).toEqual([`Invalid log line: ${line}`]);
+    expect(log.parsingErrors).toEqual([`Invalid timestamp: ${line}`]);
   });
 });
