@@ -1844,13 +1844,13 @@ const fieldNamesOf = (type: EventType): readonly string[] =>
 
 function grammarOf(type: EventType): Grammar {
   const def = ENTRIES[type];
-  const fact = positionIn(type, 'a fact rule');
+  const position = positionIn(type);
   const fields = fieldNamesOf(type);
   const line = fields.indexOf('line');
   const namespace = def.namespace ?? null;
   const hook = def.hook ?? null;
-  const reads = (rule: string, names: readonly string[]): readonly number[] =>
-    names.length ? Object.freeze(names.map(positionIn(type, rule))) : NO_POSITIONS;
+  const reads = (names: readonly string[]): readonly number[] =>
+    names.length ? Object.freeze(names.map(position)) : NO_POSITIONS;
   return Object.freeze({
     closes: def.exits ? 'exit' : (def.closes ?? null),
     lineField: line < 0 ? -1 : line + FIRST_FIELD,
@@ -1858,34 +1858,27 @@ function grammarOf(type: EventType): Grammar {
     discontinuity: def.discontinuity ?? false,
     isApexCall: def.apexCall ?? false,
     count: def.count ?? null,
-    rowsField: def.rows ? fact(def.rows.field) : -1,
+    rowsField: def.rows ? position(def.rows.field) : -1,
     rowsOf: def.rows?.of ?? null,
-    heapField: def.heap ? fact(def.heap.field) : -1,
+    heapField: def.heap ? position(def.heap.field) : -1,
     heapSign: def.heap?.sign ?? 0,
     namespace,
-    namespaceFields: namespace
-      ? reads(`the ${namespace} namespace rule`, NAMESPACE_FIELDS[namespace])
-      : NO_POSITIONS,
+    namespaceFields: namespace ? reads(NAMESPACE_FIELDS[namespace]) : NO_POSITIONS,
     hook,
-    hookFields: hook ? reads(`the ${hook} hook`, HOOK_FIELDS[hook]) : NO_POSITIONS,
+    hookFields: hook ? reads(HOOK_FIELDS[hook]) : NO_POSITIONS,
   });
 }
 
-/** The type's `FieldPosition`, shared by every per-type rule; `reader` names the rule in the error. */
-function positionIn(type: EventType, reader: string): FieldPosition {
-  const fields = fieldNamesOf(type);
-  return (name) => {
-    const i = fields.indexOf(name);
-    if (i < 0)
-      throw new Error(`${type}: ${reader} reads '${name}', which is not one of its fields`);
-    return i + FIRST_FIELD;
-  };
+/** The type's `FieldPosition`, shared by every per-type rule. */
+function positionIn(type: EventType): FieldPosition {
+  const typeId = idOfType(type);
+  return (name) => fieldPosition(typeId, name).at;
 }
 
 function lineRulesOf(type: EventType): LineRules {
   const def = ENTRIES[type];
   return {
-    rule: def.text?.(positionIn(type, 'a text rule')) ?? null,
+    rule: def.text?.(positionIn(type)) ?? null,
     after: def.after ?? null,
   };
 }
@@ -1945,7 +1938,7 @@ export function fieldPosition(typeId: number, name: string): { at: number; last:
   return { at: i + FIRST_FIELD, last: i === fields.length - 1 };
 }
 
-const UNIT_TYPE = codeUnitTypeText(positionIn('CODE_UNIT_STARTED', 'the code unit type'));
+const UNIT_TYPE = codeUnitTypeText(positionIn('CODE_UNIT_STARTED'));
 
 /** A `CODE_UNIT_STARTED` line's unit type, as `Flow`; null when the line states none. */
 export function codeUnitType(f: LineFields): string | null {
