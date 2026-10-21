@@ -95,7 +95,8 @@ export function isTypeName(bytes: Uint8Array, start: number, end: number): boole
   for (let i = start; i < end; i++) {
     // i < end, which is inside the line
     const c = bytes[i]!;
-    if (!((c >= UPPER_A && c <= UPPER_Z) || c === UNDERSCORE)) return false;
+    // One unsigned compare: a byte below `A` wraps to a large number.
+    if (!((c - UPPER_A) >>> 0 <= UPPER_Z - UPPER_A || c === UNDERSCORE)) return false;
   }
   return true;
 }
