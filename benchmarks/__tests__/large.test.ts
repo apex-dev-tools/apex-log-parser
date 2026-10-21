@@ -1,7 +1,19 @@
 import { makeLog, profileLog } from '../fixtures/fixtures.js';
+import { engineNamed } from '../scripts/engines.js';
 import { heapGrowth, measurePeak, report } from '../scripts/large.js';
 
 describe('bench-large', () => {
+  it('measures the build each engine name states, and no other', async () => {
+    const log = makeLog(profileLog('small', 1, 20_000));
+    const bytes = new TextEncoder().encode(log);
+    const node = await engineNamed('node');
+    const browser = await engineNamed('browser');
+    expect(await engineNamed(null)).toBe(node);
+    expect(browser).not.toBe(node);
+    expect(browser.build(bytes).store.count).toBe(node.build(bytes).store.count);
+    await expect(engineNamed('deno')).rejects.toThrow('No engine is named deno');
+  });
+
   it('adds the peak, with its change when the baseline states one', () => {
     const results = [
       { name: 'parse_20mb', ms: 1000, heapBytes: 300_000_000, peakBytes: 900_000_000 },
