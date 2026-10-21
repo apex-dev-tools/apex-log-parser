@@ -11,24 +11,15 @@ const EXTERNAL = 'EXTERNAL';
 
 /** The unsigned decimal in bytes `start` to `end`, or NaN when it is not one or is not safe. */
 export function digits(bytes: Uint8Array, start: number, end: number): number {
-  const len = end - start;
-  if (len <= 0) return Number.NaN;
+  if (start >= end) return Number.NaN;
   // 15 digits stay below 2^53, so only a longer number needs the exactness check.
-  if (len > 15) return longDigits(bytes, start, end);
+  if (end - start > 15) return longDigits(bytes, start, end);
   let n = 0;
-  let i = start;
-  if (len & 1) {
-    // len is odd, so start is inside the line
-    n = bytes[i++]! - ZERO;
-    if (n < 0 || n > 9) return Number.NaN;
-  }
-  // Two digits a step halves the chain of dependent multiplies.
-  for (; i < end; i += 2) {
-    // i + 1 < end, which is inside the line
-    const high = bytes[i]! - ZERO;
-    const low = bytes[i + 1]! - ZERO;
-    if (high < 0 || high > 9 || low < 0 || low > 9) return Number.NaN;
-    n = n * 100 + high * 10 + low;
+  for (let i = start; i < end; i++) {
+    // i < end, which is inside the line
+    const d = bytes[i]! - ZERO;
+    if (d < 0 || d > 9) return Number.NaN;
+    n = n * 10 + d;
   }
   return n;
 }
