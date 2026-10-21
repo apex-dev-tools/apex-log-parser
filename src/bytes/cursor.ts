@@ -13,10 +13,20 @@ const EXTERNAL = 'EXTERNAL';
 export function digits(bytes: Uint8Array, start: number, end: number): number {
   const len = end - start;
   if (len <= 0) return Number.NaN;
-  // 15 digits stay below 2^53, so only a longer number needs the exactness check.
-  if (len > 15) return longDigits(bytes, start, end);
   let n = 0;
   let i = start;
+  // 15 digits stay below 2^53, so only a longer number needs the exactness check.
+  if (len > 15) {
+    for (; i < end; i++) {
+      // i < end, which is inside the line
+      const d = bytes[i]! - ZERO;
+      if (d < 0 || d > 9) return Number.NaN;
+      n = n * 10 + d;
+      // Past this, n * 10 + d is no longer exact, and every later value is larger still.
+      if (n > Number.MAX_SAFE_INTEGER) return Number.NaN;
+    }
+    return n;
+  }
   if (len & 1) {
     // len is odd, so start is inside the line
     n = bytes[i++]! - ZERO;
@@ -29,19 +39,6 @@ export function digits(bytes: Uint8Array, start: number, end: number): number {
     const low = bytes[i + 1]! - ZERO;
     if (high < 0 || high > 9 || low < 0 || low > 9) return Number.NaN;
     n = n * 100 + high * 10 + low;
-  }
-  return n;
-}
-
-function longDigits(bytes: Uint8Array, start: number, end: number): number {
-  let n = 0;
-  for (let i = start; i < end; i++) {
-    // i < end, which is inside the line
-    const d = bytes[i]! - ZERO;
-    if (d < 0 || d > 9) return Number.NaN;
-    n = n * 10 + d;
-    // Past this, n * 10 + d is no longer exact, and every later value is larger still.
-    if (n > Number.MAX_SAFE_INTEGER) return Number.NaN;
   }
   return n;
 }
