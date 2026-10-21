@@ -40,21 +40,26 @@ function statesType(line: string): boolean {
  * truncation markers, or lines that look like an event. The engine's byte range spans them all.
  */
 export function continuationText(text: string): string {
-  const clean =
-    text.indexOf('\r') < 0 &&
-    text.indexOf('\n\n') < 0 &&
-    text.indexOf('|') < 0 &&
-    text.indexOf('\n*') < 0 &&
-    text[0] !== '\n' &&
-    text[0] !== '*' &&
-    text.at(-1) !== '\n';
-  if (clean) return text;
-  const lines = text.split('\n');
-  // Only a CR before an LF ends a line; the log's last line keeps its CR, as before 0.4.
-  return lines
-    .map((line, i) => (i < lines.length - 1 && line.endsWith('\r') ? line.slice(0, -1) : line))
-    .filter((line) => line !== '' && !TRUNCATION_MARKER.test(line) && !statesType(line))
-    .join('\n');
+  // Null while every line so far is kept as it is: those lines are then `text` up to `keptEnd`.
+  let out: string | null = null;
+  let keptEnd = 0;
+  for (let start = 0; ; ) {
+    const lf = text.indexOf('\n', start);
+    const last = lf < 0;
+    const eol = last ? text.length : lf;
+    // Only a CR before an LF ends a line; the log's last line keeps its CR, as before 0.4.
+    const cr = !last && eol > start && text.charCodeAt(eol - 1) === CR;
+    const end = cr ? eol - 1 : eol;
+    const line = text.slice(start, end);
+    // Every marker starts with `*`, so most lines skip the regex.
+    const marker = line[0] === '*' && TRUNCATION_MARKER.test(line);
+    const keep = line !== '' && !marker && !statesType(line);
+    if (out === null && (cr || !keep)) out = text.slice(0, keptEnd);
+    if (out === null) keptEnd = end;
+    else if (keep) out = out ? `${out}\n${line}` : line;
+    if (last) return out ?? text;
+    start = lf + 1;
+  }
 }
 
 /** Where `)` closes the `HH:MM:SS.f+ (n+)|` that starts at `start`, or -1 without one. */

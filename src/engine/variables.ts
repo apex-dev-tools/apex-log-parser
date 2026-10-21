@@ -582,7 +582,7 @@ export class VariableIndex {
       }
     }
     if (object !== NONE) this.ownerFields(object, cut, take);
-    return [...latest.values()].map((w) => this.found(writeName[w]!, w, NONE));
+    return Array.from(latest.values(), (w) => this.found(writeName[w]!, w, NONE));
   }
 
   /** The id of an address the log writes, or `NONE`. */
