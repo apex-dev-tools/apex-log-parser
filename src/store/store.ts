@@ -62,6 +62,8 @@ const COLUMN_NAMES = [
 ] as const;
 const COLUMNS = COLUMN_NAMES.length;
 type ColumnName = (typeof COLUMN_NAMES)[number];
+// Only the passes after the scan write it, so the scan does not grow it.
+const DURATION_SELF = COLUMN_NAMES.indexOf('durationSelf');
 
 declare const performance: { now(): number };
 
@@ -209,6 +211,11 @@ export class Store {
     return exit ? exit - this.timestamp[id]! : 0;
   }
 
+  /** Sizes `durationSelf`. `rollUp` calls it on its first step, after the last `add`. */
+  endRows(): void {
+    this.resizeColumn(DURATION_SELF, this.count);
+  }
+
   /**
    * Trims every column to its rows, one column a step, until `deadline`, a `performance.now()`
    * time, passes. True once all are; call again to go on. Only after the last `add`; types run
@@ -297,9 +304,9 @@ export class Store {
     return typeRows;
   }
 
-  /** Every per-row column at `size` rows. */
+  /** Every per-row column the scan writes at `size` rows. */
   private resize(size: number): void {
-    for (let c = 0; c < COLUMNS; c++) this.resizeColumn(c, size);
+    for (let c = 0; c < COLUMNS; c++) if (c !== DURATION_SELF) this.resizeColumn(c, size);
   }
 
   /** Per-row column `c` at `size` rows. */
