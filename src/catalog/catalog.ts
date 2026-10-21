@@ -1933,13 +1933,15 @@ export function eventText(typeId: number, f: Fields): string | null {
 }
 
 /**
- * Where field `name` of a type's line is, as `LineFields.at` counts, or -1 when the type does not
- * list it. `last` is true for the type's last listed field.
+ * Where field `name` of a type's line is, as `LineFields.at` counts; `last` is true for the type's
+ * last listed field. Throws a RangeError for a name the type does not list, so a renamed field
+ * fails where it is read, not as an empty value.
  */
 export function fieldPosition(typeId: number, name: string): { at: number; last: boolean } {
   const fields = EVENT_TYPES[typeId]?.fields ?? NO_FIELDS;
   const i = fields.indexOf(name);
-  return { at: i < 0 ? -1 : i + FIRST_FIELD, last: i >= 0 && i === fields.length - 1 };
+  if (i < 0) throw new RangeError(`${EVENT_TYPES[typeId]?.type ?? 'The log'} has no field ${name}`);
+  return { at: i + FIRST_FIELD, last: i === fields.length - 1 };
 }
 
 const UNIT_TYPE = codeUnitTypeText(positionIn('CODE_UNIT_STARTED', 'the code unit type'));

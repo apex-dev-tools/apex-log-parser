@@ -7,6 +7,7 @@ import {
   eventText,
   eventType,
   FIRST_FIELD,
+  fieldPosition,
   GRAMMAR,
   idOfType,
 } from '../catalog/catalog.js';
@@ -149,6 +150,15 @@ describe('type info', () => {
 });
 
 describe('field layouts', () => {
+  // A field the engine or a view reads by name fails when the module loads, not as an empty value.
+  it('finds a listed field, and throws for a name the type does not list', () => {
+    const write = idOfType('VARIABLE_ASSIGNMENT');
+    expect(fieldPosition(write, 'value')).toEqual({ at: FIRST_FIELD + 2, last: false });
+    expect(() => fieldPosition(write, 'valu')).toThrow(
+      new RangeError('VARIABLE_ASSIGNMENT has no field valu'),
+    );
+  });
+
   it('names each field once per type, in camelCase', () => {
     const bad = EVENT_TYPES.flatMap((info) =>
       info.fields
