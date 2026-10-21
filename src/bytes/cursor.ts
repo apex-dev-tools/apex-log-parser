@@ -12,6 +12,20 @@ const EXTERNAL = 'EXTERNAL';
 /** The unsigned decimal in bytes `start` to `end`, or NaN when it is not one or is not safe. */
 export function digits(bytes: Uint8Array, start: number, end: number): number {
   if (start >= end) return Number.NaN;
+  // 15 digits stay below 2^53, so only a longer number needs the exactness check.
+  if (end - start > 15) return longDigits(bytes, start, end);
+  let n = 0;
+  for (let i = start; i < end; i++) {
+    // i < end, which is inside the line
+    const d = bytes[i]! - ZERO;
+    // One unsigned compare: a byte below `0` wraps to a large number.
+    if (d >>> 0 > 9) return Number.NaN;
+    n = n * 10 + d;
+  }
+  return n;
+}
+
+function longDigits(bytes: Uint8Array, start: number, end: number): number {
   let n = 0;
   for (let i = start; i < end; i++) {
     // i < end, which is inside the line
