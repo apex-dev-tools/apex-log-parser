@@ -81,7 +81,10 @@ export const HEAP_SIGN: Int8Array = new Int8Array(TYPES);
 export const FLOW_TOTAL_FIELD: Int8Array = new Int8Array(TYPES).fill(-1);
 /** `CLOSES[frame * TYPES + exit]` is 1 when an `exit` line closes a `frame`. */
 export const CLOSES: Uint8Array = new Uint8Array(TYPES * TYPES);
-/** A type that runs Apex: an event of one is a frame to a caller unless its line made it a leaf. */
+/**
+ * 1 for a type that calls into Apex code. A row of one is not a call when its flags hold
+ * `notEntry`.
+ */
 export const IS_APEX_CALL: Uint8Array = new Uint8Array(TYPES);
 /** The flow elements the residual pass credits. */
 export const FLOW_ELEMENT: Uint8Array = new Uint8Array(TYPES);

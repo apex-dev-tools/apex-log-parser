@@ -7,7 +7,10 @@ import { restoreBuilt } from './buffers.js';
 import type { Built } from './builder.js';
 import { LogBuilder } from './builder.js';
 
-/** One build's way in, over its `Source` class: node or browser. Each build holds one for the process. */
+/**
+ * One build's way in, over its `Source` class: node or browser. Each build holds one for the
+ * process.
+ */
 export class LogEngine {
   /**
    * Never built. V8 drops a class's object layout once no instance of it is alive, and with it the
