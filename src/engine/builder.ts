@@ -261,6 +261,7 @@ export class LogBuilder {
     const store = this.store;
     if (this.pass === PASS.times) {
       store.subtreeEnd[0] = store.count;
+      store.endRows();
       this.logTimes = setLogTimes(store, this.mergedTail);
       this.passFrom = store.count - 1;
       this.pass = PASS.rollUp;
