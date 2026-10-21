@@ -60,7 +60,10 @@ export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
 export function rollUp(store: Store, isFrame: Uint8Array, from: number, deadline: number): number {
   // The column starts at 0, and each row adds its total and takes it off its parent. Row 0 first:
   // V8 optimises the loop before code after it has run, so a line there deopts on every parse.
-  if (from === store.count - 1) store.durationSelf[0]! += store.durationTotal(0);
+  if (from === store.count - 1) {
+    store.endRows();
+    store.durationSelf[0]! += store.durationTotal(0);
+  }
   for (let id = from; id > 0; id--) {
     // Never on the first row: a call that stopped there would run the row 0 line again.
     if ((id & CLOCK_ROWS) === 0 && id < from && performance.now() >= deadline) return id;
