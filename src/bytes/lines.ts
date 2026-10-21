@@ -105,7 +105,7 @@ const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
 const PIPES = 0x7c7c7c7c;
-/** A word's first byte is its lowest, so a mask bit's position gives its byte. Else, byte by byte. */
+/** A word's first byte is its lowest, so a bit's position gives its byte. Else, byte by byte. */
 const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 /** The most pipes `LineScanner` records per line; the cursor finds any later ones itself. */
 const PIPE_CAP = 16;
@@ -164,19 +164,19 @@ export class LineScanner {
         const pipe = x ^ PIPES;
         // OR in the high bits first, so no borrow crosses a byte and only a 0 byte keeps 0x80.
         const lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS;
-        let pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS;
-        if (!(lfBits | pipeBits)) continue;
+        const pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS;
+        let hits = lfBits | pipeBits;
+        if (!hits) continue;
         const at = (w << 2) - offset;
-        const lfBit = lfBits & -lfBits;
-        // A pipe after the line end belongs to the next line. With no LF, lfBit - 1 keeps all.
-        pipeBits &= lfBit - 1;
-        while (pipeBits && n < PIPE_CAP) {
-          pipes[n++] = at + ((31 - Math.clz32(pipeBits & -pipeBits)) >>> 3);
-          pipeBits &= pipeBits - 1;
-        }
-        if (lfBit) {
-          this.recorded = n;
-          return at + ((31 - Math.clz32(lfBit)) >>> 3);
+        // Lowest bit first, so a pipe after the line end is never recorded.
+        for (; hits; hits &= hits - 1) {
+          const bit = hits & -hits;
+          const pos = at + 3 - (Math.clz32(bit) >>> 3);
+          if (bit & lfBits) {
+            this.recorded = n;
+            return pos;
+          }
+          if (n < PIPE_CAP) pipes[n++] = pos;
         }
       }
       i = (last << 2) - offset;
