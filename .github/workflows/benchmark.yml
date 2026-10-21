@@ -71,10 +71,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm install --frozen-lockfile
         working-directory: base
-      - run: node --run bench:large -- --runs=1 --json="$RUNNER_TEMP/base.json"
+      - run: node --run bench:large -- --runs=3 --json="$RUNNER_TEMP/base.json"
         working-directory: base
-      - run: >-
-          node --run bench:large -- --runs=1 --baseline="$RUNNER_TEMP/base.json" --max-heap-growth=2
+      # `shell: bash` adds pipefail, so `tee` cannot hide the gate's exit code.
+      - shell: bash
+        run: >-
+          node --run bench:large -- --runs=3 --baseline="$RUNNER_TEMP/base.json" --max-heap-growth=2
           | tee "$RUNNER_TEMP/heap.txt"
       - if: always()
         run: |
