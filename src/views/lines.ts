@@ -4,13 +4,7 @@
 import { addressPipe } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
-import {
-  codeUnitType,
-  EVENT_TYPES,
-  eventText,
-  fieldPosition,
-  idOfType,
-} from '../catalog/catalog.js';
+import { codeUnitType, eventText, fieldPosition, idOfType } from '../catalog/catalog.js';
 import type { Level } from '../catalog/types.js';
 import { isLevel } from '../catalog/types.js';
 import type { Issues } from '../engine/issues.js';
@@ -70,8 +64,6 @@ export class EventLines {
   field(id: number, name: string): string | null {
     const type = this.typeOf(id);
     const { at, last } = fieldPosition(type, name);
-    if (at < 0)
-      throw new RangeError(`${EVENT_TYPES[type]?.type ?? 'The log'} has no field ${name}`);
     const f = this.at(id);
     if (type === ASSIGNMENT && at >= VALUE) return this.assignmentField(f, at === VALUE);
     return (last ? f.from(at, '|') : f.at(at)) || null;

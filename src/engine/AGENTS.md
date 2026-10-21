@@ -14,8 +14,8 @@ For coding agents working on the engine. The root [AGENTS.md](../../AGENTS.md) a
 - `header.ts` — the debug levels, `USER_INFO`, the start time.
 - `issues.ts` — the log issues, and the truncation regions they make.
 - `namespaces.ts` — the namespace rules, read from bytes.
-- `engine.ts` — the `Engine`, which keeps one idle builder alive. `node.ts`, `browser.ts`: each
-  build's `Engine`.
+- `engine.ts` — the `LogEngine`, which keeps one idle builder alive. `node.ts`, `browser.ts`: each
+  build's `LogEngine`.
 - `buffers.ts` — a build to typed arrays and plain values that structured clone carries whole, and
   back.
 - `throws.ts` — each throw's outcome from the rows after it, in one pass on the first `isCaught`
