@@ -1,8 +1,8 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { CR, LPAREN, SPACE, STAR, ZERO } from '../bytes/ascii.js';
-import { ByteFields, digits } from '../bytes/cursor.js';
+import { CR, SPACE, STAR, ZERO } from '../bytes/ascii.js';
+import { ByteFields } from '../bytes/cursor.js';
 import {
   firstEventLine,
   isTypeName,
@@ -786,9 +786,7 @@ export class LogBuilder {
     if (first < 0 || first > 9) return false;
     const close = timestampClose(bytes, this.pos);
     if (close < 0) return false;
-    let open = close;
-    while (bytes[open] !== LPAREN) open--;
-    if (!(digits(bytes, open + 1, close) < this.lastAt)) return false;
+    if (!(timestampIn(bytes, this.pos, close + 1) < this.lastAt)) return false;
     return SETTINGS_LINE.test(this.source.text(start, end));
   }
 }
