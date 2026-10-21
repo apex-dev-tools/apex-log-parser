@@ -6,7 +6,7 @@ By participating, you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 20+
+- [Node.js](https://nodejs.org/) 22+
 - [pnpm](https://pnpm.io/) 10+
 
 ## Setup
@@ -26,7 +26,7 @@ pnpm run test         # Run tests once
 pnpm run test:watch   # Run tests in watch mode
 pnpm run bench        # Run the parse benchmarks (wall time)
 pnpm run bench:large  # Parse 8, 20, 50, 75 and 100 MB synthetic logs (wall time and heap)
-pnpm vitest run src/__tests__/Builder.test.ts  # Run a single test file
+pnpm vitest run src/__tests__/Tree.test.ts  # Run a single test file
 pnpm run lint         # Check formatting + lint rules
 pnpm run lint:fix     # Auto-fix formatting + lint issues
 pnpm run ci           # Full check: lint + typecheck + test
@@ -52,6 +52,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 - `feat:` new features
 - `fix:` bug fixes
 - `refactor:` code changes that neither fix bugs nor add features
+- `perf:` faster or smaller, with the same output
 - `test:` adding or updating tests
 - `docs:` documentation changes
 - `chore:` maintenance (deps, CI, tooling)
