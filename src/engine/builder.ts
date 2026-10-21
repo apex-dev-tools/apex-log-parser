@@ -664,7 +664,7 @@ export class LogBuilder {
     const timestamp = timestampIn(bytes, start, p1);
     if (Number.isNaN(timestamp)) {
       // Before 0.4, this threw and ended the parse.
-      this.markers.lineError('Invalid log line', start, end);
+      this.markers.lineError('Invalid timestamp', start, end);
       return READ.error;
     }
 
