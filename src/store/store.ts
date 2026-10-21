@@ -62,7 +62,7 @@ const COLUMN_NAMES = [
 ] as const;
 const COLUMNS = COLUMN_NAMES.length;
 type ColumnName = (typeof COLUMN_NAMES)[number];
-// Only the passes after the scan write it, so `endRows` makes it once at its size, not in each growth.
+// Only the passes after the scan write it, so the scan does not grow it.
 const DURATION_SELF = COLUMN_NAMES.indexOf('durationSelf');
 
 declare const performance: { now(): number };
@@ -211,9 +211,9 @@ export class Store {
     return exit ? exit - this.timestamp[id]! : 0;
   }
 
-  /** Gives `durationSelf` a 0 for each row. Once, after the last `add` and before any rollup. */
+  /** Sizes `durationSelf`. `rollUp` calls it on its first step, after the last `add`. */
   endRows(): void {
-    this.durationSelf = new Float64Array(this.count);
+    this.resizeColumn(DURATION_SELF, this.count);
   }
 
   /**
