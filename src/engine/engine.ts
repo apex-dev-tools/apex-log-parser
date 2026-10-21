@@ -7,18 +7,8 @@ import { restoreBuilt } from './buffers.js';
 import type { Built } from './builder.js';
 import { LogBuilder } from './builder.js';
 
-/** One build's way in: node or browser. Each build holds one for the process. */
-export interface LogEngine {
-  /** The event tree of one log's bytes. */
-  build(bytes: Uint8Array): Built;
-  /** A builder over one log's bytes, for a caller that scans it in slices. */
-  builder(bytes: Uint8Array): LogBuilder;
-  /** The build `data` states, over this engine's source, as from another thread. */
-  restore(data: BuiltData): Built;
-}
-
-/** The engine over one `Source` class. */
-export class SourceEngine implements LogEngine {
+/** One build's way in, over its `Source` class: node or browser. Each build holds one for the process. */
+export class LogEngine {
   /**
    * Never built. V8 drops a class's object layout once no instance of it is alive, and with it the
    * code it optimised for that layout; this builder keeps every engine class alive between parses.
@@ -33,14 +23,17 @@ export class SourceEngine implements LogEngine {
     this.idle = new LogBuilder(sourceOf(new Uint8Array(0)));
   }
 
+  /** The event tree of one log's bytes. */
   build(bytes: Uint8Array): Built {
     return this.builder(bytes).build();
   }
 
+  /** A builder over one log's bytes, for a caller that scans it in slices. */
   builder(bytes: Uint8Array): LogBuilder {
     return new LogBuilder(this.sourceOf(bytes));
   }
 
+  /** The build `data` states, over this engine's source, as from another thread. */
   restore(data: BuiltData): Built {
     return restoreBuilt(data, this.sourceOf);
   }
