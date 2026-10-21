@@ -93,6 +93,7 @@ export function describeFieldsContract(name: string, make: MakeFields): void {
       ['Bytes:10', 'Rows:', Number.NaN],
       ['Rows:9007199254740991', 'Rows:', 9007199254740991],
       ['Rows:9007199254740992', 'Rows:', Number.NaN],
+      [`Rows:${'9'.repeat(400)}`, 'Rows:', Number.NaN],
     ])('reads %j after %j as %s', (field, prefix, expected) => {
       expect(make(`${head}|${field}`).int(2, prefix)).toEqual(expected);
     });
