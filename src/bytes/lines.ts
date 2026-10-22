@@ -20,11 +20,11 @@ import type { Source } from './source.js';
 import { digits } from './words.js';
 
 const SKIPPED = String.raw`\*\*\* Skipped (\d[\d,]*) bytes of detailed log`;
-const MAX_SIZE = String.raw`\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+`;
+const MAX_SIZE = String.raw`(\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+)`;
 
 /**
  * A truncation marker line, in its exact forms only, so a debug message that quotes it stays text.
- * Group 1 holds a skip's bytes, as `1,000`.
+ * Group 1 holds a skip's bytes, as `1,000`; group 2 a maximum-size marker.
  */
 export const TRUNCATION_MARKER: RegExp = new RegExp(`^(?:${SKIPPED}|${MAX_SIZE}) *$`);
 

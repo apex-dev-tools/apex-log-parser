@@ -101,7 +101,7 @@ export class LogMarkers {
       if (issue) issue.skippedBytes = Number.parseInt(skipped.replaceAll(',', ''), 10);
       return false;
     }
-    if (marker) {
+    if (marker?.[2] !== undefined) {
       this.maxSize(at, id, exitType);
       return true;
     }
