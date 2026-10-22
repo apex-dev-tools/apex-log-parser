@@ -242,15 +242,16 @@ describe('truncation', () => {
     );
   });
 
-  it.each(['*** Skipped 10 bytes', 'the log says MAXIMUM DEBUG LOG SIZE REACHED here'])(
-    'reads %j, not a whole marker, as an invalid line after an event with no text',
-    (near) => {
-      const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, near);
+  it.each([
+    '*** Skipped 10 bytes',
+    '*** Skipped , bytes of detailed log',
+    'the log says MAXIMUM DEBUG LOG SIZE REACHED here',
+  ])('reads %j, not a whole marker, as an invalid line after an event with no text', (near) => {
+    const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, near);
 
-      expect(log.parsingErrors).toEqual([`Invalid log line: ${near}`]);
-      expect(log.truncation.regions).toEqual([]);
-    },
-  );
+    expect(log.parsingErrors).toEqual([`Invalid log line: ${near}`]);
+    expect(log.truncation.regions).toEqual([]);
+  });
 
   it('reads a marker on a last line cut after its CR', () => {
     const marker = '*** Skipped 1,000 bytes of detailed log\r';

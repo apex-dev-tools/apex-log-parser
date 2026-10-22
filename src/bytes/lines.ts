@@ -19,7 +19,7 @@ import {
 import type { Source } from './source.js';
 import { digits } from './words.js';
 
-const SKIPPED = String.raw`\*\*\* Skipped ([\d,]+) bytes of detailed log`;
+const SKIPPED = String.raw`\*\*\* Skipped (\d[\d,]*) bytes of detailed log`;
 const MAX_SIZE = String.raw`\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+`;
 
 /**
