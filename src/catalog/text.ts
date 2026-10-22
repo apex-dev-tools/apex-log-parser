@@ -26,7 +26,7 @@ export function rule<const K extends string>(
 const SALESFORCE_ID = /^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/;
 
 /** A line-number field as text: `[12]` gives `12`, `[EXTERNAL]` gives `EXTERNAL`. */
-export function lineText(field: string): string {
+export function lineNumberText(field: string): string {
   return field === '[EXTERNAL]' ? 'EXTERNAL' : field.slice(1, -1);
 }
 

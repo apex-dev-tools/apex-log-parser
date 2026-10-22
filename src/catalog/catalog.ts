@@ -12,7 +12,7 @@ import {
   flowElementErrorAfter,
   flowInterviewsErrorAfter,
   limitsForNamespaceAfter,
-  lineText,
+  lineNumberText,
   managedPackageText,
   methodExitText,
   rule,
@@ -219,12 +219,12 @@ const joinPresent = <const K extends string>(separator: string, ...names: K[]): 
 const traceFlagsText = rule(
   ['line', 'className', 'traceFlags'],
   (line, className, traceFlags) => (f) =>
-    `${f.at(className)}, line:${lineText(f.at(line))} - ${f.at(traceFlags)}`,
+    `${f.at(className)}, line:${lineNumberText(f.at(line))} - ${f.at(traceFlags)}`,
 );
-const queryMoreText = rule(['line'], (line) => (f) => `line: ${lineText(f.at(line))}`);
+const queryMoreText = rule(['line'], (line) => (f) => `line: ${lineNumberText(f.at(line))}`);
 const savepointText = rule(
   ['line', 'savepoint'],
-  (line, savepoint) => (f) => `${f.at(savepoint)}, line: ${lineText(f.at(line))}`,
+  (line, savepoint) => (f) => `${f.at(savepoint)}, line: ${lineNumberText(f.at(line))}`,
 );
 /** `<appNamespace>.<the rest, joined by ' : '>`. */
 const notificationText = <const K extends string>(...rest: K[]): TextSpec<K | 'appNamespace'> =>
@@ -1119,7 +1119,8 @@ const ENTRIES: { readonly [T in EventType]: Def<T> } = {
     kind: 'soql',
     text: rule(
       ['line', 'iterations'],
-      (line, iterations) => (f) => `line: ${lineText(f.at(line))}, iterations:${f.at(iterations)}`,
+      (line, iterations) => (f) =>
+        `line: ${lineNumberText(f.at(line))}, iterations:${f.at(iterations)}`,
     ),
   },
   QUERY_SQL_LOG: { debugCategory: 'apexCode', level: 'INFO', kind: 'soql' },
@@ -1843,13 +1844,13 @@ const fieldNamesOf = (type: EventType): readonly string[] =>
 
 function grammarOf(type: EventType): Grammar {
   const def = ENTRIES[type];
-  const fact = positionIn(type, 'a fact rule');
+  const position = positionIn(type);
   const fields = fieldNamesOf(type);
   const line = fields.indexOf('line');
   const namespace = def.namespace ?? null;
   const hook = def.hook ?? null;
-  const reads = (rule: string, names: readonly string[]): readonly number[] =>
-    names.length ? Object.freeze(names.map(positionIn(type, rule))) : NO_POSITIONS;
+  const reads = (names: readonly string[]): readonly number[] =>
+    names.length ? Object.freeze(names.map(position)) : NO_POSITIONS;
   return Object.freeze({
     closes: def.exits ? 'exit' : (def.closes ?? null),
     lineField: line < 0 ? -1 : line + FIRST_FIELD,
@@ -1857,34 +1858,27 @@ function grammarOf(type: EventType): Grammar {
     discontinuity: def.discontinuity ?? false,
     isApexCall: def.apexCall ?? false,
     count: def.count ?? null,
-    rowsField: def.rows ? fact(def.rows.field) : -1,
+    rowsField: def.rows ? position(def.rows.field) : -1,
     rowsOf: def.rows?.of ?? null,
-    heapField: def.heap ? fact(def.heap.field) : -1,
+    heapField: def.heap ? position(def.heap.field) : -1,
     heapSign: def.heap?.sign ?? 0,
     namespace,
-    namespaceFields: namespace
-      ? reads(`the ${namespace} namespace rule`, NAMESPACE_FIELDS[namespace])
-      : NO_POSITIONS,
+    namespaceFields: namespace ? reads(NAMESPACE_FIELDS[namespace]) : NO_POSITIONS,
     hook,
-    hookFields: hook ? reads(`the ${hook} hook`, HOOK_FIELDS[hook]) : NO_POSITIONS,
+    hookFields: hook ? reads(HOOK_FIELDS[hook]) : NO_POSITIONS,
   });
 }
 
-/** The type's `FieldPosition`, shared by every per-type rule; `reader` names the rule in the error. */
-function positionIn(type: EventType, reader: string): FieldPosition {
-  const fields = fieldNamesOf(type);
-  return (name) => {
-    const i = fields.indexOf(name);
-    if (i < 0)
-      throw new Error(`${type}: ${reader} reads '${name}', which is not one of its fields`);
-    return i + FIRST_FIELD;
-  };
+/** The type's `FieldPosition`, shared by every per-type rule. */
+function positionIn(type: EventType): FieldPosition {
+  const typeId = idOfType(type);
+  return (name) => fieldPosition(typeId, name).at;
 }
 
 function lineRulesOf(type: EventType): LineRules {
   const def = ENTRIES[type];
   return {
-    rule: def.text?.(positionIn(type, 'a text rule')) ?? null,
+    rule: def.text?.(positionIn(type)) ?? null,
     after: def.after ?? null,
   };
 }
@@ -1933,16 +1927,18 @@ export function eventText(typeId: number, f: Fields): string | null {
 }
 
 /**
- * Where field `name` of a type's line is, as `LineFields.at` counts, or -1 when the type does not
- * list it. `last` is true for the type's last listed field.
+ * Where field `name` of a type's line is, as `LineFields.at` counts; `last` is true for the type's
+ * last listed field. Throws a RangeError for a name the type does not list, so a renamed field
+ * fails where it is read, not as an empty value.
  */
 export function fieldPosition(typeId: number, name: string): { at: number; last: boolean } {
   const fields = EVENT_TYPES[typeId]?.fields ?? NO_FIELDS;
   const i = fields.indexOf(name);
-  return { at: i < 0 ? -1 : i + FIRST_FIELD, last: i >= 0 && i === fields.length - 1 };
+  if (i < 0) throw new RangeError(`${EVENT_TYPES[typeId]?.type ?? 'The log'} has no field ${name}`);
+  return { at: i + FIRST_FIELD, last: i === fields.length - 1 };
 }
 
-const UNIT_TYPE = codeUnitTypeText(positionIn('CODE_UNIT_STARTED', 'the code unit type'));
+const UNIT_TYPE = codeUnitTypeText(positionIn('CODE_UNIT_STARTED'));
 
 /** A `CODE_UNIT_STARTED` line's unit type, as `Flow`; null when the line states none. */
 export function codeUnitType(f: LineFields): string | null {

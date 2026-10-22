@@ -39,7 +39,7 @@ For coding agents working on the parser. The root [AGENTS.md](../AGENTS.md) stil
 - `__tests__/` — vitest suites. `helpers.ts`: shared fixtures.
 
 V8 drops a class's object layout, and the code it optimised for it, once no instance is alive; the
-parse after a GC then runs about 3× slower. So the `Engine` keeps one idle builder alive, and a
+parse after a GC then runs about 3× slower. So the `LogEngine` keeps one idle builder alive, and a
 builder field that holds a time starts as a double (`NO_TIME`, -0), not 0.
 `benchmarks/__tests__/deopt.test.ts` fails when either breaks.
 

@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { NodeSource } from '../bytes/node.js';
-import { SourceEngine } from '../engine/engine.js';
+import { LogEngine } from '../engine/engine.js';
 import type { ApexLog } from '../views/log.js';
 import { apexLog } from '../views/log.js';
 import { encode, parse } from './helpers.js';
@@ -48,7 +48,7 @@ describe('state per build', () => {
     events: log.eventCount,
   });
   const fresh = (text: string): ApexLog =>
-    apexLog(new SourceEngine((bytes) => new NodeSource(bytes)).build(encode(text)));
+    apexLog(new LogEngine((bytes) => new NodeSource(bytes)).build(encode(text)));
 
   it('carries no state from one log to the next', () => {
     const first = facts(parse(logA));

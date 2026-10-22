@@ -3,7 +3,7 @@
  */
 
 import type { Source } from '../bytes/source.js';
-import { EVENT_TYPES, GRAMMAR } from '../catalog/catalog.js';
+import { EVENT_TYPES } from '../catalog/catalog.js';
 import type { EventFields } from '../catalog/fields.js';
 import type { DebugCategory, EventType, EventTypeInfo, Kind, Level } from '../catalog/types.js';
 import { LEVEL } from '../catalog/types.js';
@@ -14,6 +14,7 @@ import {
   FLAG,
   HEAP_SIGN,
   HEAP_SLOT,
+  IS_APEX_CALL,
   isFrameRow,
   ROWS_AT,
   ROWS_FROM_EXIT,
@@ -443,7 +444,7 @@ class EventView extends RollupView {
   get isApexCall(): boolean {
     const store = this.store;
     // id is a row, so its type is a type id
-    return GRAMMAR[store.type[this.id]!]!.isApexCall && !(store.flags[this.id]! & FLAG.notEntry);
+    return IS_APEX_CALL[store.type[this.id]!] === 1 && !(store.flags[this.id]! & FLAG.notEntry);
   }
 
   field(name: string): string | null {

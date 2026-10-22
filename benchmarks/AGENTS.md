@@ -21,7 +21,9 @@ applies.
   so the head must keep reading the base's JSON shape. `--peak` also states the most memory a cold
   parse needs: the median, over `--runs` fresh processes (`scripts/peak.ts`), of the process's
   high-water resident memory (RSS) less what it held before. GC timing moves one reading, so
-  compare medians.
+  compare medians. `--engine=browser` measures the browser build's engine instead, in Node: a node
+  run's `--json` as its `--baseline` compares the two builds. `scripts/engines.ts` loads one build
+  per process, as `deopt.ts` does.
 - `pnpm run bench:simulation` — `bench:large` with CodSpeed's V8 flags: no optimising tier.
   Compare base and head only.
 - `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run before 0.4 removed it:

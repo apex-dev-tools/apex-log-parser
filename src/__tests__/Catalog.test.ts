@@ -322,4 +322,13 @@ describe('event text', () => {
     );
     expect(text('ENTERING_MANAGED_PKG', 'ns.sub')).toBe('sub');
   });
+
+  it('reads a line number without its brackets, and EXTERNAL as it is', () => {
+    expect(text('QUERY_MORE_ITERATIONS', '[12]|3')).toBe('line: 12, iterations:3');
+    expect(text('QUERY_MORE_BEGIN', '[12]')).toBe('line: 12');
+    expect(text('SAVEPOINT_SET', '[EXTERNAL]|sp1')).toBe('sp1, line: EXTERNAL');
+    expect(text('PUSH_TRACE_FLAGS', '[12]|01p000000000000|MyClass|ApexCode=FINE')).toBe(
+      'MyClass, line:12 - ApexCode=FINE',
+    );
+  });
 });
