@@ -6,7 +6,7 @@
 
 It still gives the event tree, with times, SOQL, DML and SOSL counts, and governor limits for the whole log and per namespace. What is new:
 
-- **About 5× faster and 20× less memory than v0.3** (8–100 MB logs; 6–7× faster than v0.2). A 100 MB log: 154 ms and 37 MB, was 829 ms and 812 MB.
+- **About 5× faster and 20× less memory than v0.3** (8–100 MB logs; 7–8× faster than v0.2). A 100 MB log: 144 ms and 37 MB, was 829 ms and 812 MB.
 - **Streaming.** Reads a string, bytes, a `Blob`, a `Response` or a stream, not only a string.
 - **Off the main thread.** Parses in 5 ms slices, with cancel and progress, or in a worker.
 - **Variables.** The locals, `this` and statics each event could see, with their last write.
