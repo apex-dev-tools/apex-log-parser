@@ -77,6 +77,22 @@ describe('a text that holds more than one log', () => {
     expect(log.issues.map((issue) => issue.summary)).not.toContain('Multiple-Logs');
   });
 
+  it('counts no log for a settings line a later log quotes', () => {
+    const log = parse(
+      SETTINGS +
+        execution(100, 'First.unit') +
+        SETTINGS +
+        '09:18:22.6 (50)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (60)|USER_DEBUG|[1]|DEBUG|pasted header follows:\n' +
+        SETTINGS +
+        '09:18:22.6 (70)|EXECUTION_FINISHED\n',
+    );
+
+    expect(log.issues.find((issue) => issue.summary === 'Multiple-Logs')?.description).toBe(
+      'The text holds 2 logs. Only the first log was parsed. Open each log on its own.',
+    );
+  });
+
   it('parses the first log when only a later log states EXECUTION_STARTED', () => {
     const log = parse(
       SETTINGS +

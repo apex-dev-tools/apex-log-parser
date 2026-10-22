@@ -9,7 +9,6 @@ import {
   LineScanner,
   lineText,
   TRUNCATION_MARKER,
-  timestampClose,
   timestampIn,
 } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
@@ -30,10 +29,10 @@ import {
 } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
-import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
+import { debugSettings, userInfo, wallClock } from './header.js';
 import type { Issues, Truncation } from './issues.js';
 import { ISSUE, truncationOf } from './issues.js';
-import { LogMarkers } from './markers.js';
+import { LogMarkers, opensLog } from './markers.js';
 import { DEFAULT, Namespaces, UNSTATED } from './namespaces.js';
 import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
@@ -617,7 +616,10 @@ export class LogBuilder {
         read === READ.notEvent &&
         !last &&
         this.lastId !== NONE &&
-        this.opensNextLog(start, end)
+        // opensLog's first test, inline, so a line that starts with no digit makes no call.
+        // start < end, so it is a byte
+        (bytes[start]! - ZERO) >>> 0 <= 9 &&
+        opensLog(this.source, start, end, this.pos, this.lastAt)
       ) {
         this.markers.multipleLogs(start, this.lastAt, this.lastId, this.lastExitType());
         this.pos = len;
@@ -773,21 +775,5 @@ export class LogBuilder {
   private isTruncationMarker(start: number, end: number): boolean {
     // '*' first: a cheap test, because this runs on every continuation line.
     return this.bytes[start] === STAR && TRUNCATION_MARKER.test(this.source.text(start, end));
-  }
-
-  /**
-   * The test for a second log: a settings line whose next line restarts the nanosecond
-   * counter. A settings line alone is not enough, as a debug message can quote one.
-   */
-  private opensNextLog(start: number, end: number): boolean {
-    const bytes = this.bytes;
-    // Byte tests before any decode: this runs on every line that is not an event.
-    // An empty last line starts past the end, where `undefined` would make NaN and pass.
-    const first = (bytes[start] ?? -1) - ZERO;
-    if (first < 0 || first > 9) return false;
-    const close = timestampClose(bytes, this.pos);
-    if (close < 0) return false;
-    if (!(timestampIn(this.source, this.pos, close + 1) < this.lastAt)) return false;
-    return SETTINGS_LINE.test(this.source.text(start, end));
   }
 }

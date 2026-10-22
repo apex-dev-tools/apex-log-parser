@@ -1,9 +1,9 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { COLON, ZERO } from '../bytes/ascii.js';
+import { COLON, CR, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
-import { lineText, timestampClose } from '../bytes/lines.js';
+import { timestampClose, timestampIn } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { eventText } from '../catalog/catalog.js';
 import type { LimitSnapshot } from '../limits.js';
@@ -20,6 +20,28 @@ import { HOOK_ID } from './tables.js';
 const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
 const SKIPPED = '*** Skipped';
 const SKIPPED_BYTES = /^\*\*\* Skipped ([\d,]+) bytes/;
+
+/**
+ * Bytes `start` to `end` open a log after one whose last timestamp is `before`: a settings line
+ * whose next line, at `next`, restarts the nanosecond counter. A settings line alone is not
+ * enough, as a debug message can quote one.
+ */
+export function opensLog(
+  source: Source,
+  start: number,
+  end: number,
+  next: number,
+  before: number,
+): boolean {
+  const bytes = source.bytes;
+  // Past the end, -1: `undefined` would make NaN and pass.
+  const first = (bytes[start] ?? -1) - ZERO;
+  if (first < 0 || first > 9) return false;
+  const close = timestampClose(bytes, next);
+  if (close < 0) return false;
+  if (!(timestampIn(source, next, close + 1) < before)) return false;
+  return SETTINGS_LINE.test(source.text(start, end));
+}
 
 /**
  * What the log states about itself, apart from its events: the issues, the parsing errors and the
@@ -128,20 +150,23 @@ export class LogMarkers {
     const source = this.source;
     const bytes = source.bytes;
     let count = 1;
+    let before = at;
+    // The last timestamped line, not the last event as in the builder; decoded only for a candidate.
+    let stamped = -1;
     for (let line = start; line < bytes.length; ) {
       const eol = source.lineEnd(line);
       if (eol < 0) break;
-      // Byte tests before the decode: a settings line starts with a digit, and a timestamp's third byte is ':'.
       // line < length, so it is a byte
       const first = bytes[line]! - ZERO;
-      if (
-        first >= 0 &&
-        first <= 9 &&
-        bytes[line + 2] !== COLON &&
-        timestampClose(bytes, eol + 1) >= 0 &&
-        SETTINGS_LINE.test(lineText(source, line))
-      )
-        count++;
+      // A timestamp's third byte is ':', and a settings line's is not.
+      if (bytes[line + 2] === COLON) stamped = line;
+      else if (first >= 0 && first <= 9) {
+        const close = stamped < 0 ? -1 : timestampClose(bytes, stamped);
+        if (close >= 0) before = timestampIn(source, stamped, close + 1);
+        stamped = -1;
+        const end = eol > line && bytes[eol - 1] === CR ? eol - 1 : eol;
+        if (opensLog(source, line, end, eol + 1, before)) count++;
+      }
       line = eol + 1;
     }
     this.after(
