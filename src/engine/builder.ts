@@ -37,7 +37,7 @@ import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
 import { debugSettings, userInfo, wallClock } from './header.js';
 import type { Issues, Truncation } from './issues.js';
 import { ISSUE, truncationOf } from './issues.js';
-import { LogMarkers, opensLog } from './markers.js';
+import { LogMarkers, opensLog as opensLog_ } from './markers.js';
 import { DEFAULT as DEFAULT_, Namespaces, UNSTATED as UNSTATED_ } from './namespaces.js';
 import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
@@ -108,6 +108,7 @@ const CR = CR_,
   NAMESPACE_RULE = NAMESPACE_RULE_,
   NEXT_LINE_EXITS = NEXT_LINE_EXITS_,
   opensFrame = opensFrame_,
+  opensLog = opensLog_,
   ROWS_AT = ROWS_AT_,
   ROWS_FIELD = ROWS_FIELD_,
   ROWS_FROM_EXIT = ROWS_FROM_EXIT_,
@@ -669,7 +670,7 @@ export class LogBuilder {
           !last &&
           lastId !== NONE &&
           (first - ZERO) >>> 0 <= 9 &&
-          opensLog(this.source, start, end, this.pos, this.lastAt)
+          opensLog(this.source, start, this.pos, this.lastAt)
         ) {
           this.markers.multipleLogs(start, this.lastAt, lastId, this.lastExitType());
           this.pos = len;

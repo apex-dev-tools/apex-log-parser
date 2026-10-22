@@ -1,9 +1,9 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { COLON, CR, ZERO } from '../bytes/ascii.js';
+import { COLON, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
-import { timestampClose, timestampIn } from '../bytes/lines.js';
+import { lineText, timestampClose, timestampIn } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { eventText } from '../catalog/catalog.js';
 import type { LimitSnapshot } from '../limits.js';
@@ -22,25 +22,15 @@ const SKIPPED = '*** Skipped';
 const SKIPPED_BYTES = /^\*\*\* Skipped ([\d,]+) bytes/;
 
 /**
- * Bytes `start` to `end` open a log after one whose last timestamp is `before`: a settings line
- * whose next line, at `next`, restarts the nanosecond counter. A settings line alone is not
- * enough, as a debug message can quote one.
+ * The line at `start`, which starts with a digit, opens a log after one whose last timestamp is
+ * `before`: a settings line whose next line, at `next`, restarts the nanosecond counter. A
+ * settings line alone is not enough, as a debug message can quote one.
  */
-export function opensLog(
-  source: Source,
-  start: number,
-  end: number,
-  next: number,
-  before: number,
-): boolean {
-  const bytes = source.bytes;
-  // Past the end, -1: `undefined` would make NaN and pass.
-  const first = (bytes[start] ?? -1) - ZERO;
-  if (first < 0 || first > 9) return false;
-  const close = timestampClose(bytes, next);
+export function opensLog(source: Source, start: number, next: number, before: number): boolean {
+  const close = timestampClose(source.bytes, next);
   if (close < 0) return false;
   if (!(timestampIn(source, next, close + 1) < before)) return false;
-  return SETTINGS_LINE.test(source.text(start, end));
+  return SETTINGS_LINE.test(lineText(source, start));
 }
 
 /**
@@ -162,11 +152,12 @@ export class LogMarkers {
       // A timestamp's third byte is ':', and a settings line's is not.
       if (bytes[line + 2] === COLON) stamped = line;
       else if (first >= 0 && first <= 9) {
-        const close = stamped < 0 ? -1 : timestampClose(bytes, stamped);
-        if (close >= 0) before = timestampIn(source, stamped, close + 1);
-        stamped = -1;
-        const end = eol > line && bytes[eol - 1] === CR ? eol - 1 : eol;
-        if (opensLog(source, line, end, eol + 1, before)) count++;
+        if (stamped >= 0) {
+          const close = timestampClose(bytes, stamped);
+          if (close >= 0) before = timestampIn(source, stamped, close + 1);
+          stamped = -1;
+        }
+        if (opensLog(source, line, eol + 1, before)) count++;
       }
       line = eol + 1;
     }
