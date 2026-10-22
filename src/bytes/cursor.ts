@@ -52,7 +52,8 @@ export class ByteFields implements Fields {
 
   /**
    * As `reset`, for a stored row: bytes `start` to `end` hold its line, then any continuation
-   * lines. Only a line ending in `\n` loses its `\r`, as the engine's `end` already states.
+   * lines. A `\r` before `\n`, or at the log's end, is no text, as the engine's `end` already
+   * states.
    */
   resetRow(start: number, end: number): void {
     const lf = this.source.lineEnd(start);

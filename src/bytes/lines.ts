@@ -45,7 +45,7 @@ export function continuationText(text: string): string {
     const lf = text.indexOf('\n', start);
     const last = lf < 0;
     const eol = last ? text.length : lf;
-    // Only a CR before an LF ends a line; the log's last line keeps its CR, as before 0.4.
+    // A CR before an LF is line end. The text's end already is one, so a CR there is text.
     const cr = !last && eol > start && text.charCodeAt(eol - 1) === CR;
     const end = cr ? eol - 1 : eol;
     const line = text.slice(start, end);

@@ -44,9 +44,22 @@ describe('event text', () => {
       `${at(2)}|STATEMENT_EXECUTE|[2]`,
     ]);
     expect(log.event(1)?.text).toBe('DEBUG | first\nsecond');
-    // With no `\n` after it, the last line keeps its `\r`, as the engine does.
+    // A log cut between its last `\r` and `\n` keeps no `\r`.
     const cut = parse(`${HEADER}\r\n${at(1)}|STATEMENT_EXECUTE|[2]\r`);
-    expect(cut.event(1)?.logLine).toBe(`${at(1)}|STATEMENT_EXECUTE|[2]\r`);
+    expect(cut.event(1)?.logLine).toBe(`${at(1)}|STATEMENT_EXECUTE|[2]`);
+  });
+
+  it('keeps a CR that is text, inside a line or before its line end', () => {
+    const log = parse(
+      [
+        HEADER,
+        `${at(1)}|USER_DEBUG|[1]|DEBUG|a\rb`,
+        'mid\r\r',
+        'last\r\r',
+        `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      ].join('\n'),
+    );
+    expect(log.event(1)?.text).toBe('DEBUG | a\rb\nmid\r\nlast\r');
   });
 
   it('reads a named field as stated, null when empty or absent, and throws for a name the type lacks', () => {

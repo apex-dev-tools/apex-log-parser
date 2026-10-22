@@ -654,8 +654,8 @@ export class LogBuilder {
       const eol = this.lines.next(start);
       const last = eol >= len;
       this.pos = eol + 1;
-      // A CR before the line's LF is part of its line end; the last line keeps one, as before 0.4.
-      const end = !last && eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
+      // A CR before the line's LF, or before the log's end where a cut left it, is line end.
+      const end = eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
       if (end === start) continue;
       const read = this.readEvent(start, end);
       if (read === READ.event) {
