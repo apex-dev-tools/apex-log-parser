@@ -4,6 +4,7 @@
 import { CR as CR_, SPACE as SPACE_, STAR as STAR_, ZERO as ZERO_ } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import {
+  CUT_BY_MAX_SIZE as CUT_BY_MAX_SIZE_,
   firstEventLine,
   isTypeName as isTypeName_,
   LineScanner,
@@ -75,6 +76,7 @@ const CR = CR_,
   SPACE = SPACE_,
   STAR = STAR_,
   ZERO = ZERO_,
+  CUT_BY_MAX_SIZE = CUT_BY_MAX_SIZE_,
   isTypeName = isTypeName_,
   TRUNCATION_MARKER = TRUNCATION_MARKER_,
   timestampIn = timestampIn_,
@@ -145,8 +147,6 @@ const PASS = { times: 0, rollUp: 1, flow: 2, trim: 3, done: 4 } as const;
 // `tsconfig.json` keeps ambient globals out, so declare the one WHATWG global used here.
 declare const performance: { now(): number };
 
-// The platform can write the marker inside an event's line, which it then cuts.
-const CUT_BY_MAX_SIZE = /\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+ *$/;
 const invalidClasses = [
   'pagemessagescomponentcontroller',
   'pagemessagecomponentcontroller',
@@ -654,8 +654,8 @@ export class LogBuilder {
       const eol = this.lines.next(start);
       const last = eol >= len;
       this.pos = eol + 1;
-      // A CR before the line's LF is part of its line end; the last line keeps one, as before 0.4.
-      const end = !last && eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
+      // A CR before the line's LF, or before the log's end where a cut left it, is line end.
+      const end = eol > start && bytes[eol - 1] === CR ? eol - 1 : eol;
       if (end === start) continue;
       const read = this.readEvent(start, end);
       if (read === READ.event) {

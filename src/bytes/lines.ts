@@ -19,9 +19,17 @@ import {
 import type { Source } from './source.js';
 import { digits } from './words.js';
 
-/** A truncation marker line, in its exact forms only, so a debug message that quotes it stays text. */
-export const TRUNCATION_MARKER: RegExp =
-  /^(?:\*\*\* Skipped [\d,]+ bytes of detailed log|\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+) *$/;
+const SKIPPED = String.raw`\*\*\* Skipped (\d[\d,]*) bytes of detailed log`;
+const MAX_SIZE = String.raw`(\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+)`;
+
+/**
+ * A truncation marker line, in its exact forms only, so a debug message that quotes it stays text.
+ * Group 1 holds a skip's bytes, as `1,000`; group 2 a maximum-size marker.
+ */
+export const TRUNCATION_MARKER: RegExp = new RegExp(`^(?:${SKIPPED}|${MAX_SIZE}) *$`);
+
+/** The maximum-size marker at the end of an event's line, which the platform cut there. */
+export const CUT_BY_MAX_SIZE: RegExp = new RegExp(`${MAX_SIZE} *$`);
 
 const TYPE_LIKE = /^[A-Z_]+$/;
 
@@ -45,7 +53,7 @@ export function continuationText(text: string): string {
     const lf = text.indexOf('\n', start);
     const last = lf < 0;
     const eol = last ? text.length : lf;
-    // Only a CR before an LF ends a line; the log's last line keeps its CR, as before 0.4.
+    // A CR before an LF is line end. The text's end already is one, so a CR there is text.
     const cr = !last && eol > start && text.charCodeAt(eol - 1) === CR;
     const end = cr ? eol - 1 : eol;
     const line = text.slice(start, end);

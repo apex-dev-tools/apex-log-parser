@@ -13,8 +13,9 @@ For coding agents working on the parser. The root [AGENTS.md](../AGENTS.md) stil
   cursor, the type id lookup. `ascii.ts`: the byte constants and searches all readers share.
   `words.ts`: the 4-bytes-at-a-time (SWAR) form the scans inline, `digits`, and `wordsOf`, the
   `DataView` each `Source` holds as `words`.
-  `lines.ts`: the line tests (timestamp, type name, first event line), and the `LineScanner`, which
-  finds each line's end and first pipes in one pass for the builder. Every `Fields` adapter passes
+  `lines.ts`: the line tests (timestamp, type name, first event line), the truncation-marker forms
+  that the builder and `engine/markers.ts` test against, and the `LineScanner`, which finds each
+  line's end and first pipes in one pass for the builder. Every `Fields` adapter passes
   `__tests__/fieldsContract.ts`.
 - `store/` — events as typed-array columns, sparse count and heap pools, and the string table of
   interned byte ranges. `tags.ts` reads a value's type tag, which holds across realms where
@@ -110,6 +111,8 @@ lines keep their reading on the event, in `details`. Two folds are deliberate: `
   `engine/header.ts` reads the settings line from it, and `USER_INFO` from the first timestamped
   line.
 - A log can be truncated in two unrelated ways: the platform dropped a block
-  (`*** Skipped N bytes`), or the log hit the maximum size. `ApexLog.truncation` reports both.
+  (`*** Skipped N bytes of detailed log`), or the log hit the maximum size. `ApexLog.truncation`
+  reports both. Only the whole marker line counts: a line that only looks like one is text, or an
+  invalid line after an event that takes no text.
 - `ApexLog.isTruncated`: the platform dropped content. A frame's `endedBy`: what ended it, its own
   exit line or not. So `unclosedFrames` can be non-empty while `isTruncated` is `false`.

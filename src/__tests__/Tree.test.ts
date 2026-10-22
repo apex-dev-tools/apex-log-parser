@@ -95,6 +95,14 @@ describe('where the log starts', () => {
     expect(log.debugLevels).toEqual({ apexCode: 'FINE', apexProfiling: 'FINE' });
   });
 
+  it('reads a header-only log cut after its last CR, and reports no error', () => {
+    const log = parse('64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\r');
+    expect([log.debugLevels, log.parsingErrors]).toEqual([
+      { apexCode: 'FINE', apexProfiling: 'FINE' },
+      [],
+    ]);
+  });
+
   it('starts at the first event of a log with no EXECUTION_STARTED', () => {
     const log = parse(
       '64.0 APEX_CODE,FINE;APEX_PROFILING,FINE\n' +

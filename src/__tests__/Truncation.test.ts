@@ -242,6 +242,29 @@ describe('truncation', () => {
     );
   });
 
+  it.each([
+    '*** Skipped 10 bytes',
+    '*** Skipped , bytes of detailed log',
+    'the log says MAXIMUM DEBUG LOG SIZE REACHED here',
+  ])('reads %j, not a whole marker, as an invalid line after an event with no text', (near) => {
+    const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, near);
+
+    expect(log.parsingErrors).toEqual([`Invalid log line: ${near}`]);
+    expect(log.truncation.regions).toEqual([]);
+  });
+
+  it('reads a marker on a last line cut after its CR', () => {
+    const marker = '*** Skipped 1,000 bytes of detailed log\r';
+    const afterText = logOf(`${at(1)}|USER_DEBUG|[1]|DEBUG|hello`, marker);
+    const afterLeaf = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, marker);
+
+    expect(afterText.ofType('USER_DEBUG')[0]?.text).toBe('DEBUG | hello');
+    for (const log of [afterText, afterLeaf]) {
+      expect(log.truncation.regions.map((region) => region.kind)).toEqual(['skipped-lines']);
+      expect(log.truncation.totalSkippedBytes).toBe(1000);
+    }
+  });
+
   it('marks the frame open at the maximum size, and reports its end before the maximum size', () => {
     const log = logOf(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
@@ -295,6 +318,12 @@ describe('truncation', () => {
     expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
       ['max-size', 2, 9],
     ]);
+  });
+
+  it('reads the maximum size from an event line it cut, at a log cut after its CR', () => {
+    const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
+    const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, `${cut}\r`);
+    expect(log.issues.map((i) => [i.summary, i.event?.id])).toEqual([['Max-Size-reached', 2]]);
   });
 
   // Truncation keeps method, constructor, code unit, query and callout pairs, but not system ones.
