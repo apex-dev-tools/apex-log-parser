@@ -188,24 +188,27 @@ describe('LineScanner', () => {
     return out;
   };
 
-  it.each([0, 1])('finds each line end and its first 16 pipes in a view at offset %i', (offset) => {
-    // `}` is one above `|`, so a borrow from the pipe before it must not mark it.
-    const text = [
-      '',
-      'a|b',
-      '|',
-      `${'x'.repeat(9)}${'|'.repeat(20)}`,
-      'é|日本|',
-      'c\r',
-      '|}',
-      'no|end',
-    ]
-      .join('\n')
-      .repeat(5);
-    // Padded with pipes, so a read outside the view records one.
-    const bytes = at(offset, text, 0x7c);
-    expect(scanned(bytes)).toEqual(expected(bytes));
-  });
+  it.each([0, 1, 2, 3, 5])(
+    'finds each line end and its first 16 pipes in a view at offset %i',
+    (offset) => {
+      // `}` is one above `|`, so a borrow from the pipe before it must not mark it.
+      const text = [
+        '',
+        'a|b',
+        '|',
+        `${'x'.repeat(9)}${'|'.repeat(20)}`,
+        'é|日本|',
+        'c\r',
+        '|}',
+        'no|end',
+      ]
+        .join('\n')
+        .repeat(5);
+      // Padded with pipes, so a read outside the view records one.
+      const bytes = at(offset, text, 0x7c);
+      expect(scanned(bytes)).toEqual(expected(bytes));
+    },
+  );
 
   it('finds no line end or pipe in a byte that differs from one only in the high bit', () => {
     // 0x8a is `\n` + 0x80 and 0xfc is `|` + 0x80. Not text, as no UTF-8 string holds 0xfc.

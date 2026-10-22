@@ -5,7 +5,6 @@ import {
   COLON,
   CR,
   DOT,
-  indexOfByte,
   LF,
   LPAREN,
   NINE,
@@ -90,9 +89,11 @@ export function timestampIn(source: Source, start: number, end: number): number 
     bytes[start + 4] !== LPAREN &&
     bytes[start + 6] !== LPAREN &&
     bytes[start + 7] !== LPAREN;
-  const open = indexOfByte(bytes, LPAREN, skip ? start + 9 : start, end);
-  if (open < 0 || bytes[end - 1] !== RPAREN) return Number.NaN;
-  return digits(source, open + 1, end - 1);
+  // A loop, not indexOfByte: in V8's lower tiers the call costs more than the search.
+  let i = skip ? start + 9 : start;
+  while (i < end && bytes[i] !== LPAREN) i++;
+  if (i >= end || bytes[end - 1] !== RPAREN) return Number.NaN;
+  return digits(source, i + 1, end - 1);
 }
 
 /** Bytes `start` to `end` are a non-empty run of `A`-`Z` and `_`, as an event name is. */
@@ -112,6 +113,8 @@ const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
 const PIPES = 0x7c7c7c7c;
+/** A word's first byte is its lowest, so a bit's position gives its byte. Else, byte by byte. */
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 /** The most pipes `LineScanner` records per line; the cursor finds any later ones itself. */
 const PIPE_CAP = 16;
 
@@ -124,7 +127,9 @@ export class LineScanner {
   readonly pipes: Int32Array = new Int32Array(PIPE_CAP);
   private recorded = 0;
   private readonly bytes: Uint8Array;
-  private readonly words: DataView;
+  // An Int32Array, not the source's DataView: in V8's lower tiers each DataView read is a call.
+  private readonly words: Int32Array;
+  private readonly offset: number;
 
   /** How many pipes `pipes` holds for the line `next` scanned last. */
   get pipeCount(): number {
@@ -137,8 +142,11 @@ export class LineScanner {
   }
 
   constructor(source: Source) {
-    this.bytes = source.bytes;
-    this.words = source.words;
+    const bytes = source.bytes;
+    this.bytes = bytes;
+    // Over the whole buffer, so a word index is the byte address over 4 whatever the view's offset.
+    this.words = new Int32Array(bytes.buffer, 0, bytes.buffer.byteLength >>> 2);
+    this.offset = bytes.byteOffset;
   }
 
   /**
@@ -150,12 +158,15 @@ export class LineScanner {
     const pipes = this.pipes;
     const len = bytes.length;
     const words = this.words;
-    // The bytes in whole words; the rest are read one at a time.
-    const whole = len & ~3;
+    const offset = this.offset;
+    // Byte addresses in the buffer: the words below `whole` end inside the view.
+    const whole = LITTLE_ENDIAN ? (offset + len) & ~3 : 0;
+    const from = offset + start;
     let n = 0;
     // `keep` masks off the bytes of the first word before `start`; the masks are as in words.ts.
-    for (let at = start & ~3, keep = -1 << ((start & 3) << 3); at < whole; at += 4, keep = -1) {
-      let lf = words.getInt32(at, true);
+    for (let at = from & ~3, keep = -1 << ((from & 3) << 3); at < whole; at += 4, keep = -1) {
+      // at < whole, so the word is inside the buffer
+      let lf = words[at >>> 2]!;
       let pipe = lf ^ PIPES;
       lf ^= LFS;
       let lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS & keep;
@@ -163,7 +174,7 @@ export class LineScanner {
       // A word with neither reads the next one too: one branch per 8 bytes scans 9-22% faster.
       if (!(lfBits | pipeBits) && at + 4 < whole) {
         at += 4;
-        lf = words.getInt32(at, true);
+        lf = words[at >>> 2]!;
         pipe = lf ^ PIPES;
         lf ^= LFS;
         lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS;
@@ -172,7 +183,7 @@ export class LineScanner {
       // Lowest bit first, so a pipe after the line end is never recorded.
       for (let hits = lfBits | pipeBits; hits; hits &= hits - 1) {
         const bit = hits & -hits;
-        const pos = at + 3 - (Math.clz32(bit) >>> 3);
+        const pos = at - offset + 3 - (Math.clz32(bit) >>> 3);
         if (bit & lfBits) {
           this.recorded = n;
           return pos;
@@ -180,7 +191,7 @@ export class LineScanner {
         if (n < PIPE_CAP) pipes[n++] = pos;
       }
     }
-    let i = Math.max(start, whole);
+    let i = Math.max(start, whole - offset);
     for (; i < len; i++) {
       const c = bytes[i];
       if (c === LF) break;
