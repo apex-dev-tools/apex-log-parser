@@ -141,24 +141,18 @@ export class LogMarkers {
     const source = this.source;
     const bytes = source.bytes;
     let count = 1;
+    // The last timestamped line's time, not the last event's as in the builder.
     let before = at;
-    // The last timestamped line, not the last event as in the builder; decoded only for a candidate.
-    let stamped = -1;
     for (let line = start; line < bytes.length; ) {
       const eol = source.lineEnd(line);
       if (eol < 0) break;
       // line < length, so it is a byte
       const first = bytes[line]! - ZERO;
-      // A timestamp's third byte is ':', and a settings line's is not.
-      if (bytes[line + 2] === COLON) stamped = line;
-      else if (first >= 0 && first <= 9) {
-        if (stamped >= 0) {
-          const close = timestampClose(bytes, stamped);
-          if (close >= 0) before = timestampIn(source, stamped, close + 1);
-          stamped = -1;
-        }
-        if (opensLog(source, line, eol + 1, before)) count++;
-      }
+      // A timestamp's third byte is ':', and a settings line's is not; text like `id:1` has one too.
+      if (bytes[line + 2] === COLON) {
+        const close = timestampClose(bytes, line);
+        if (close >= 0) before = timestampIn(source, line, close + 1);
+      } else if (first >= 0 && first <= 9 && opensLog(source, line, eol + 1, before)) count++;
       line = eol + 1;
     }
     this.after(
