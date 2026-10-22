@@ -65,40 +65,95 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
     expect(sourceOf(bytes).text(1, bytes.length - 1)).toBe(text);
   });
 
+  // A line before, so offsets in the source are not offsets in the line.
+  const BEFORE = 'x|y\n';
+
   /** A cursor over `line`, then `continuation`, pointed at the line by `point`. */
   const fieldsOver =
-    (point: (fields: ByteFields, bytes: Uint8Array, lineBytes: number, from: number) => void) =>
+    (
+      point: (
+        fields: ByteFields,
+        bytes: Uint8Array,
+        start: number,
+        end: number,
+        from: number,
+      ) => void,
+    ) =>
     (line: string, continuation = '', onContinuation?: () => void): ByteFields => {
-      const lineBytes = encode(line).length;
-      const bytes = at(1, continuation ? `${line}\n${continuation}` : line);
+      const start = BEFORE.length;
+      const end = start + encode(line).length;
+      const bytes = at(1, `${BEFORE}${continuation ? `${line}\n${continuation}` : line}`);
       const source = sourceOf(bytes);
       const watched: Source = {
         bytes,
         words: source.words,
         lineEnd: (from) => source.lineEnd(from),
-        text: (start, end) => {
-          if (end > lineBytes) onContinuation?.();
-          return source.text(start, end);
+        text: (from, to) => {
+          if (to > end) onContinuation?.();
+          return source.text(from, to);
         },
       };
       const fields = new ByteFields(watched);
-      point(fields, bytes, lineBytes, continuation ? lineBytes + 1 : lineBytes);
+      point(fields, bytes, start, end, continuation ? end + 1 : end);
       return fields;
     };
 
-  describeFieldsContract(
-    'ByteFields',
-    fieldsOver((fields, bytes, lineBytes, from) => fields.reset(0, lineBytes, from, bytes.length)),
+  const afterReset = fieldsOver((fields, bytes, start, end, from) =>
+    fields.reset(start, end, from, bytes.length),
   );
+  const afterScan = fieldsOver((fields, bytes, start, end, from) => {
+    const lines = new LineScanner(sourceOf(bytes));
+    lines.next(start);
+    fields.resetLine(start, end, lines, from, bytes.length);
+  });
+  const afterRow = fieldsOver((fields, bytes, start) => fields.resetRow(start, bytes.length));
 
-  describeFieldsContract(
-    'ByteFields after a line scan',
-    fieldsOver((fields, bytes, lineBytes, from) => {
-      const lines = new LineScanner(sourceOf(bytes));
-      lines.next(0);
-      fields.resetLine(0, lineBytes, lines, from, bytes.length);
-    }),
-  );
+  const setups = [
+    ['ByteFields', afterReset],
+    ['ByteFields after a line scan', afterScan],
+    ['ByteFields over a stored row', afterRow],
+  ] as const;
+  for (const [name, make] of setups) describeFieldsContract(name, make);
+
+  describe.each(setups)('%s', (_, make) => {
+    it.each([
+      'a|b|c',
+      'a||c',
+      'a|',
+      'a',
+      // More pipes than a line scan records.
+      Array.from({ length: 20 }, (_, i) => `f${i}`).join('|'),
+    ])('gives where each field of %j starts and ends, and where the line ends', (line) => {
+      const fields = make(line, 'more');
+      const parts = line.split('|');
+      let start = BEFORE.length;
+      const spans = parts.map((part) => {
+        const span = [start, start + part.length];
+        start += part.length + 1;
+        return span;
+      });
+      const end = BEFORE.length + line.length;
+      // Last field first, so the first read finds every offset.
+      const order = [...parts.keys()].reverse();
+      expect(order.map((i) => [fields.startOf(i), fields.endOf(i)])).toEqual(
+        order.map((i) => spans[i]),
+      );
+      expect([fields.lineEnd, fields.startOf(-1)]).toEqual([end, -1]);
+      expect([fields.startOf(parts.length), fields.endOf(parts.length)]).toEqual([-1, end]);
+    });
+  });
+
+  it("ends a stored row's line before the CR of its line ending", () => {
+    const bytes = at(1, `${BEFORE}a|b\r\nmore\r\n`);
+    const fields = new ByteFields(sourceOf(bytes));
+    // A row ends before its last line's CR, as the builder stores it.
+    fields.resetRow(BEFORE.length, bytes.length - 2);
+    expect([fields.lineEnd, fields.at(1), fields.continuation()]).toEqual([
+      BEFORE.length + 3,
+      'b',
+      'more',
+    ]);
+  });
 
   it.each([
     ['a CRLF log', 'line\r\none\r\n\r\n  \r\ntwo\r\n', 6, 'one\n  \ntwo'],
@@ -131,27 +186,6 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
     expect([fields.count, fields.at(39), fields.from(38, ',')]).toEqual([40, 'f39', 'f38,f39']);
     fields.reset(bytes.length - 1, bytes.length);
     expect([fields.count, fields.at(0), fields.at(1)]).toEqual([1, 'c', '']);
-  });
-
-  it.each([
-    'a|b|c|d',
-    'a|b',
-    'a|',
-    'a||c',
-    'a',
-    // More pipes than a line scan records.
-    Array.from({ length: 20 }, (_, i) => `f${i}`).join('|'),
-  ])('reads %j the same when given the pipes a line scan found', (line) => {
-    // A line after another, so offsets in the source are not offsets in the line.
-    const bytes = at(1, `x|y\n${line}`);
-    const source = sourceOf(bytes);
-    const lines = new LineScanner(source);
-    const end = lines.next(4);
-    const fields = new ByteFields(source);
-    fields.resetLine(4, end, lines);
-    const parts = line.split('|');
-    expect(parts.map((_, i) => fields.at(i))).toEqual(parts);
-    expect([fields.count, fields.startOf(parts.length)]).toEqual([parts.length, -1]);
   });
 });
 
