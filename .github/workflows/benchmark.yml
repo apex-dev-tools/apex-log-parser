@@ -41,11 +41,17 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Outside valgrind, where tsdown starts fast.
+      # The chunk must be dist's, or CodSpeed times code no consumer runs.
+      - run: |
+          node --run bench:bundle
+          pnpm exec tsdown
+          cmp dist/engine-*.js benchmarks/.bundle/engine-*.js
       - uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
         with:
           mode: ${{ matrix.mode }}
           # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
-          run: node --run bench
+          run: node --run bench:run
 
   # CodSpeed cannot see the V8 heap. Base and head run on one runner, so the heap compares exactly.
   heap:
