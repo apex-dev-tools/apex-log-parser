@@ -3,7 +3,7 @@
  */
 import { COLON, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
-import { lineText, timestampClose, timestampIn } from '../bytes/lines.js';
+import { lineText, TRUNCATION_MARKER, timestampClose, timestampIn } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { eventText } from '../catalog/catalog.js';
 import type { LimitSnapshot } from '../limits.js';
@@ -15,11 +15,6 @@ import { SETTINGS_LINE } from './header.js';
 import type { Issue, IssueText, IssueType } from './issues.js';
 import { ISSUE, Issues } from './issues.js';
 import { HOOK_ID } from './tables.js';
-
-// Looser than TRUNCATION_MARKER: a line only reaches these tests when it is not text.
-const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
-const SKIPPED = '*** Skipped';
-const SKIPPED_BYTES = /^\*\*\* Skipped ([\d,]+) bytes/;
 
 /**
  * The line at byte `start` opens a log after one whose last timestamp is `before` (nanoseconds): a
@@ -90,7 +85,9 @@ export class LogMarkers {
       if (!SETTINGS_LINE.test(text)) this.parsingErrors.push(`Invalid log line: ${text}`);
       return false;
     }
-    if (text.startsWith(SKIPPED)) {
+    const marker = TRUNCATION_MARKER.exec(text);
+    const skipped = marker?.[1];
+    if (skipped !== undefined) {
       const issue = this.after(
         {
           summary: 'Skipped-Lines',
@@ -101,11 +98,10 @@ export class LogMarkers {
         id,
         exitType,
       );
-      const skipped = text.match(SKIPPED_BYTES)?.[1];
-      if (issue && skipped) issue.skippedBytes = Number.parseInt(skipped.replaceAll(',', ''), 10);
+      if (issue) issue.skippedBytes = Number.parseInt(skipped.replaceAll(',', ''), 10);
       return false;
     }
-    if (text.includes(MAX_SIZE)) {
+    if (marker) {
       this.maxSize(at, id, exitType);
       return true;
     }

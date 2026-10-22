@@ -242,6 +242,28 @@ describe('truncation', () => {
     );
   });
 
+  it('reads a line that is not a whole marker as no marker, after any event', () => {
+    const near = '*** Skipped 10 bytes';
+    const afterText = logOf(`${at(1)}|USER_DEBUG|[1]|DEBUG|hello`, near);
+    const afterLeaf = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, near);
+
+    expect(afterText.ofType('USER_DEBUG')[0]?.text).toBe(`DEBUG | hello\n${near}`);
+    expect(afterLeaf.parsingErrors).toEqual([`Invalid log line: ${near}`]);
+    expect([afterText.truncation.regions, afterLeaf.truncation.regions]).toEqual([[], []]);
+  });
+
+  it('reads a marker on a last line cut after its CR', () => {
+    const marker = '*** Skipped 1,000 bytes of detailed log\r';
+    const afterText = logOf(`${at(1)}|USER_DEBUG|[1]|DEBUG|hello`, marker);
+    const afterLeaf = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, marker);
+
+    expect(afterText.ofType('USER_DEBUG')[0]?.text).toBe('DEBUG | hello');
+    for (const log of [afterText, afterLeaf]) {
+      expect(log.truncation.regions.map((region) => region.kind)).toEqual(['skipped-lines']);
+      expect(log.truncation.totalSkippedBytes).toBe(1000);
+    }
+  });
+
   it('marks the frame open at the maximum size, and reports its end before the maximum size', () => {
     const log = logOf(
       `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,

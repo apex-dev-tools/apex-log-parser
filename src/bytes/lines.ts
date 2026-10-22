@@ -19,9 +19,17 @@ import {
 import type { Source } from './source.js';
 import { digits } from './words.js';
 
-/** A truncation marker line, in its exact forms only, so a debug message that quotes it stays text. */
-export const TRUNCATION_MARKER: RegExp =
-  /^(?:\*\*\* Skipped [\d,]+ bytes of detailed log|\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+) *$/;
+const SKIPPED = String.raw`\*\*\* Skipped ([\d,]+) bytes of detailed log`;
+const MAX_SIZE = String.raw`\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+`;
+
+/**
+ * A truncation marker line, in its exact forms only, so a debug message that quotes it stays text.
+ * Group 1 holds a skip's bytes, as `1,000`.
+ */
+export const TRUNCATION_MARKER: RegExp = new RegExp(`^(?:${SKIPPED}|${MAX_SIZE}) *$`);
+
+/** The maximum-size marker at the end of an event's line, which the platform cut there. */
+export const CUT_BY_MAX_SIZE: RegExp = new RegExp(`${MAX_SIZE} *$`);
 
 const TYPE_LIKE = /^[A-Z_]+$/;
 
