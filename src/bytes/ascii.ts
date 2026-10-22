@@ -28,9 +28,6 @@ export const PIPE = 0x7c;
 // Sets bit 5, which lowercases an ASCII letter and leaves a digit as it is.
 const LOWER = 0x20;
 
-/** `c` is from `lo` to `hi`. One unsigned compare: a byte below `lo` wraps to a large number. */
-export const inRange = (c: number, lo: number, hi: number): boolean => (c - lo) >>> 0 <= hi - lo;
-
 /** The bytes from `at` spell `ascii`. The caller checks that they are there. */
 export function matchesAscii(bytes: Uint8Array, at: number, ascii: string): boolean {
   for (let k = 0; k < ascii.length; k++) {
@@ -84,7 +81,8 @@ export function isAddress(bytes: Uint8Array, start: number, end: number): boolea
   for (let i = start + 2; i < end; i++) {
     // i < end, which is inside the range
     const b = bytes[i]!;
-    if (!(inRange(b, ZERO, NINE) || inRange(b | LOWER, LOWER_A, LOWER_F))) return false;
+    const lower = b | LOWER;
+    if (!((b >= ZERO && b <= NINE) || (lower >= LOWER_A && lower <= LOWER_F))) return false;
   }
   return true;
 }

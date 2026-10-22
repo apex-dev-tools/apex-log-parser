@@ -11,8 +11,8 @@ For coding agents working on the parser. The root [AGENTS.md](../AGENTS.md) stil
   `scripts/__tests__/CatalogDocs.test.ts` fail when either drifts from the event database.
 - `bytes/` — reads the bytes: a `Source` per build (`node.ts`, `browser.ts`), the `ByteFields`
   cursor, the type id lookup. `ascii.ts`: the byte constants and searches all readers share.
-  `words.ts`: the reads 4 bytes at a time (SWAR): the masks and lanes, `digits`, and `wordsOf`,
-  the `DataView` each `Source` holds as `words`.
+  `words.ts`: the 4-bytes-at-a-time (SWAR) form the scans inline, `digits`, and `wordsOf`, the
+  `DataView` each `Source` holds as `words`.
   `lines.ts`: the line tests (timestamp, type name, first event line), and the `LineScanner`, which
   finds each line's end and first pipes in one pass for the builder. Every `Fields` adapter passes
   `__tests__/fieldsContract.ts`.

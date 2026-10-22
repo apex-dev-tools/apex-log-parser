@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { COLON, inRange, NINE, ZERO } from '../bytes/ascii.js';
+import { COLON, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import { lineText, timestampClose } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
@@ -133,8 +133,10 @@ export class LogMarkers {
       if (eol < 0) break;
       // Byte tests before the decode: a settings line starts with a digit, and a timestamp's third byte is ':'.
       // line < length, so it is a byte
+      const first = bytes[line]! - ZERO;
       if (
-        inRange(bytes[line]!, ZERO, NINE) &&
+        first >= 0 &&
+        first <= 9 &&
         bytes[line + 2] !== COLON &&
         timestampClose(bytes, eol + 1) >= 0 &&
         SETTINGS_LINE.test(lineText(source, line))

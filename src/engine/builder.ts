@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { CR, inRange, NINE, SPACE, STAR, ZERO } from '../bytes/ascii.js';
+import { CR, SPACE, STAR, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import {
   firstEventLine,
@@ -782,8 +782,9 @@ export class LogBuilder {
   private opensNextLog(start: number, end: number): boolean {
     const bytes = this.bytes;
     // Byte tests before any decode: this runs on every line that is not an event.
-    // An empty last line starts past the end, where `undefined` would pass `inRange`.
-    if (!inRange(bytes[start] ?? -1, ZERO, NINE)) return false;
+    // An empty last line starts past the end, where `undefined` would make NaN and pass.
+    const first = (bytes[start] ?? -1) - ZERO;
+    if (first < 0 || first > 9) return false;
     const close = timestampClose(bytes, this.pos);
     if (close < 0) return false;
     if (!(timestampIn(this.source, this.pos, close + 1) < this.lastAt)) return false;

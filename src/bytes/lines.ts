@@ -6,7 +6,6 @@ import {
   CR,
   DOT,
   indexOfByte,
-  inRange,
   LF,
   LPAREN,
   NINE,
@@ -19,7 +18,7 @@ import {
   ZERO,
 } from './ascii.js';
 import type { Source } from './source.js';
-import { byteOf, digits, fromByte, LFS, matchBytes, PIPES } from './words.js';
+import { digits } from './words.js';
 
 /** A truncation marker line, in its exact forms only, so a debug message that quotes it stays text. */
 export const TRUNCATION_MARKER: RegExp =
@@ -64,8 +63,7 @@ export function continuationText(text: string): string {
 
 /** Where `)` closes the `HH:MM:SS.f+ (n+)|` that starts at `start`, or -1 without one. */
 export function timestampClose(bytes: Uint8Array, start: number): number {
-  // Past the end, -1, which is no digit: `undefined` would pass `inRange`.
-  const digit = (i: number): boolean => inRange(bytes[i] ?? -1, ZERO, NINE);
+  const digit = (i: number): boolean => bytes[i]! >= ZERO && bytes[i]! <= NINE;
   if (!(digit(start) && digit(start + 1) && bytes[start + 2] === COLON)) return -1;
   if (!(digit(start + 3) && digit(start + 4) && bytes[start + 5] === COLON)) return -1;
   if (!(digit(start + 6) && digit(start + 7) && bytes[start + 8] === DOT)) return -1;
@@ -103,11 +101,17 @@ export function isTypeName(bytes: Uint8Array, start: number, end: number): boole
   for (let i = start; i < end; i++) {
     // i < end, which is inside the line
     const c = bytes[i]!;
-    if (!(inRange(c, UPPER_A, UPPER_Z) || c === UNDERSCORE)) return false;
+    if (!((c - UPPER_A) >>> 0 <= UPPER_Z - UPPER_A || c === UNDERSCORE)) return false;
   }
   return true;
 }
 
+// Local, not imported, and inline below: under Vite's module runner, as CodSpeed runs, an
+// imported binding is a getter, and V8's lower tiers inline no call.
+const ONES = 0x01010101;
+const HIGHS = 0x80808080;
+const LFS = 0x0a0a0a0a;
+const PIPES = 0x7c7c7c7c;
 /** The most pipes `LineScanner` records per line; the cursor finds any later ones itself. */
 const PIPE_CAP = 16;
 
@@ -149,21 +153,26 @@ export class LineScanner {
     // The bytes in whole words; the rest are read one at a time.
     const whole = len & ~3;
     let n = 0;
-    for (let at = start & ~3, keep = fromByte(start); at < whole; at += 4, keep = -1) {
-      let x = words.getInt32(at, true);
-      let lfBits = matchBytes(x, LFS) & keep;
-      let pipeBits = matchBytes(x, PIPES) & keep;
+    // `keep` masks off the bytes of the first word before `start`; the masks are as in words.ts.
+    for (let at = start & ~3, keep = -1 << ((start & 3) << 3); at < whole; at += 4, keep = -1) {
+      let lf = words.getInt32(at, true);
+      let pipe = lf ^ PIPES;
+      lf ^= LFS;
+      let lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS & keep;
+      let pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS & keep;
       // A word with neither reads the next one too: one branch per 8 bytes scans 9-22% faster.
       if (!(lfBits | pipeBits) && at + 4 < whole) {
         at += 4;
-        x = words.getInt32(at, true);
-        lfBits = matchBytes(x, LFS);
-        pipeBits = matchBytes(x, PIPES);
+        lf = words.getInt32(at, true);
+        pipe = lf ^ PIPES;
+        lf ^= LFS;
+        lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS;
+        pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS;
       }
       // Lowest bit first, so a pipe after the line end is never recorded.
       for (let hits = lfBits | pipeBits; hits; hits &= hits - 1) {
         const bit = hits & -hits;
-        const pos = at + byteOf(bit);
+        const pos = at + 3 - (Math.clz32(bit) >>> 3);
         if (bit & lfBits) {
           this.recorded = n;
           return pos;
