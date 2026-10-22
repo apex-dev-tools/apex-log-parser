@@ -9,19 +9,13 @@
 
 import { writeSync } from 'node:fs';
 import { flag, runIfMain } from '../../scripts/cli.js';
-import type { LogEngine } from '../../src/engine/engine.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
+import { engineNamed } from './engines.js';
 
 export const PLAIN_MARKER = '--- plain loop ---';
 export const GC_MARKER = '--- after full GCs ---';
 const WARMUP = 20;
 const ROUNDS = 10;
-
-// One build per process, as in production: each entry holds an idle builder over its own source.
-async function engineNamed(name: string | null): Promise<LogEngine> {
-  if (name === 'browser') return (await import('../../src/engine/browser.js')).browserEngine;
-  return (await import('../../src/engine/node.js')).nodeEngine;
-}
 
 // Synchronous, as V8's trace is, so no line of one phase can land after the next one's marker.
 const mark = (marker: string): void => {

@@ -3,7 +3,6 @@
  */
 import {
   codeUnitType,
-  EVENT_TYPES,
   eventBody,
   fieldPosition,
   idOfType,
@@ -111,15 +110,8 @@ type Reader<T> = (
   flowType: () => FlowType | null,
 ) => T;
 
-/** Field `name`'s position in `typeId`'s line; throws at load for a name the entry does not list. */
-function position(typeId: number, name: string): { at: number; last: boolean } {
-  const found = fieldPosition(typeId, name);
-  if (found.at < 0) throw new Error(`${EVENT_TYPES[typeId]?.type} has no field ${name}`);
-  return found;
-}
-
 function text(typeId: number, name: string): Read<string | null> {
-  const { at, last } = position(typeId, name);
+  const { at, last } = fieldPosition(typeId, name);
   return last ? (f) => f.from(at, '|') || null : (f) => f.at(at) || null;
 }
 
@@ -133,7 +125,7 @@ function after(typeId: number, name: string, prefix: string): Read<string | null
 }
 
 function int(typeId: number, name: string, prefix = ''): Read<number | null> {
-  const { at } = position(typeId, name);
+  const { at } = fieldPosition(typeId, name);
   return (f) => {
     const n = f.int(at, prefix);
     return Number.isNaN(n) ? null : n;
@@ -182,7 +174,7 @@ function reader<T extends keyof EventDetails>(
 }
 
 // One field, as its text rule reads it, though it is the line's last.
-const PLAN = position(idOfType('SOQL_EXECUTE_EXPLAIN'), 'plan').at;
+const PLAN = fieldPosition(idOfType('SOQL_EXECUTE_EXPLAIN'), 'plan').at;
 const planOf = (f: Fields): ExplainPlan | null => explainPlan(f.at(PLAN) || null);
 
 reader('SOQL_EXECUTE_BEGIN', (t) => {

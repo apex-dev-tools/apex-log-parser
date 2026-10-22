@@ -1,8 +1,9 @@
 // For logs too large for CodSpeed. Compare branches: --json=<path> on one, --baseline=<path> on the other.
-//   pnpm run bench:large [--runs=5] [--json=<path>] [--baseline=<path>] [--max-heap-growth=<percent>] [--peak]
+//   pnpm run bench:large [--runs=5] [--json=<path>] [--baseline=<path>] [--max-heap-growth=<percent>] [--peak] [--engine=node|browser]
 // --baseline matches logs by name. baselines/legacy-v0.3.json is the legacy parser's last run.
 // --max-heap-growth fails the run when a log's heap grows past it. Time is not gated: CI runners are noisy.
 // --peak also states the median peak RSS growth of a cold parse, one fresh process per run (peak.ts).
+// --engine=browser measures the browser build's engine; a node run's --json as --baseline compares the two.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,8 +12,9 @@ import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { runJsonChild } from '../../scripts/child.js';
 import { flag, runIfMain } from '../../scripts/cli.js';
-import { nodeEngine } from '../../src/engine/node.js';
+import type { LogEngine } from '../../src/engine/engine.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
+import { engineNamed } from './engines.js';
 import type { PeakResult } from './peak.js';
 import { median, runsFlag, timedRuns } from './runs.js';
 import type { Measure } from './versus.js';
@@ -74,18 +76,23 @@ export function heapGrowth(
 /**
  * The median parse time (ms), and the median heap and array buffers the result holds (bytes), over
  * `runs` parses of `log`. Its bytes are made before the timing starts, so neither figure counts
- * them. `parse-heap.test.ts` pins the bytes per character.
+ * them. `parse-heap.test.ts` pins the bytes per character. `engine` is the node build's by default.
  */
 export async function measureLog(
   log: string,
   runs: number,
+  engine?: LogEngine,
 ): Promise<{ ms: number; heapBytes: number }> {
   const bytes = new TextEncoder().encode(log);
-  return timedRuns(runs, () => nodeEngine.build(bytes));
+  const parser = engine ?? (await engineNamed(null));
+  return timedRuns(runs, () => parser.build(bytes));
 }
 
-/** The median peak RSS growth of one cold parse of `log` (bytes), over `runs` fresh processes. */
-export function measurePeak(log: string, runs: number): number {
+/**
+ * The median peak RSS growth of one cold parse of `log` (bytes), over `runs` fresh processes, with
+ * the build `engineName` states, as `engineNamed` reads it.
+ */
+export function measurePeak(log: string, runs: number, engineName: string | null = null): number {
   const dir = mkdtempSync(join(tmpdir(), 'bench-peak-'));
   try {
     const path = join(dir, 'log.log');
@@ -93,7 +100,9 @@ export function measurePeak(log: string, runs: number): number {
     const peaks: number[] = [];
     for (let run = 0; run < runs; run++) {
       // The parent's heap limit, so GC runs as it does for the time and heap figures.
-      const child = runJsonChild(peakScript, [path], ['--max-old-space-size=8192']);
+      const child = runJsonChild(peakScript, engineName === null ? [path] : [path, engineName], [
+        '--max-old-space-size=8192',
+      ]);
       peaks.push((child as PeakResult).peakBytes);
     }
     return median(peaks);
@@ -113,12 +122,14 @@ async function main(): Promise<void> {
     throw new Error('--max-heap-growth must be a percent of at least 0');
   if (maxGrowth !== null && !baselinePath) throw new Error('--max-heap-growth needs --baseline');
   const peak = args.includes('--peak');
+  const engineName = flag(args, '--engine');
+  const engine = await engineNamed(engineName);
 
   const results: LargeResult[] = [];
   for (const [name, options] of Object.entries(largeLogs)) {
     const log = makeLog(options);
-    const result: LargeResult = { name, ...(await measureLog(log, runs)) };
-    if (peak) result.peakBytes = measurePeak(log, runs);
+    const result: LargeResult = { name, ...(await measureLog(log, runs, engine)) };
+    if (peak) result.peakBytes = measurePeak(log, runs, engineName);
     results.push(result);
   }
 
