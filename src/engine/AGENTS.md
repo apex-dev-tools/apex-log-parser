@@ -9,7 +9,9 @@ For coding agents working on the engine. The root [AGENTS.md](../../AGENTS.md) a
   matched exit line gets no row: it folds into the frame it closes. A package entry the pre-0.4
   merge removed gets none either. Stops at a second log and reports it as an issue.
 - `tables.ts` — the per-type tables the builder and the views read; the two frame tests on a row.
-- `markers.ts` — work off the hot path: issues, parsing errors, limit blocks, hooks.
+- `markers.ts` — work off the hot path: issues, parsing errors, limit blocks, hooks. Also
+  `opensLog`, the second-log test, which the builder calls on each digit-first line that is no
+  event.
 - `rollups.ts` — the passes after the build: the log's times, the rollups, the flow residuals.
 - `header.ts` — the debug levels, `USER_INFO`, the start time.
 - `issues.ts` — the log issues, and the truncation regions they make.

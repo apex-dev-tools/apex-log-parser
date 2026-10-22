@@ -70,7 +70,7 @@ import {
   TYPES as TYPES_,
 } from './tables.js';
 
-// Under Vite's module runner, as CodSpeed runs, an import is a getter; a local is not.
+// Hot-path imports only: under Vite's module runner, as CodSpeed runs, an import is a getter.
 const CR = CR_,
   SPACE = SPACE_,
   STAR = STAR_,
@@ -663,7 +663,7 @@ export class LogBuilder {
         return;
       }
       if (read === READ.notEvent) {
-        // Each test inline, so a continuation line makes no call. start < end, so it is a byte.
+        // Tests inline: only a digit-first line makes a call. start < end, so it is a byte.
         const first = bytes[start]!;
         const lastId = this.lastId;
         if (

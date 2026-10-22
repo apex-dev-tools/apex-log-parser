@@ -22,9 +22,10 @@ const SKIPPED = '*** Skipped';
 const SKIPPED_BYTES = /^\*\*\* Skipped ([\d,]+) bytes/;
 
 /**
- * The line at `start`, which starts with a digit, opens a log after one whose last timestamp is
- * `before`: a settings line whose next line, at `next`, restarts the nanosecond counter. A
- * settings line alone is not enough, as a debug message can quote one.
+ * The line at byte `start` opens a log after one whose last timestamp is `before` (nanoseconds): a
+ * settings line whose next line, at byte `next`, restarts the nanosecond counter. A settings line
+ * alone is not enough, as a debug message can quote one. Callers test for a first digit before
+ * the call, so most lines make none; the settings test checks it too.
  */
 export function opensLog(source: Source, start: number, next: number, before: number): boolean {
   const close = timestampClose(source.bytes, next);
@@ -53,8 +54,9 @@ export class LogMarkers {
   /** Max-Size-reached issues the next event after their time ends. */
   private pendingMaxSize: Issue[] = [];
   /**
-   * A Max-Size-reached issue waits for the next event after its time. A field, not a getter: the
-   * builder reads it per event, and V8's lower tiers inline no call.
+   * A Max-Size-reached issue waits for the next event after its time. Only `wait` and `endMaxSize`
+   * write it. A field, not a getter: the builder reads it per event, and V8's lower tiers inline
+   * no call.
    */
   waiting = false;
 
