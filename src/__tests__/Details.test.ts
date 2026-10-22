@@ -169,6 +169,11 @@ describe('FLOW_ELEMENT_ERROR details', () => {
       { elementType: null, elementName: null },
     ],
     [
+      'one field after the message',
+      ['09:18:22.6 (200)|FLOW_ELEMENT_ERROR|msg|X'],
+      { elementType: null, elementName: null },
+    ],
+    [
       'an empty message',
       ['09:18:22.6 (200)|FLOW_ELEMENT_ERROR||FlowDecision|Check_Status'],
       { elementType: 'FlowDecision', elementName: 'Check_Status' },

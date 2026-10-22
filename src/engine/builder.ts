@@ -1,70 +1,119 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { CR, SPACE, STAR, ZERO } from '../bytes/ascii.js';
+import { CR as CR_, SPACE as SPACE_, STAR as STAR_, ZERO as ZERO_ } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import {
   firstEventLine,
-  isTypeName,
+  isTypeName as isTypeName_,
   LineScanner,
   lineText,
-  TRUNCATION_MARKER,
-  timestampClose,
-  timestampIn,
+  TRUNCATION_MARKER as TRUNCATION_MARKER_,
+  timestampIn as timestampIn_,
 } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
-import { typeIdAt } from '../bytes/typeIds.js';
-import { GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
+import { typeIdAt as typeIdAt_ } from '../bytes/typeIds.js';
+import {
+  GRAMMAR,
+  HEAP_PREFIX as HEAP_PREFIX_,
+  idOfType,
+  ROWS_PREFIX as ROWS_PREFIX_,
+} from '../catalog/catalog.js';
 import type { LimitMetric, LimitSnapshot } from '../limits.js';
 import { runningTotal } from '../limits.js';
 import {
   COUNTER,
   COUNTERS,
-  EXTERNAL_LINE,
-  HEAP,
-  NO_LINE,
-  NONE,
-  SELF,
+  EXTERNAL_LINE as EXTERNAL_LINE_,
+  HEAP as HEAP_,
+  NO_LINE as NO_LINE_,
+  NONE as NONE_,
+  SELF as SELF_,
   Store,
-  TOTAL,
+  TOTAL as TOTAL_,
 } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
-import { debugSettings, SETTINGS_LINE, userInfo, wallClock } from './header.js';
+import { debugSettings, userInfo, wallClock } from './header.js';
 import type { Issues, Truncation } from './issues.js';
 import { ISSUE, truncationOf } from './issues.js';
-import { LogMarkers } from './markers.js';
-import { DEFAULT, Namespaces, UNSTATED } from './namespaces.js';
+import { LogMarkers, opensLog as opensLog_ } from './markers.js';
+import { DEFAULT as DEFAULT_, Namespaces, UNSTATED as UNSTATED_ } from './namespaces.js';
 import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
 import {
-  ACCEPTS_TEXT,
-  CLOSES,
-  COUNT_AT,
-  DISCONTINUITY,
-  EXIT_LINE,
-  FLAG,
+  ACCEPTS_TEXT as ACCEPTS_TEXT_,
+  CLOSES as CLOSES_,
+  COUNT_AT as COUNT_AT_,
+  DISCONTINUITY as DISCONTINUITY_,
+  EXIT_LINE as EXIT_LINE_,
+  FLAG as FLAG_,
   FLOW_ELEMENT,
-  FLOW_TOTAL_FIELD,
-  HAS_EXITS,
-  HEAP_FIELD,
-  HEAP_SIGN,
-  HEAP_SLOT,
-  HOOK,
-  IS_EXIT,
-  IS_FRAME,
-  LINE_FIELD,
+  FLOW_TOTAL_FIELD as FLOW_TOTAL_FIELD_,
+  HAS_EXITS as HAS_EXITS_,
+  HEAP_FIELD as HEAP_FIELD_,
+  HEAP_SIGN as HEAP_SIGN_,
+  HEAP_SLOT as HEAP_SLOT_,
+  HOOK as HOOK_,
+  IS_EXIT as IS_EXIT_,
+  IS_FRAME as IS_FRAME_,
+  LINE_FIELD as LINE_FIELD_,
   LOG_TYPE,
-  NAMESPACE_POSITIONS,
-  NAMESPACE_RULE,
-  NEXT_LINE_EXITS,
-  opensFrame,
-  ROWS_AT,
-  ROWS_FIELD,
-  ROWS_FROM_EXIT,
-  TAKES_EXIT_NAMESPACE,
-  TYPES,
+  NAMESPACE_POSITIONS as NAMESPACE_POSITIONS_,
+  NAMESPACE_RULE as NAMESPACE_RULE_,
+  NEXT_LINE_EXITS as NEXT_LINE_EXITS_,
+  opensFrame as opensFrame_,
+  ROWS_AT as ROWS_AT_,
+  ROWS_FIELD as ROWS_FIELD_,
+  ROWS_FROM_EXIT as ROWS_FROM_EXIT_,
+  TAKES_EXIT_NAMESPACE as TAKES_EXIT_NAMESPACE_,
+  TYPES as TYPES_,
 } from './tables.js';
+
+// Hot-path imports only: under Vite's module runner, as CodSpeed runs, an import is a getter.
+const CR = CR_,
+  SPACE = SPACE_,
+  STAR = STAR_,
+  ZERO = ZERO_,
+  isTypeName = isTypeName_,
+  TRUNCATION_MARKER = TRUNCATION_MARKER_,
+  timestampIn = timestampIn_,
+  typeIdAt = typeIdAt_,
+  HEAP_PREFIX = HEAP_PREFIX_,
+  ROWS_PREFIX = ROWS_PREFIX_,
+  EXTERNAL_LINE = EXTERNAL_LINE_,
+  HEAP = HEAP_,
+  NO_LINE = NO_LINE_,
+  NONE = NONE_,
+  SELF = SELF_,
+  TOTAL = TOTAL_,
+  DEFAULT = DEFAULT_,
+  UNSTATED = UNSTATED_,
+  ACCEPTS_TEXT = ACCEPTS_TEXT_,
+  CLOSES = CLOSES_,
+  COUNT_AT = COUNT_AT_,
+  DISCONTINUITY = DISCONTINUITY_,
+  EXIT_LINE = EXIT_LINE_,
+  FLAG = FLAG_,
+  FLOW_TOTAL_FIELD = FLOW_TOTAL_FIELD_,
+  HAS_EXITS = HAS_EXITS_,
+  HEAP_FIELD = HEAP_FIELD_,
+  HEAP_SIGN = HEAP_SIGN_,
+  HEAP_SLOT = HEAP_SLOT_,
+  HOOK = HOOK_,
+  IS_EXIT = IS_EXIT_,
+  IS_FRAME = IS_FRAME_,
+  LINE_FIELD = LINE_FIELD_,
+  NAMESPACE_POSITIONS = NAMESPACE_POSITIONS_,
+  NAMESPACE_RULE = NAMESPACE_RULE_,
+  NEXT_LINE_EXITS = NEXT_LINE_EXITS_,
+  opensFrame = opensFrame_,
+  opensLog = opensLog_,
+  ROWS_AT = ROWS_AT_,
+  ROWS_FIELD = ROWS_FIELD_,
+  ROWS_FROM_EXIT = ROWS_FROM_EXIT_,
+  TAKES_EXIT_NAMESPACE = TAKES_EXIT_NAMESPACE_,
+  TYPES = TYPES_;
 
 /** The governor metrics a flow report states that are counters. CPU and heap are measures. */
 const FLOW_COUNTERS: ReadonlyMap<LimitMetric, number> = new Map<LimitMetric, number>([
@@ -204,12 +253,12 @@ export class LogBuilder {
   constructor(source: Source) {
     this.source = source;
     this.bytes = source.bytes;
-    this.lines = new LineScanner(source.bytes);
+    this.lines = new LineScanner(source);
     this.fields = new ByteFields(source);
     this.store = new Store(source.bytes.length);
     this.strings = new StringTable(source);
     this.markers = new LogMarkers(source, this.store, this.strings);
-    this.namespaces = new Namespaces(source.bytes, this.strings);
+    this.namespaces = new Namespaces(source, this.strings);
   }
 
   /** Bytes scanned so far: where the next unread line starts. */
@@ -613,18 +662,28 @@ export class LogBuilder {
         this.afterEvent();
         return;
       }
-      if (
-        read === READ.notEvent &&
-        !last &&
-        this.lastId !== NONE &&
-        this.opensNextLog(start, end)
-      ) {
-        this.markers.multipleLogs(start, this.lastAt, this.lastId, this.lastExitType());
-        this.pos = len;
-        break;
-      }
-      if (read === READ.notEvent) this.notAnEvent(start, end);
-      else if (read === READ.unknownType)
+      if (read === READ.notEvent) {
+        // Tests inline: only a digit-first line makes a call. start < end, so it is a byte.
+        const first = bytes[start]!;
+        const lastId = this.lastId;
+        if (
+          !last &&
+          lastId !== NONE &&
+          (first - ZERO) >>> 0 <= 9 &&
+          opensLog(this.source, start, this.pos, this.lastAt)
+        ) {
+          this.markers.multipleLogs(start, this.lastAt, lastId, this.lastExitType());
+          this.pos = len;
+          break;
+        }
+        if (
+          lastId !== NONE &&
+          ACCEPTS_TEXT[this.lastType] &&
+          !(first === STAR && TRUNCATION_MARKER.test(this.source.text(start, end)))
+        ) {
+          this.store.end[lastId] = end;
+        } else this.notAnEvent(start, end);
+      } else if (read === READ.unknownType)
         this.markers.unsupportedType(this.unknownStart, this.unknownEnd);
     }
     // Nothing follows the last event, so its text is complete.
@@ -654,14 +713,14 @@ export class LogBuilder {
     // count is at least 1, so pipes holds the first
     const p1 = pipes[0]!;
     const p2 = count > 1 ? pipes[1]! : end;
-    const type = typeIdAt(bytes, p1 + 1, p2);
+    const type = typeIdAt(this.source, p1 + 1, p2);
     if (type < 0) {
       if (!isTypeName(bytes, p1 + 1, p2)) return READ.notEvent;
       this.unknownStart = p1 + 1;
       this.unknownEnd = p2;
       return READ.unknownType;
     }
-    const timestamp = timestampIn(bytes, start, p1);
+    const timestamp = timestampIn(this.source, start, p1);
     if (Number.isNaN(timestamp)) {
       // Before 0.4, this threw and ended the parse.
       this.markers.lineError('Invalid timestamp', start, end);
@@ -758,35 +817,10 @@ export class LogBuilder {
     return false;
   }
 
-  /** A line that starts no event: text of the last event, a marker, or an error. */
+  /** A line that starts no event and is not the last event's text: a marker, or an error. */
   private notAnEvent(start: number, end: number): void {
-    const last = this.lastId;
-    if (last !== NONE && ACCEPTS_TEXT[this.lastType] && !this.isTruncationMarker(start, end)) {
-      this.store.end[last] = end;
-      return;
-    }
-    if (this.markers.otherLine(start, end, this.lastAt, last, this.lastExitType())) {
+    if (this.markers.otherLine(start, end, this.lastAt, this.lastId, this.lastExitType())) {
       this.maxSizeTimestamp = this.lastAt;
     }
-  }
-
-  private isTruncationMarker(start: number, end: number): boolean {
-    // '*' first: a cheap test, because this runs on every continuation line.
-    return this.bytes[start] === STAR && TRUNCATION_MARKER.test(this.source.text(start, end));
-  }
-
-  /**
-   * The test for a second log: a settings line whose next line restarts the nanosecond
-   * counter. A settings line alone is not enough, as a debug message can quote one.
-   */
-  private opensNextLog(start: number, end: number): boolean {
-    const bytes = this.bytes;
-    // Byte tests before any decode: this runs on every line that is not an event.
-    const first = bytes[start]! - ZERO;
-    if (first < 0 || first > 9) return false;
-    const close = timestampClose(bytes, this.pos);
-    if (close < 0) return false;
-    if (!(timestampIn(bytes, this.pos, close + 1) < this.lastAt)) return false;
-    return SETTINGS_LINE.test(this.source.text(start, end));
   }
 }

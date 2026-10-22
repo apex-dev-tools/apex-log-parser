@@ -16,8 +16,8 @@ import {
   UPPER_Z,
   ZERO,
 } from './ascii.js';
-import { digits } from './cursor.js';
 import type { Source } from './source.js';
+import { digits } from './words.js';
 
 /** A truncation marker line, in its exact forms only, so a debug message that quotes it stays text. */
 export const TRUNCATION_MARKER: RegExp =
@@ -38,21 +38,26 @@ function statesType(line: string): boolean {
  * truncation markers, or lines that look like an event. The engine's byte range spans them all.
  */
 export function continuationText(text: string): string {
-  const clean =
-    text.indexOf('\r') < 0 &&
-    text.indexOf('\n\n') < 0 &&
-    text.indexOf('|') < 0 &&
-    text.indexOf('\n*') < 0 &&
-    text[0] !== '\n' &&
-    text[0] !== '*' &&
-    text.at(-1) !== '\n';
-  if (clean) return text;
-  const lines = text.split('\n');
-  // Only a CR before an LF ends a line; the log's last line keeps its CR, as before 0.4.
-  return lines
-    .map((line, i) => (i < lines.length - 1 && line.endsWith('\r') ? line.slice(0, -1) : line))
-    .filter((line) => line !== '' && !TRUNCATION_MARKER.test(line) && !statesType(line))
-    .join('\n');
+  // Null while every line so far is kept as it is: those lines are then `text` up to `keptEnd`.
+  let out: string | null = null;
+  let keptEnd = 0;
+  for (let start = 0; ; ) {
+    const lf = text.indexOf('\n', start);
+    const last = lf < 0;
+    const eol = last ? text.length : lf;
+    // Only a CR before an LF ends a line; the log's last line keeps its CR, as before 0.4.
+    const cr = !last && eol > start && text.charCodeAt(eol - 1) === CR;
+    const end = cr ? eol - 1 : eol;
+    const line = text.slice(start, end);
+    // Every marker starts with `*`, so most lines skip the regex.
+    const marker = line[0] === '*' && TRUNCATION_MARKER.test(line);
+    const keep = line !== '' && !marker && !statesType(line);
+    if (out === null && (cr || !keep)) out = text.slice(0, keptEnd);
+    if (out === null) keptEnd = end;
+    else if (keep) out = out ? `${out}\n${line}` : line;
+    if (last) return out ?? text;
+    start = lf + 1;
+  }
 }
 
 /** Where `)` closes the `HH:MM:SS.f+ (n+)|` that starts at `start`, or -1 without one. */
@@ -70,7 +75,8 @@ export function timestampClose(bytes: Uint8Array, start: number): number {
 }
 
 /** The nanoseconds in `(…)` of field 0, bytes `start` to `end`, or NaN when it states none. */
-export function timestampIn(bytes: Uint8Array, start: number, end: number): number {
+export function timestampIn(source: Source, start: number, end: number): number {
+  const bytes = source.bytes;
   // Skip the `HH:MM:SS.` of the time of day, unless a `(` in it would have ended the search there.
   const skip =
     end - start >= 9 &&
@@ -83,10 +89,11 @@ export function timestampIn(bytes: Uint8Array, start: number, end: number): numb
     bytes[start + 4] !== LPAREN &&
     bytes[start + 6] !== LPAREN &&
     bytes[start + 7] !== LPAREN;
+  // A loop, not indexOfByte: in V8's lower tiers the call costs more than the search.
   let i = skip ? start + 9 : start;
   while (i < end && bytes[i] !== LPAREN) i++;
   if (i >= end || bytes[end - 1] !== RPAREN) return Number.NaN;
-  return digits(bytes, i + 1, end - 1);
+  return digits(source, i + 1, end - 1);
 }
 
 /** Bytes `start` to `end` are a non-empty run of `A`-`Z` and `_`, as an event name is. */
@@ -95,13 +102,13 @@ export function isTypeName(bytes: Uint8Array, start: number, end: number): boole
   for (let i = start; i < end; i++) {
     // i < end, which is inside the line
     const c = bytes[i]!;
-    // One unsigned compare: a byte below `A` wraps to a large number.
     if (!((c - UPPER_A) >>> 0 <= UPPER_Z - UPPER_A || c === UNDERSCORE)) return false;
   }
   return true;
 }
 
-// The SWAR lanes, local as in browser.ts: imported from one module, they made the scan 10% slower.
+// Local, not imported, and inline below: under Vite's module runner, as CodSpeed runs, an
+// imported binding is a getter, and V8's lower tiers inline no call.
 const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
@@ -118,24 +125,22 @@ const PIPE_CAP = 16;
 export class LineScanner {
   /** The first `pipeCount` pipes on the line `next` scanned last. */
   readonly pipes: Int32Array = new Int32Array(PIPE_CAP);
-  private recorded = 0;
+  /**
+   * How many pipes `pipes` holds for the line `next` scanned last; below `pipes.length`, all of
+   * them. Only `next` writes it. A field, not a getter: V8's lower tiers inline no call.
+   */
+  pipeCount = 0;
   private readonly bytes: Uint8Array;
+  // An Int32Array, not the source's DataView: in V8's lower tiers each DataView read is a call.
   private readonly words: Int32Array;
+  private readonly offset: number;
 
-  /** How many pipes `pipes` holds for the line `next` scanned last. */
-  get pipeCount(): number {
-    return this.recorded;
-  }
-
-  /** Every pipe on the line `next` scanned last is in `pipes`. */
-  get complete(): boolean {
-    return this.recorded < PIPE_CAP;
-  }
-
-  constructor(bytes: Uint8Array) {
+  constructor(source: Source) {
+    const bytes = source.bytes;
     this.bytes = bytes;
     // Over the whole buffer, so a word index is the byte address over 4 whatever the view's offset.
     this.words = new Int32Array(bytes.buffer, 0, bytes.buffer.byteLength >>> 2);
+    this.offset = bytes.byteOffset;
   }
 
   /**
@@ -146,48 +151,47 @@ export class LineScanner {
     const bytes = this.bytes;
     const pipes = this.pipes;
     const len = bytes.length;
-    const offset = bytes.byteOffset;
+    const words = this.words;
+    const offset = this.offset;
+    // Byte addresses in the buffer: the words below `whole` end inside the view.
+    const whole = LITTLE_ENDIAN ? (offset + len) & ~3 : 0;
+    const from = offset + start;
     let n = 0;
-    let i = start;
-    for (; i < len && (offset + i) & 3; i++) {
-      const c = bytes[i];
-      if (c === LF) break;
-      if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
-    }
-    if (LITTLE_ENDIAN && i < len && bytes[i] !== LF) {
-      const words = this.words;
-      // Words below `last` end inside the view.
-      const last = (offset + len) >>> 2;
-      for (let w = (offset + i) >>> 2; w < last; w++) {
-        // w < last, so the word is inside the buffer
-        const x = words[w]!;
-        const lf = x ^ LFS;
-        const pipe = x ^ PIPES;
-        // OR in the high bits first, so no borrow crosses a byte and only a 0 byte keeps 0x80.
-        const lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS;
-        const pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS;
-        let hits = lfBits | pipeBits;
-        if (!hits) continue;
-        const at = (w << 2) - offset;
-        // Lowest bit first, so a pipe after the line end is never recorded.
-        for (; hits; hits &= hits - 1) {
-          const bit = hits & -hits;
-          const pos = at + 3 - (Math.clz32(bit) >>> 3);
-          if (bit & lfBits) {
-            this.recorded = n;
-            return pos;
-          }
-          if (n < PIPE_CAP) pipes[n++] = pos;
-        }
+    // `keep` masks off the bytes of the first word before `start`; the masks are as in words.ts.
+    for (let at = from & ~3, keep = -1 << ((from & 3) << 3); at < whole; at += 4, keep = -1) {
+      // at < whole, so the word is inside the buffer
+      let lf = words[at >>> 2]!;
+      let pipe = lf ^ PIPES;
+      lf ^= LFS;
+      let lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS & keep;
+      let pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS & keep;
+      // A word with neither reads the next one too: one branch per 8 bytes scans 9-22% faster.
+      if (!(lfBits | pipeBits) && at + 4 < whole) {
+        at += 4;
+        lf = words[at >>> 2]!;
+        pipe = lf ^ PIPES;
+        lf ^= LFS;
+        lfBits = ~(((lf | HIGHS) - ONES) | lf) & HIGHS;
+        pipeBits = ~(((pipe | HIGHS) - ONES) | pipe) & HIGHS;
       }
-      i = (last << 2) - offset;
+      // Lowest bit first, so a pipe after the line end is never recorded.
+      for (let hits = lfBits | pipeBits; hits; hits &= hits - 1) {
+        const bit = hits & -hits;
+        const pos = at - offset + 3 - (Math.clz32(bit) >>> 3);
+        if (bit & lfBits) {
+          this.pipeCount = n;
+          return pos;
+        }
+        if (n < PIPE_CAP) pipes[n++] = pos;
+      }
     }
+    let i = Math.max(start, whole - offset);
     for (; i < len; i++) {
       const c = bytes[i];
       if (c === LF) break;
       if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
     }
-    this.recorded = n;
+    this.pipeCount = n;
     return i;
   }
 }

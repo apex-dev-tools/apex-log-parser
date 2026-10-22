@@ -104,6 +104,15 @@ describe('events with fields after a message that spans lines', () => {
 
     expect(log.children[0]?.text).toBe('msg\n|FlowActionCall|myRule_1_A1\nmore text');
   });
+
+  it.each([
+    ['its values span lines', 'ISBLANK(Name)|Name=\nnull', 'ISBLANK(Name)|Name=\nnull'],
+    ['it states no values', 'ISBLANK(Name)\nmore', 'ISBLANK(Name)\nmore'],
+  ])('keeps the raw text of a VALIDATION_FORMULA when %s', (_, text, expected) => {
+    const log = parse(`09:18:22.6 (100)|VALIDATION_FORMULA|${text}\n`);
+
+    expect(log.children[0]?.text).toBe(expected);
+  });
 });
 
 describe('event text without the event name', () => {

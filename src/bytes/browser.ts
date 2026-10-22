@@ -2,9 +2,10 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 
-import { LF } from './ascii.js';
+import { indexOfByte, LF } from './ascii.js';
 import type { Source } from './source.js';
 import { checkSize } from './source.js';
+import { wordsOf } from './words.js';
 
 // `tsconfig.json` keeps ambient DOM types out, so declare the one WHATWG global used here.
 declare const TextDecoder: new (
@@ -12,6 +13,7 @@ declare const TextDecoder: new (
   options: { ignoreBOM: boolean },
 ) => { decode(input: Uint8Array): string };
 
+// Local and inline, as in lines.ts: an imported binding is a getter under Vite's module runner.
 const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
@@ -24,37 +26,28 @@ const SHORT = 128;
  */
 export class BrowserSource implements Source {
   readonly bytes: Uint8Array;
-  private readonly words: Int32Array;
+  readonly words: DataView;
   private decoder: { decode(input: Uint8Array): string } | null = null;
 
   constructor(bytes: Uint8Array) {
     this.bytes = checkSize(bytes);
-    // Over the whole buffer, so a word index is the byte address over 4 whatever the view's offset.
-    // Signed, so every load is a small integer; the zero-byte test does not depend on the sign.
-    this.words = new Int32Array(bytes.buffer, 0, bytes.buffer.byteLength >>> 2);
+    this.words = wordsOf(bytes);
   }
 
   lineEnd(from: number): number {
     const bytes = this.bytes;
     const words = this.words;
-    const offset = bytes.byteOffset;
     const len = bytes.length;
-    let i = from < 0 ? 0 : from;
-    while (i < len && (offset + i) & 3) {
-      if (bytes[i] === LF) return i;
-      i++;
+    const start = from < 0 ? 0 : from;
+    // The bytes in whole words; the rest are read one at a time.
+    const whole = len & ~3;
+    // As `LineScanner.next`: `keep` masks off the bytes of the first word before `start`.
+    for (let at = start & ~3, keep = -1 << ((start & 3) << 3); at < whole; at += 4, keep = -1) {
+      const x = words.getInt32(at, true) ^ LFS;
+      const lf = ~(((x | HIGHS) - ONES) | x) & HIGHS & keep;
+      if (lf) return at + 3 - (Math.clz32(lf & -lf) >>> 3);
     }
-    const end = (offset + len) >>> 2;
-    for (let w = (offset + i) >>> 2; w < end; w++) {
-      // w < end, so the word is inside the view
-      const x = words[w]! ^ LFS;
-      if (((x - ONES) & ~x & HIGHS) !== 0) {
-        i = (w << 2) - offset;
-        for (let k = 0; k < 4; k++) if (bytes[i + k] === LF) return i + k;
-      }
-    }
-    for (i = Math.max(i, (end << 2) - offset); i < len; i++) if (bytes[i] === LF) return i;
-    return -1;
+    return indexOfByte(bytes, LF, Math.max(start, whole), len);
   }
 
   text(start: number, end: number): string {

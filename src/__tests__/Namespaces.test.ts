@@ -143,6 +143,30 @@ describe('namespaces', () => {
     ]);
   });
 
+  // Each pad starts the signature in another byte of a 4-byte word. Null is `default`; `nsF`, the
+  // frame's namespace, is a signature that states none.
+  it.each([
+    ['nsA.C.D.m(x.y)', 'nsA'],
+    ['C.m(x.y)', null],
+    ['C.D.m(x.y)', 'nsF'],
+    ['nsB.C|m()', 'nsF'],
+    ['m(nsC.X)', 'nsF'],
+    ['a(b', 'nsF'],
+    ['a.(', null],
+  ])('reads %j as %j, from each byte of a word', (signature, namespace) => {
+    const namespaces = ['1', '12', '123', '1234'].map((pad) => {
+      const log = parse(
+        [
+          '07:09:40.0 (1)|EXECUTION_STARTED',
+          '07:09:40.0 (2)|METHOD_ENTRY|[1]|01p000000000AAA|nsF.Outer.Inner.run()',
+          `07:09:40.0 (3)|METHOD_ENTRY|[${pad}]|01p000000000AAA|${signature}`,
+        ].join('\n'),
+      );
+      return [...log.events].at(-1)?.namespace;
+    });
+    expect(namespaces).toEqual(Array(4).fill(namespace));
+  });
+
   it('passes a frame its namespace down, through a DML and the trigger it starts', () => {
     const log1 = [
       '16:09:42.2 (0)|METHOD_ENTRY|[1]|01p000000000AAA|OuterClass.OuterClass()',

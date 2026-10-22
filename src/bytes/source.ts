@@ -8,6 +8,8 @@
  */
 export interface Source {
   readonly bytes: Uint8Array;
+  /** The same bytes, for the readers that read 4 at a time from any offset (`wordsOf`). */
+  readonly words: DataView;
   /** The index of the next `\n` at or after `from`, which is 0 or more, or -1 when there is none. */
   lineEnd(from: number): number;
   /** Bytes `start` to `end`, decoded as UTF-8. */

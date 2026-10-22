@@ -3,6 +3,8 @@
  */
 import type { EventType } from '../catalog/types.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
+import type { Source } from './source.js';
+import { wordsOf } from './words.js';
 
 // At least twice the number of names, so a probe ends after a few slots.
 const SLOT_BITS = 10;
@@ -64,28 +66,35 @@ for (const name of FREQUENT) {
   firstByLength[name.length] = EVENT_TYPE_NAMES.indexOf(name);
 }
 
-/** The type id of the event type named by bytes `start` to `end`, or -1 when no type has the name. */
-export function typeIdAt(bytes: Uint8Array, start: number, end: number): number {
-  const len = end - start;
-  // No name is empty or past the longest, so len then indexes firstByLength.
-  if (len === 0 || len >= firstByLength.length) return -1;
-  const first = firstByLength[len]!;
-  if (first >= 0) {
-    // first is a type id, so it indexes offsets
-    const at = offsets[first]!;
-    let k = 0;
-    while (k < len && pool[at + k] === bytes[start + k]) k++;
-    if (k === len) return first;
+const SHORTEST = Math.min(...EVENT_TYPE_NAMES.map((name) => name.length));
+if (SHORTEST < 4) throw new Error('typeIds: spells reads 4 bytes, so no name may be shorter');
+const poolWords = wordsOf(pool);
+
+/** `len` bytes of `words` from `start` spell the pool's bytes from `at`, compared 4 at a time. */
+function spells(words: DataView, start: number, at: number, len: number): boolean {
+  // The last word overlaps the one before it, so no byte is compared alone; len is at least 4.
+  const last = len - 4;
+  for (let k = 0; k < last; k += 4) {
+    if (poolWords.getInt32(at + k, true) !== words.getInt32(start + k, true)) return false;
   }
-  for (let slot = slotOf(bytes, start, end); ; slot = (slot + 1) & MASK) {
+  return poolWords.getInt32(at + last, true) === words.getInt32(start + last, true);
+}
+
+/** The type id of the event type named by bytes `start` to `end`, or -1 when no type has the name. */
+export function typeIdAt(source: Source, start: number, end: number): number {
+  const len = end - start;
+  // No name is shorter or past the longest, so len then indexes firstByLength.
+  if (len < SHORTEST || len >= firstByLength.length) return -1;
+  const words = source.words;
+  const first = firstByLength[len]!;
+  // first is a type id, so it indexes offsets
+  if (first >= 0 && spells(words, start, offsets[first]!, len)) return first;
+  for (let slot = slotOf(source.bytes, start, end); ; slot = (slot + 1) & MASK) {
     // slot is masked to the table
     const id = slots[slot]!;
     if (id === -1) return -1;
     // id is a type id, so id + 1 indexes offsets
     const at = offsets[id]!;
-    if (offsets[id + 1]! - at !== len) continue;
-    let k = 0;
-    while (k < len && pool[at + k] === bytes[start + k]) k++;
-    if (k === len) return id;
+    if (offsets[id + 1]! - at === len && spells(words, start, at, len)) return id;
   }
 }

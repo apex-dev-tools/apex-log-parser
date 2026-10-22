@@ -5,6 +5,7 @@
 import { LF } from './ascii.js';
 import type { Source } from './source.js';
 import { checkSize } from './source.js';
+import { wordsOf } from './words.js';
 
 // `tsconfig.json` keeps ambient node types out, so declare the part of `Buffer` used here.
 interface NodeBuffer {
@@ -18,10 +19,12 @@ declare const Buffer: {
 /** The node build's source: `Buffer.indexOf` is memchr, and `toString` decodes natively. */
 export class NodeSource implements Source {
   readonly bytes: Uint8Array;
+  readonly words: DataView;
   private readonly buffer: NodeBuffer;
 
   constructor(bytes: Uint8Array) {
     this.bytes = checkSize(bytes);
+    this.words = wordsOf(bytes);
     // A view over the same memory, not a copy.
     this.buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   }

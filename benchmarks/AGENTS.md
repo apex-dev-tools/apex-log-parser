@@ -24,6 +24,8 @@ applies.
   compare medians. `--engine=browser` measures the browser build's engine instead, in Node: a node
   run's `--json` as its `--baseline` compares the two builds. `scripts/engines.ts` loads one build
   per process, as `deopt.ts` does.
+- `pnpm run bench:simulation` — `bench:large` with CodSpeed's V8 flags: no optimising tier.
+  Compare base and head only.
 - `baselines/legacy-v0.3.json` — the legacy parser's last `bench:large` run before 0.4 removed it:
   the 8 to 100 MB synthetic logs. Pass it as `--baseline`. To measure the legacy parser again, use
   a 0.x release from npm, as `npm:@apexdevtools/apex-log-parser@0.3.0`; 0.2.0 is before v0.3's
@@ -74,6 +76,8 @@ The scripts import `scripts/cli.ts` and `scripts/child.ts`, which the scraper sh
   text. Never commit the output of `compare`; it names the logs.
 - Local `pnpm run bench` numbers are wall time; CI on a pull request reports instruction counts and
   allocations. Do not compare the two.
+- A perf change is slower in neither `bench:large` nor `bench:simulation`. CodSpeed's tiers inline
+  no call, so a hot loop inlines small bodies and keeps its constants in its module.
 - Name each log in `benchLogs` and `largeLogs` `parse_<size>`, in lowercase, with an optional
   `_<what>` suffix: `parse_2mb`, `parse_500kb_uncommon`. CodSpeed and the `heap` job match logs by
   name, so a rename starts a new CodSpeed baseline and skips the heap gate for one run.

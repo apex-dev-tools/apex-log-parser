@@ -54,10 +54,7 @@ export function debugSettings(header: string): DebugSettings {
   const levels: Partial<Record<DebugCategory, Level>> = {};
   const settings: DebugLevelSetting[] = [];
   const errors: string[] = [];
-  const text = header
-    .split('\n')
-    .map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line))
-    .find((line) => SETTINGS_LINE.test(line));
+  const text = settingsLine(header);
   if (!text) return { levels, settings, errors };
   for (const entry of text.slice(text.indexOf(' ') + 1).split(';')) {
     if (!entry) continue;
@@ -73,6 +70,19 @@ export function debugSettings(header: string): DebugSettings {
     else errors.push(`Unsupported debug level: ${entry}`);
   }
   return { levels, settings, errors };
+}
+
+/** The first line of `header` that is a settings line, without its CR. */
+function settingsLine(header: string): string | undefined {
+  // Every settings line names APEX_CODE, so the search skips each line that cannot be one.
+  for (let at = header.indexOf('APEX_CODE,'); at >= 0; at = header.indexOf('APEX_CODE,', at)) {
+    const start = header.lastIndexOf('\n', at) + 1;
+    const lf = header.indexOf('\n', at);
+    at = lf < 0 ? header.length : lf;
+    const line = header.slice(start, header[at - 1] === '\r' ? at - 1 : at);
+    if (SETTINGS_LINE.test(line)) return line;
+  }
+  return undefined;
 }
 
 /** The user a first line of `USER_INFO` states, or null for any other first line. */

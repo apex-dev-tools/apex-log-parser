@@ -3,7 +3,7 @@
  */
 import { COLON, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
-import { lineText, timestampClose } from '../bytes/lines.js';
+import { lineText, timestampClose, timestampIn } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { eventText } from '../catalog/catalog.js';
 import type { LimitSnapshot } from '../limits.js';
@@ -20,6 +20,19 @@ import { HOOK_ID } from './tables.js';
 const MAX_SIZE = 'MAXIMUM DEBUG LOG SIZE REACHED';
 const SKIPPED = '*** Skipped';
 const SKIPPED_BYTES = /^\*\*\* Skipped ([\d,]+) bytes/;
+
+/**
+ * The line at byte `start` opens a log after one whose last timestamp is `before` (nanoseconds): a
+ * settings line whose next line, at byte `next`, restarts the nanosecond counter. A settings line
+ * alone is not enough, as a debug message can quote one. Callers test for a first digit before
+ * the call, so most lines make none; the settings test checks it too.
+ */
+export function opensLog(source: Source, start: number, next: number, before: number): boolean {
+  const close = timestampClose(source.bytes, next);
+  if (close < 0) return false;
+  if (!(timestampIn(source, next, close + 1) < before)) return false;
+  return SETTINGS_LINE.test(lineText(source, start));
+}
 
 /**
  * What the log states about itself, apart from its events: the issues, the parsing errors and the
@@ -40,17 +53,18 @@ export class LogMarkers {
   private readonly unsupported = new Set<string>();
   /** Max-Size-reached issues the next event after their time ends. */
   private pendingMaxSize: Issue[] = [];
+  /**
+   * A Max-Size-reached issue waits for the next event after its time. Only `wait` and `endMaxSize`
+   * write it. A field, not a getter: the builder reads it per event, and V8's lower tiers inline
+   * no call.
+   */
+  waiting = false;
 
   constructor(source: Source, store: Store, strings: StringTable) {
     this.source = source;
     this.store = store;
     this.strings = strings;
     this.hookFields = new ByteFields(source);
-  }
-
-  /** A Max-Size-reached issue waits for the next event after its time. */
-  get waiting(): boolean {
-    return this.pendingMaxSize.length > 0;
   }
 
   /** A parsing error for the line in bytes `start` to `end`. */
@@ -102,7 +116,7 @@ export class LogMarkers {
   /** The log reached its maximum size after the last event. */
   maxSize(at: number, id: number, exitType: number | null): void {
     const issue = this.after(ISSUE.maxSize, at, id, exitType);
-    if (issue) this.pendingMaxSize.push(issue);
+    if (issue) this.wait(issue);
   }
 
   /** The log stopped inside frame `id`, which it ends at `exitStamp` (nanoseconds). */
@@ -111,7 +125,7 @@ export class LogMarkers {
     if (!atMaxSize) return;
     // Replaced, so it follows the Unexpected-End issue at the same time.
     const issue = this.issues.replace(exitStamp, id, ISSUE.maxSize);
-    if (issue) this.pendingMaxSize.push(issue);
+    if (issue) this.wait(issue);
   }
 
   /** The maximum size ends at the next event after it, an exit line or a merged entry too. */
@@ -121,6 +135,7 @@ export class LogMarkers {
       issue.endTime = at;
       return false;
     });
+    this.waiting = this.pendingMaxSize.length > 0;
   }
 
   /** The Multiple-Logs issue, with the number of logs from the one at byte `start` on. */
@@ -128,20 +143,18 @@ export class LogMarkers {
     const source = this.source;
     const bytes = source.bytes;
     let count = 1;
+    // The last timestamped line's time, not the last event's as in the builder.
+    let before = at;
     for (let line = start; line < bytes.length; ) {
       const eol = source.lineEnd(line);
       if (eol < 0) break;
-      // Byte tests before the decode: a settings line starts with a digit, and a timestamp's third byte is ':'.
       // line < length, so it is a byte
       const first = bytes[line]! - ZERO;
-      if (
-        first >= 0 &&
-        first <= 9 &&
-        bytes[line + 2] !== COLON &&
-        timestampClose(bytes, eol + 1) >= 0 &&
-        SETTINGS_LINE.test(lineText(source, line))
-      )
-        count++;
+      // A timestamp's third byte is ':', and a settings line's is not; text like `id:1` has one too.
+      if (bytes[line + 2] === COLON) {
+        const close = timestampClose(bytes, line);
+        if (close >= 0) before = timestampIn(source, line, close + 1);
+      } else if (first >= 0 && first <= 9 && opensLog(source, line, eol + 1, before)) count++;
       line = eol + 1;
     }
     this.after(
@@ -175,6 +188,11 @@ export class LogMarkers {
     } else if (text.includes('System.LimitException')) {
       this.textIssue(timestamp, id, text, 'error');
     }
+  }
+
+  private wait(issue: Issue): void {
+    this.pendingMaxSize.push(issue);
+    this.waiting = true;
   }
 
   /** An issue on the last event, from a line after it: the search for its end starts after it. */

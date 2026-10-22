@@ -77,6 +77,68 @@ describe('a text that holds more than one log', () => {
     expect(log.issues.map((issue) => issue.summary)).not.toContain('Multiple-Logs');
   });
 
+  it('counts no log for a settings line a later log quotes', () => {
+    const log = parse(
+      SETTINGS +
+        execution(100, 'First.unit') +
+        SETTINGS +
+        '09:18:22.6 (50)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (60)|USER_DEBUG|[1]|DEBUG|pasted header follows:\n' +
+        SETTINGS +
+        '09:18:22.6 (70)|EXECUTION_FINISHED\n',
+    );
+
+    expect(log.issues.find((issue) => issue.summary === 'Multiple-Logs')?.description).toBe(
+      'The text holds 2 logs. Only the first log was parsed. Open each log on its own.',
+    );
+  });
+
+  it('counts a log after text with a colon as its third character', () => {
+    const log = parse(
+      SETTINGS +
+        execution(100, 'First.unit') +
+        SETTINGS +
+        execution(50, 'Second.unit') +
+        '09:18:22.6 (5000)|USER_DEBUG|[1]|DEBUG|record\n' +
+        'id:1\n' +
+        SETTINGS +
+        execution(1000, 'Third.unit'),
+    );
+
+    expect(log.issues.find((issue) => issue.summary === 'Multiple-Logs')?.description).toBe(
+      'The text holds 3 logs. Only the first log was parsed. Open each log on its own.',
+    );
+  });
+
+  it('counts each log of a text with CRLF line ends', () => {
+    const log = parse(
+      (
+        SETTINGS +
+        execution(100, 'First.unit') +
+        SETTINGS +
+        execution(50, 'Second.unit')
+      ).replaceAll('\n', '\r\n'),
+    );
+
+    expect(codeUnits(log)).toEqual(['First.unit']);
+    expect(log.issues.find((issue) => issue.summary === 'Multiple-Logs')?.description).toBe(
+      'The text holds 2 logs. Only the first log was parsed. Open each log on its own.',
+    );
+  });
+
+  it('keeps text that starts with a digit, before a lower time, as text', () => {
+    const log = parse(
+      SETTINGS +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[1]|DEBUG|rows follow:\n' +
+        '42 rows\n' +
+        '09:18:22.6 (50)|EXECUTION_FINISHED\n',
+    );
+
+    expect(log.ofType('USER_DEBUG')[0]?.text).toContain('42 rows');
+    expect(log.issues.map((issue) => issue.summary)).not.toContain('Multiple-Logs');
+  });
+
   it('parses the first log when only a later log states EXECUTION_STARTED', () => {
     const log = parse(
       SETTINGS +

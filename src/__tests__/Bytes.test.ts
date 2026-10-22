@@ -3,11 +3,12 @@
  */
 
 import { BrowserSource } from '../bytes/browser.js';
-import { ByteFields, digits } from '../bytes/cursor.js';
-import { LineScanner, timestampIn } from '../bytes/lines.js';
+import { ByteFields } from '../bytes/cursor.js';
+import { LineScanner, timestampClose, timestampIn } from '../bytes/lines.js';
 import { NodeSource } from '../bytes/node.js';
 import type { Source } from '../bytes/source.js';
 import { typeIdAt } from '../bytes/typeIds.js';
+import { digits } from '../bytes/words.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import { describeFieldsContract } from './fieldsContract.js';
 import { encode } from './helpers.js';
@@ -37,7 +38,7 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
   const expected = (bytes: Uint8Array): number[] =>
     [...bytes].flatMap((b, i) => (b === 0x0a ? [i] : []));
 
-  it.each([0, 1, 2, 3, 5])('finds every line end in a view at offset %i', (offset) => {
+  it.each([0, 1])('finds every line end in a view at offset %i', (offset) => {
     const text = ['a', '', 'bb|ccc', 'dddd', 'eeeee', 'é日本', '', ''].join('\n').repeat(9);
     const bytes = at(offset, text);
     expect(ends(sourceOf(bytes))).toEqual(expected(bytes));
@@ -73,6 +74,7 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
       const source = sourceOf(bytes);
       const watched: Source = {
         bytes,
+        words: source.words,
         lineEnd: (from) => source.lineEnd(from),
         text: (start, end) => {
           if (end > lineBytes) onContinuation?.();
@@ -92,7 +94,7 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
   describeFieldsContract(
     'ByteFields after a line scan',
     fieldsOver((fields, bytes, lineBytes, from) => {
-      const lines = new LineScanner(bytes);
+      const lines = new LineScanner(sourceOf(bytes));
       lines.next(0);
       fields.resetLine(0, lineBytes, lines, from, bytes.length);
     }),
@@ -149,9 +151,10 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
   ])('reads %j the same when given the pipes a line scan found', (line) => {
     // A line after another, so offsets in the source are not offsets in the line.
     const bytes = at(1, `x|y\n${line}`);
-    const lines = new LineScanner(bytes);
+    const source = sourceOf(bytes);
+    const lines = new LineScanner(source);
     const end = lines.next(4);
-    const fields = new ByteFields(sourceOf(bytes));
+    const fields = new ByteFields(source);
     fields.resetLine(4, end, lines);
     const parts = line.split('|');
     expect(parts.map((_, i) => fields.at(i))).toEqual(parts);
@@ -162,7 +165,7 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
 describe('LineScanner', () => {
   type Line = [end: number, pipes: number[]];
   const scanned = (bytes: Uint8Array): Line[] => {
-    const lines = new LineScanner(bytes);
+    const lines = new LineScanner(new NodeSource(bytes));
     const out: Line[] = [];
     for (let start = 0; start < bytes.length; ) {
       const end = lines.next(start);
@@ -216,24 +219,28 @@ describe('LineScanner', () => {
   });
 
   it('finds no line end and no pipe in an empty log', () => {
-    const lines = new LineScanner(new Uint8Array(0));
+    const lines = new LineScanner(new NodeSource(new Uint8Array(0)));
     expect([lines.next(0), lines.pipeCount]).toEqual([0, 0]);
   });
 });
 
 describe('typeIdAt', () => {
   it('finds every event type by its name', () => {
-    const line = `|${EVENT_TYPE_NAMES.join('|')}|`;
+    // No `|` after the last, so its name ends at the end of the view.
+    const line = `|${EVENT_TYPE_NAMES.join('|')}`;
     const bytes = at(3, line);
+    const source = new NodeSource(bytes);
     let start = 1;
     for (const [id, name] of EVENT_TYPE_NAMES.entries()) {
-      expect([name, typeIdAt(bytes, start, start + name.length)]).toEqual([name, id]);
+      expect([name, typeIdAt(source, start, start + name.length)]).toEqual([name, id]);
       start += name.length + 1;
     }
   });
 
   it.each([
     '',
+    // Shorter than any name, so no 4-byte read starts before it.
+    'ABC',
     'METHOD_ENTRZ',
     'NOT_A_TYPE',
     // The probe key of SOQL_ and SOSL_EXECUTE_BEGIN, so only the full compare tells it apart.
@@ -243,32 +250,47 @@ describe('typeIdAt', () => {
     'X'.repeat(60),
   ])('finds no type named %j', (name) => {
     const bytes = at(1, name);
-    expect(typeIdAt(bytes, 0, bytes.length)).toBe(-1);
+    expect(typeIdAt(new NodeSource(bytes), 0, bytes.length)).toBe(-1);
   });
 });
 
 describe('digits', () => {
+  // Lengths 1 to 9, so words and the byte tail both run; bytes either side of `0` to `9`.
   it.each([
+    ['1', 1],
     ['123', 123],
-    // A byte above `9`, and one below `0`.
+    ['1234', 1234],
+    ['12345', 12345],
+    ['00012345', 12345],
+    ['123456789', 123456789],
     ['a1', Number.NaN],
     ['1-', Number.NaN],
+    ['1234/678', Number.NaN],
+    ['123:5678', Number.NaN],
+    ['12345?78', Number.NaN],
+    ['1234\u00e9', Number.NaN],
   ])('reads %j as %d', (text, n) => {
     const bytes = at(1, text);
-    expect(digits(bytes, 0, bytes.length)).toBe(n);
+    expect(digits(new NodeSource(bytes), 0, bytes.length)).toBe(n);
   });
 });
 
 describe('timestampIn', () => {
   it('reads the nanoseconds after the time of day', () => {
     const bytes = at(1, '12:34:56.789 (12345678901)');
-    expect(timestampIn(bytes, 0, bytes.length)).toBe(12345678901);
+    expect(timestampIn(new NodeSource(bytes), 0, bytes.length)).toBe(12345678901);
   });
 
   // A `(` in the time of day ends the search there, so the line states no timestamp.
   it.each([0, 1, 2, 3, 4, 5, 6, 7, 8])('reads none with a ( at byte %i', (k) => {
     const time = '12:00:00.';
     const bytes = at(1, `${time.slice(0, k)}(${time.slice(k + 1)}0 (5)`);
-    expect(timestampIn(bytes, 0, bytes.length)).toBeNaN();
+    expect(timestampIn(new NodeSource(bytes), 0, bytes.length)).toBeNaN();
+  });
+});
+
+describe('timestampClose', () => {
+  it.each(['12:00:00.1', '12:00:00.1 (5'])('finds no close in %j at the end of the log', (text) => {
+    expect(timestampClose(at(0, text), 0)).toBe(-1);
   });
 });

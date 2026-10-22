@@ -17,6 +17,7 @@ import {
   startsWithAscii,
 } from '../bytes/ascii.js';
 import type { ByteFields } from '../bytes/cursor.js';
+import type { Source } from '../bytes/source.js';
 import type { NamespaceRule } from '../catalog/catalog.js';
 import type { StringTable } from '../store/strings.js';
 
@@ -51,6 +52,13 @@ const UNIT_TYPES = [
   '__sfdc_trigger',
 ];
 
+// Local and inline, as in lines.ts: an imported binding is a getter under Vite's module runner.
+const ONES = 0x01010101;
+const HIGHS = 0x80808080;
+const LPARENS = 0x28282828;
+const DOTS = 0x2e2e2e2e;
+const PIPES = 0x7c7c7c7c;
+
 /**
  * Each event's own namespace, by pre-0.4 rules, read from the line's bytes. A rule that looks a
  * namespace up asks whether the log stated it before this line.
@@ -59,6 +67,7 @@ export class Namespaces {
   /** Every namespace stated so far, in the order the log first states them; never `'default'`. */
   readonly order: number[] = [];
   private readonly bytes: Uint8Array;
+  private readonly words: DataView;
   private readonly strings: StringTable;
   private seen: Uint8Array = new Uint8Array(64);
   private defaultSeen = false;
@@ -67,8 +76,9 @@ export class Namespaces {
   private lastLen = 0;
   private lastNamespace = UNSTATED;
 
-  constructor(bytes: Uint8Array, strings: StringTable) {
-    this.bytes = bytes;
+  constructor(source: Source, strings: StringTable) {
+    this.bytes = source.bytes;
+    this.words = source.words;
     this.strings = strings;
   }
 
@@ -150,18 +160,41 @@ export class Namespaces {
   private method(fields: ByteFields, signature: number): number {
     const s = fields.startOf(signature);
     if (s < 0) return UNSTATED;
-    // Not endOf, which scans the whole field; the loop stops at '|'.
+    // Not endOf, which scans the whole field; the loops stop at '|'.
     const lineEnd = fields.lineEnd;
     if (startsWithAscii(this.bytes, s, lineEnd, TYPE_FOR_NAME)) return UNSTATED;
-    // One pass: the first '(', the first '.' anywhere, and the dots before the '('.
+    // The first '(', the first '.' anywhere, and the dots before the '('.
     const bytes = this.bytes;
     let bracket = -1;
     let dot = -1;
     let dotsBefore = 0;
-    for (let i = s; i < lineEnd && (bracket < 0 || dot < 0); i++) {
+    let i = s;
+    // 4 bytes a step up to the first '(' or '|'; the byte loop below reads on from that byte.
+    const words = this.words;
+    for (; i + 4 <= lineEnd; i += 4) {
+      // The masks are as in words.ts.
+      const w = words.getInt32(i, true);
+      const p = w ^ LPARENS;
+      const q = w ^ PIPES;
+      const d = w ^ DOTS;
+      const stops = (~(((p | HIGHS) - ONES) | p) & HIGHS) | (~(((q | HIGHS) - ONES) | q) & HIGHS);
+      const stop = stops & -stops;
+      // Only the dots before the stop, when the word has one.
+      const dots = ~(((d | HIGHS) - ONES) | d) & HIGHS & (stop ? stop - 1 : -1);
+      if (dots) {
+        if (dot < 0) dot = i + 3 - (Math.clz32(dots & -dots) >>> 3);
+        // Each marked byte as a 1 in its byte, summed into the top byte.
+        dotsBefore += Math.imul((dots >>> 7) & ONES, ONES) >>> 24;
+      }
+      if (stop) {
+        i += 3 - (Math.clz32(stop) >>> 3);
+        break;
+      }
+    }
+    for (; i < lineEnd && (bracket < 0 || dot < 0); i++) {
       const c = bytes[i];
       if (c === PIPE) break;
-      if (c === LPAREN) bracket = i;
+      else if (c === LPAREN) bracket = i;
       else if (c === DOT) {
         if (dot < 0) dot = i;
         if (bracket < 0) dotsBefore++;

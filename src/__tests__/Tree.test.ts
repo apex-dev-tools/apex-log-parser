@@ -337,6 +337,20 @@ describe('the settings line', () => {
       'Unsupported debug level: DB,FINE,EXTRA',
     ]);
   });
+
+  it('skips a header line that names APEX_CODE but is no settings line', () => {
+    const log = parse(
+      'Execute Anonymous: // APEX_CODE,FINE\n' +
+        '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO\n' +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n',
+    );
+    expect(log.debugLevels).toEqual({ apexCode: 'FINE', apexProfiling: 'INFO' });
+  });
+
+  it('reads a log that is only a settings line, with no line end', () => {
+    const log = parse('64.0 APEX_CODE,FINE;APEX_PROFILING,INFO');
+    expect(log.debugLevels).toEqual({ apexCode: 'FINE', apexProfiling: 'INFO' });
+  });
 });
 
 describe('the end of the log', () => {

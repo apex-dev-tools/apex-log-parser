@@ -271,6 +271,20 @@ describe('truncation', () => {
     ]);
   });
 
+  it('ends the maximum size at the first event after its time, not one at the same time', () => {
+    const log = logOf(
+      `${at(1)}|STATEMENT_EXECUTE|[1]`,
+      `${at(2)}|STATEMENT_EXECUTE|[2]`,
+      '*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+      `${at(2)}|STATEMENT_EXECUTE|[3]`,
+      `${at(9)}|STATEMENT_EXECUTE|[4]`,
+      `${at(20)}|STATEMENT_EXECUTE|[5]`,
+    );
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
+      ['max-size', 2, 9],
+    ]);
+  });
+
   it('reads the maximum size from the end of an event line it cut', () => {
     const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
     const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, cut, `${at(9)}|STATEMENT_EXECUTE|[3]`);

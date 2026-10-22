@@ -30,13 +30,20 @@ export function lineNumberText(field: string): string {
   return field === '[EXTERNAL]' ? 'EXTERNAL' : field.slice(1, -1);
 }
 
-/** Splits the last `count` `|` fields off text, or null when a field spans lines. */
+/** Splits the last `count` `|` fields off text, `count` 1 or more, or null when a field spans lines. */
 export function splitTrailingFields(text: string, count: number): string[] | null {
-  const parts = text.split('|');
-  if (parts.length <= count) return null;
-  const fields = parts.splice(-count);
-  if (fields.some((field) => field.includes('\n'))) return null;
-  return [parts.join('|').trimEnd(), ...fields];
+  const out = new Array<string>(count + 1);
+  let end = text.length;
+  for (let k = count; k > 0; k--) {
+    // From the end, so a long text is not split on every `|` for the last few.
+    const pipe = end > 0 ? text.lastIndexOf('|', end - 1) : -1;
+    const field = text.slice(pipe + 1, end);
+    if (pipe < 0 || field.includes('\n')) return null;
+    out[k] = field;
+    end = pipe;
+  }
+  out[0] = text.slice(0, end).trimEnd();
+  return out;
 }
 
 /** The code unit type: the text before the first `:` or `/`. */
