@@ -320,13 +320,6 @@ describe('truncation', () => {
     ]);
   });
 
-  it('reads the maximum size from a text line it cut, and keeps the line as text', () => {
-    const cut = 'partial text*********** MAXIMUM DEBUG LOG SIZE REACHED ***********';
-    const log = logOf(`${at(1)}|USER_DEBUG|[1]|DEBUG|hello`, cut, `${at(9)}|STATEMENT_EXECUTE|[3]`);
-    expect(log.issues.map((i) => [i.summary, i.event?.id])).toEqual([['Max-Size-reached', 1]]);
-    expect(log.ofType('USER_DEBUG')[0]?.text).toBe(`DEBUG | hello\n${cut}`);
-  });
-
   it('reads the maximum size from an event line it cut, at a log cut after its CR', () => {
     const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
     const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, `${cut}\r`);

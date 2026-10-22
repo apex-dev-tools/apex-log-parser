@@ -682,13 +682,6 @@ export class LogBuilder {
           !(first === STAR && TRUNCATION_MARKER.test(this.source.text(start, end)))
         ) {
           this.store.end[lastId] = end;
-          // The marker can cut a text line too; last-byte test first, as in readEvent.
-          const lastByte = bytes[end - 1];
-          if (
-            (lastByte === STAR || lastByte === SPACE) &&
-            CUT_BY_MAX_SIZE.test(this.source.text(start, end))
-          )
-            this.maxSizeReached();
         } else this.notAnEvent(start, end);
       } else if (read === READ.unknownType)
         this.markers.unsupportedType(this.unknownStart, this.unknownEnd);
