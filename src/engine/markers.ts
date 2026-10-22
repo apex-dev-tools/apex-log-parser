@@ -62,17 +62,17 @@ export class LogMarkers {
   private readonly unsupported = new Set<string>();
   /** Max-Size-reached issues the next event after their time ends. */
   private pendingMaxSize: Issue[] = [];
+  /**
+   * A Max-Size-reached issue waits for the next event after its time. A field, not a getter: the
+   * builder reads it per event, and V8's lower tiers inline no call.
+   */
+  waiting = false;
 
   constructor(source: Source, store: Store, strings: StringTable) {
     this.source = source;
     this.store = store;
     this.strings = strings;
     this.hookFields = new ByteFields(source);
-  }
-
-  /** A Max-Size-reached issue waits for the next event after its time. */
-  get waiting(): boolean {
-    return this.pendingMaxSize.length > 0;
   }
 
   /** A parsing error for the line in bytes `start` to `end`. */
@@ -124,7 +124,7 @@ export class LogMarkers {
   /** The log reached its maximum size after the last event. */
   maxSize(at: number, id: number, exitType: number | null): void {
     const issue = this.after(ISSUE.maxSize, at, id, exitType);
-    if (issue) this.pendingMaxSize.push(issue);
+    if (issue) this.wait(issue);
   }
 
   /** The log stopped inside frame `id`, which it ends at `exitStamp` (nanoseconds). */
@@ -133,7 +133,7 @@ export class LogMarkers {
     if (!atMaxSize) return;
     // Replaced, so it follows the Unexpected-End issue at the same time.
     const issue = this.issues.replace(exitStamp, id, ISSUE.maxSize);
-    if (issue) this.pendingMaxSize.push(issue);
+    if (issue) this.wait(issue);
   }
 
   /** The maximum size ends at the next event after it, an exit line or a merged entry too. */
@@ -143,6 +143,7 @@ export class LogMarkers {
       issue.endTime = at;
       return false;
     });
+    this.waiting = this.pendingMaxSize.length > 0;
   }
 
   /** The Multiple-Logs issue, with the number of logs from the one at byte `start` on. */
@@ -200,6 +201,11 @@ export class LogMarkers {
     } else if (text.includes('System.LimitException')) {
       this.textIssue(timestamp, id, text, 'error');
     }
+  }
+
+  private wait(issue: Issue): void {
+    this.pendingMaxSize.push(issue);
+    this.waiting = true;
   }
 
   /** An issue on the last event, from a line after it: the search for its end starts after it. */

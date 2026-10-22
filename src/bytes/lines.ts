@@ -125,21 +125,15 @@ const PIPE_CAP = 16;
 export class LineScanner {
   /** The first `pipeCount` pipes on the line `next` scanned last. */
   readonly pipes: Int32Array = new Int32Array(PIPE_CAP);
-  private recorded = 0;
+  /**
+   * How many pipes `pipes` holds for the line `next` scanned last; below `pipes.length`, all of
+   * them. Only `next` writes it. A field, not a getter: V8's lower tiers inline no call.
+   */
+  pipeCount = 0;
   private readonly bytes: Uint8Array;
   // An Int32Array, not the source's DataView: in V8's lower tiers each DataView read is a call.
   private readonly words: Int32Array;
   private readonly offset: number;
-
-  /** How many pipes `pipes` holds for the line `next` scanned last. */
-  get pipeCount(): number {
-    return this.recorded;
-  }
-
-  /** Every pipe on the line `next` scanned last is in `pipes`. */
-  get complete(): boolean {
-    return this.recorded < PIPE_CAP;
-  }
 
   constructor(source: Source) {
     const bytes = source.bytes;
@@ -185,7 +179,7 @@ export class LineScanner {
         const bit = hits & -hits;
         const pos = at - offset + 3 - (Math.clz32(bit) >>> 3);
         if (bit & lfBits) {
-          this.recorded = n;
+          this.pipeCount = n;
           return pos;
         }
         if (n < PIPE_CAP) pipes[n++] = pos;
@@ -197,7 +191,7 @@ export class LineScanner {
       if (c === LF) break;
       if (c === PIPE && n < PIPE_CAP) pipes[n++] = i;
     }
-    this.recorded = n;
+    this.pipeCount = n;
     return i;
   }
 }

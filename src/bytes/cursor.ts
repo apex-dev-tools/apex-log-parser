@@ -83,7 +83,7 @@ export class ByteFields implements Fields {
     // k < count, which is within pipes
     for (let k = 0; k < count; k++) starts[k + 1] = pipes[k]! + 1;
     this.found = count + 1;
-    this.complete = lines.complete;
+    this.complete = count < pipes.length;
   }
 
   /** Where the line ends in the source, before its line ending and any continuation lines. */
