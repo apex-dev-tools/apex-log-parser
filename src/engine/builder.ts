@@ -661,21 +661,28 @@ export class LogBuilder {
         this.afterEvent();
         return;
       }
-      if (
-        read === READ.notEvent &&
-        !last &&
-        this.lastId !== NONE &&
-        // opensLog's first test, inline, so a line that starts with no digit makes no call.
-        // start < end, so it is a byte
-        (bytes[start]! - ZERO) >>> 0 <= 9 &&
-        opensLog(this.source, start, end, this.pos, this.lastAt)
-      ) {
-        this.markers.multipleLogs(start, this.lastAt, this.lastId, this.lastExitType());
-        this.pos = len;
-        break;
-      }
-      if (read === READ.notEvent) this.notAnEvent(start, end);
-      else if (read === READ.unknownType)
+      if (read === READ.notEvent) {
+        // Each test inline, so a continuation line makes no call. start < end, so it is a byte.
+        const first = bytes[start]!;
+        const lastId = this.lastId;
+        if (
+          !last &&
+          lastId !== NONE &&
+          (first - ZERO) >>> 0 <= 9 &&
+          opensLog(this.source, start, end, this.pos, this.lastAt)
+        ) {
+          this.markers.multipleLogs(start, this.lastAt, lastId, this.lastExitType());
+          this.pos = len;
+          break;
+        }
+        if (
+          lastId !== NONE &&
+          ACCEPTS_TEXT[this.lastType] &&
+          !(first === STAR && TRUNCATION_MARKER.test(this.source.text(start, end)))
+        ) {
+          this.store.end[lastId] = end;
+        } else this.notAnEvent(start, end);
+      } else if (read === READ.unknownType)
         this.markers.unsupportedType(this.unknownStart, this.unknownEnd);
     }
     // Nothing follows the last event, so its text is complete.
@@ -809,20 +816,10 @@ export class LogBuilder {
     return false;
   }
 
-  /** A line that starts no event: text of the last event, a marker, or an error. */
+  /** A line that starts no event and is not the last event's text: a marker, or an error. */
   private notAnEvent(start: number, end: number): void {
-    const last = this.lastId;
-    if (last !== NONE && ACCEPTS_TEXT[this.lastType] && !this.isTruncationMarker(start, end)) {
-      this.store.end[last] = end;
-      return;
-    }
-    if (this.markers.otherLine(start, end, this.lastAt, last, this.lastExitType())) {
+    if (this.markers.otherLine(start, end, this.lastAt, this.lastId, this.lastExitType())) {
       this.maxSizeTimestamp = this.lastAt;
     }
-  }
-
-  private isTruncationMarker(start: number, end: number): boolean {
-    // '*' first: a cheap test, because this runs on every continuation line.
-    return this.bytes[start] === STAR && TRUNCATION_MARKER.test(this.source.text(start, end));
   }
 }
