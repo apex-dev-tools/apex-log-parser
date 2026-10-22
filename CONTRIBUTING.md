@@ -26,6 +26,7 @@ pnpm run test         # Run tests once
 pnpm run test:watch   # Run tests in watch mode
 pnpm run bench        # Run the parse benchmarks (wall time)
 pnpm run bench:large  # Parse 8, 20, 50, 75 and 100 MB synthetic logs (wall time and heap)
+pnpm run bench:simulation  # The same, as CodSpeed's V8 runs it
 pnpm vitest run src/__tests__/Tree.test.ts  # Run a single test file
 pnpm run lint         # Check formatting + lint rules
 pnpm run lint:fix     # Auto-fix formatting + lint issues
