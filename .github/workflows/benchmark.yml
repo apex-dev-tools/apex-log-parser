@@ -24,6 +24,10 @@ jobs:
     # 24.04, not latest: memory mode needs kernel 6.8 for peak RSS.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [simulation, memory]
     permissions:
       contents: read
       id-token: write
@@ -45,7 +49,7 @@ jobs:
           cmp dist/engine-*.js benchmarks/.bundle/engine-*.js
       - uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
         with:
-          mode: simulation,memory
+          mode: ${{ matrix.mode }}
           # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
           run: node --run bench:run
 

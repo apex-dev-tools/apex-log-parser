@@ -13,8 +13,7 @@ The YAML says what runs. The scripts decide what happens, so the logic is testab
 
 ## benchmark.yml
 
-Runs the bench suite under [CodSpeed](https://codspeed.io) in 2 modes, in one job, so the install
-and the bundle it times run once.
+Runs `node --run bench` under [CodSpeed](https://codspeed.io) in 2 modes, one job each.
 Simulation mode counts CPU instructions, not wall time, so a run on a shared runner is
 repeatable. Memory mode records peak RSS and `malloc` allocations: the parser's typed-array
 store, but not the V8 heap, which the `heap` job covers. Both run V8 with `--no-opt`, so neither
