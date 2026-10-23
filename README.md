@@ -277,10 +277,10 @@ Parse time:
 | Log size | v0.2 | v0.3 | v0.4 |
 | --- | --- | --- | --- |
 | 8 MB | 106 ms | 86 ms | 15 ms |
-| 20 MB | 274 ms | 221 ms | 34 ms |
-| 50 MB | 550 ms | 426 ms | 69 ms |
-| 75 MB | 831 ms | 632 ms | 103 ms |
-| 100 MB | 1,116 ms | 829 ms | 136 ms |
+| 20 MB | 274 ms | 221 ms | 33 ms |
+| 50 MB | 550 ms | 426 ms | 66 ms |
+| 75 MB | 831 ms | 632 ms | 99 ms |
+| 100 MB | 1,116 ms | 829 ms | 131 ms |
 
 Memory:
 
