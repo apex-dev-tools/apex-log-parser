@@ -75,6 +75,10 @@ both.
   caller can tell "not stated" from "zero". Not `''`, and not an absent or `undefined` field, whose
   shape depends on the transport. A sub-object whose source field is missing is `null` itself, not
   an object of nulls.
+- A hot-path module reads its imports through local aliases (`import { X as X_ }`, then
+  `const X = X_`, as in `engine/builder.ts`) and declares its SWAR masks locally. Without them, the
+  package bundle parses real logs 21% slower (measured). The cause is not known; rolldown's
+  `inlineConst` is not it. Measure a new alias on the bundle before you add it.
 
 ## Adding an event type
 
