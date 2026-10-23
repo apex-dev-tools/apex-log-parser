@@ -17,7 +17,7 @@ import {
   ZERO,
 } from './ascii.js';
 import type { Source } from './source.js';
-import { digits } from './words.js';
+import { digits, HIGHS, LFS, ONES, PIPES } from './words.js';
 
 const SKIPPED = String.raw`\*\*\* Skipped (\d[\d,]*) bytes of detailed log`;
 const MAX_SIZE = String.raw`(\*+ MAXIMUM DEBUG LOG SIZE REACHED \*+)`;
@@ -115,11 +115,6 @@ export function isTypeName(bytes: Uint8Array, start: number, end: number): boole
   return true;
 }
 
-// Local, not imported, and inline below: the package bundle runs real logs slower imported.
-const ONES = 0x01010101;
-const HIGHS = 0x80808080;
-const LFS = 0x0a0a0a0a;
-const PIPES = 0x7c7c7c7c;
 /** A word's first byte is its lowest, so a bit's position gives its byte. Else, byte by byte. */
 const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 /** The most pipes `LineScanner` records per line; the cursor finds any later ones itself. */

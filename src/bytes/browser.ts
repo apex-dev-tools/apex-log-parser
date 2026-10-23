@@ -13,7 +13,7 @@ declare const TextDecoder: new (
   options: { ignoreBOM: boolean },
 ) => { decode(input: Uint8Array): string };
 
-// Local and inline, as in lines.ts: the package bundle runs real logs slower imported.
+// Local, not from words.ts: an entry's import makes the shared chunk export them, a slower read.
 const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
