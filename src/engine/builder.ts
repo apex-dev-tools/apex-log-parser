@@ -1,121 +1,70 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { CR as CR_, SPACE as SPACE_, STAR as STAR_, ZERO as ZERO_ } from '../bytes/ascii.js';
+import { CR, SPACE, STAR, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import {
-  CUT_BY_MAX_SIZE as CUT_BY_MAX_SIZE_,
+  CUT_BY_MAX_SIZE,
   firstEventLine,
-  isTypeName as isTypeName_,
+  isTypeName,
   LineScanner,
   lineText,
-  TRUNCATION_MARKER as TRUNCATION_MARKER_,
-  timestampIn as timestampIn_,
+  TRUNCATION_MARKER,
+  timestampIn,
 } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
-import { typeIdAt as typeIdAt_ } from '../bytes/typeIds.js';
-import {
-  GRAMMAR,
-  HEAP_PREFIX as HEAP_PREFIX_,
-  idOfType,
-  ROWS_PREFIX as ROWS_PREFIX_,
-} from '../catalog/catalog.js';
+import { typeIdAt } from '../bytes/typeIds.js';
+import { GRAMMAR, HEAP_PREFIX, idOfType, ROWS_PREFIX } from '../catalog/catalog.js';
 import type { LimitMetric, LimitSnapshot } from '../limits.js';
 import { runningTotal } from '../limits.js';
 import {
   COUNTER,
   COUNTERS,
-  EXTERNAL_LINE as EXTERNAL_LINE_,
-  HEAP as HEAP_,
-  NO_LINE as NO_LINE_,
-  NONE as NONE_,
-  SELF as SELF_,
+  EXTERNAL_LINE,
+  HEAP,
+  NO_LINE,
+  NONE,
+  SELF,
   Store,
-  TOTAL as TOTAL_,
+  TOTAL,
 } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import type { DebugLevelSetting, DebugSettings, UserInfo } from './header.js';
 import { debugSettings, userInfo, wallClock } from './header.js';
 import type { Issues, Truncation } from './issues.js';
 import { ISSUE, truncationOf } from './issues.js';
-import { LogMarkers, opensLog as opensLog_ } from './markers.js';
-import { DEFAULT as DEFAULT_, Namespaces, UNSTATED as UNSTATED_ } from './namespaces.js';
+import { LogMarkers, opensLog } from './markers.js';
+import { DEFAULT, Namespaces, UNSTATED } from './namespaces.js';
 import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
 import {
-  ACCEPTS_TEXT as ACCEPTS_TEXT_,
-  CLOSES as CLOSES_,
-  COUNT_AT as COUNT_AT_,
-  DISCONTINUITY as DISCONTINUITY_,
-  EXIT_LINE as EXIT_LINE_,
-  FLAG as FLAG_,
+  ACCEPTS_TEXT,
+  CLOSES,
+  COUNT_AT,
+  DISCONTINUITY,
+  EXIT_LINE,
+  FLAG,
   FLOW_ELEMENT,
-  FLOW_TOTAL_FIELD as FLOW_TOTAL_FIELD_,
-  HAS_EXITS as HAS_EXITS_,
-  HEAP_FIELD as HEAP_FIELD_,
-  HEAP_SIGN as HEAP_SIGN_,
-  HEAP_SLOT as HEAP_SLOT_,
-  HOOK as HOOK_,
-  IS_EXIT as IS_EXIT_,
-  IS_FRAME as IS_FRAME_,
-  LINE_FIELD as LINE_FIELD_,
+  FLOW_TOTAL_FIELD,
+  HAS_EXITS,
+  HEAP_FIELD,
+  HEAP_SIGN,
+  HEAP_SLOT,
+  HOOK,
+  IS_EXIT,
+  IS_FRAME,
+  LINE_FIELD,
   LOG_TYPE,
-  NAMESPACE_POSITIONS as NAMESPACE_POSITIONS_,
-  NAMESPACE_RULE as NAMESPACE_RULE_,
-  NEXT_LINE_EXITS as NEXT_LINE_EXITS_,
-  opensFrame as opensFrame_,
-  ROWS_AT as ROWS_AT_,
-  ROWS_FIELD as ROWS_FIELD_,
-  ROWS_FROM_EXIT as ROWS_FROM_EXIT_,
-  TAKES_EXIT_NAMESPACE as TAKES_EXIT_NAMESPACE_,
-  TYPES as TYPES_,
+  NAMESPACE_POSITIONS,
+  NAMESPACE_RULE,
+  NEXT_LINE_EXITS,
+  opensFrame,
+  ROWS_AT,
+  ROWS_FIELD,
+  ROWS_FROM_EXIT,
+  TAKES_EXIT_NAMESPACE,
+  TYPES,
 } from './tables.js';
-
-// Hot-path imports only: the package bundle runs real logs slower without these (measured).
-const CR = CR_,
-  SPACE = SPACE_,
-  STAR = STAR_,
-  ZERO = ZERO_,
-  CUT_BY_MAX_SIZE = CUT_BY_MAX_SIZE_,
-  isTypeName = isTypeName_,
-  TRUNCATION_MARKER = TRUNCATION_MARKER_,
-  timestampIn = timestampIn_,
-  typeIdAt = typeIdAt_,
-  HEAP_PREFIX = HEAP_PREFIX_,
-  ROWS_PREFIX = ROWS_PREFIX_,
-  EXTERNAL_LINE = EXTERNAL_LINE_,
-  HEAP = HEAP_,
-  NO_LINE = NO_LINE_,
-  NONE = NONE_,
-  SELF = SELF_,
-  TOTAL = TOTAL_,
-  DEFAULT = DEFAULT_,
-  UNSTATED = UNSTATED_,
-  ACCEPTS_TEXT = ACCEPTS_TEXT_,
-  CLOSES = CLOSES_,
-  COUNT_AT = COUNT_AT_,
-  DISCONTINUITY = DISCONTINUITY_,
-  EXIT_LINE = EXIT_LINE_,
-  FLAG = FLAG_,
-  FLOW_TOTAL_FIELD = FLOW_TOTAL_FIELD_,
-  HAS_EXITS = HAS_EXITS_,
-  HEAP_FIELD = HEAP_FIELD_,
-  HEAP_SIGN = HEAP_SIGN_,
-  HEAP_SLOT = HEAP_SLOT_,
-  HOOK = HOOK_,
-  IS_EXIT = IS_EXIT_,
-  IS_FRAME = IS_FRAME_,
-  LINE_FIELD = LINE_FIELD_,
-  NAMESPACE_POSITIONS = NAMESPACE_POSITIONS_,
-  NAMESPACE_RULE = NAMESPACE_RULE_,
-  NEXT_LINE_EXITS = NEXT_LINE_EXITS_,
-  opensFrame = opensFrame_,
-  opensLog = opensLog_,
-  ROWS_AT = ROWS_AT_,
-  ROWS_FIELD = ROWS_FIELD_,
-  ROWS_FROM_EXIT = ROWS_FROM_EXIT_,
-  TAKES_EXIT_NAMESPACE = TAKES_EXIT_NAMESPACE_,
-  TYPES = TYPES_;
 
 /** The governor metrics a flow report states that are counters. CPU and heap are measures. */
 const FLOW_COUNTERS: ReadonlyMap<LimitMetric, number> = new Map<LimitMetric, number>([
