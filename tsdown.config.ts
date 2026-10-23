@@ -8,7 +8,8 @@ const shared = {
 } as const;
 
 // One file per entry, no shared chunk: V8 reads a binding one chunk imports from another slowly.
-// Exported for tsdown.bench.config.ts, which may change only the entries and the output folder.
+// Exported for tsdown.bench.config.ts and the compare harness, which may change only the entries
+// and where the output goes.
 export const packageBuilds = [
   // package.json's `node` condition picks the node build; every other host the browser one.
   { ...shared, entry: { node: 'src/node.ts' }, format: 'esm', clean: true },
