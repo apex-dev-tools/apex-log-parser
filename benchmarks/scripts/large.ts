@@ -4,6 +4,7 @@
 // --max-heap-growth fails the run when a log's heap grows past it. Time is not gated: CI runners are noisy.
 // --peak also states the median peak RSS growth of a cold parse, one fresh process per run (peak.ts).
 // --engine=browser measures the browser build's engine; a node run's --json as --baseline compares the two.
+// Each engine loads from the bench bundle, as dist ships it. `pnpm run bench:large` builds it.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,6 +15,7 @@ import { runJsonChild } from '../../scripts/child.js';
 import { flag, runIfMain } from '../../scripts/cli.js';
 import type { LogEngine } from '../../src/engine/engine.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
+import type { EngineCode } from './engines.js';
 import { engineNamed } from './engines.js';
 import type { PeakResult } from './peak.js';
 import { median, runsFlag, timedRuns } from './runs.js';
@@ -90,9 +92,14 @@ export async function measureLog(
 
 /**
  * The median peak RSS growth of one cold parse of `log` (bytes), over `runs` fresh processes, with
- * the build `engineName` states, as `engineNamed` reads it.
+ * the build `engineName` states from `code`, as `engineNamed` reads them.
  */
-export function measurePeak(log: string, runs: number, engineName: string | null = null): number {
+export function measurePeak(
+  log: string,
+  runs: number,
+  engineName: string | null = null,
+  code: EngineCode = 'sources',
+): number {
   const dir = mkdtempSync(join(tmpdir(), 'bench-peak-'));
   try {
     const path = join(dir, 'log.log');
@@ -100,9 +107,11 @@ export function measurePeak(log: string, runs: number, engineName: string | null
     const peaks: number[] = [];
     for (let run = 0; run < runs; run++) {
       // The parent's heap limit, so GC runs as it does for the time and heap figures.
-      const child = runJsonChild(peakScript, engineName === null ? [path] : [path, engineName], [
-        '--max-old-space-size=8192',
-      ]);
+      const child = runJsonChild(
+        peakScript,
+        [path, engineName ?? 'node', code],
+        ['--max-old-space-size=8192'],
+      );
       peaks.push((child as PeakResult).peakBytes);
     }
     return median(peaks);
@@ -123,13 +132,14 @@ async function main(): Promise<void> {
   if (maxGrowth !== null && !baselinePath) throw new Error('--max-heap-growth needs --baseline');
   const peak = args.includes('--peak');
   const engineName = flag(args, '--engine');
-  const engine = await engineNamed(engineName);
+  const code: EngineCode = 'bundle';
+  const engine = await engineNamed(engineName, code);
 
   const results: LargeResult[] = [];
   for (const [name, options] of Object.entries(largeLogs)) {
     const log = makeLog(options);
     const result: LargeResult = { name, ...(await measureLog(log, runs, engine)) };
-    if (peak) result.peakBytes = measurePeak(log, runs, engineName);
+    if (peak) result.peakBytes = measurePeak(log, runs, engineName, code);
     results.push(result);
   }
 

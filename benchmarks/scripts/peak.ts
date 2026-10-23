@@ -1,4 +1,5 @@
-// The child `bench:large --peak` runs once per parse: node --import tsx benchmarks/scripts/peak.ts <log file> [node|browser]
+// The child `bench:large --peak` runs once per parse:
+//   node --import tsx benchmarks/scripts/peak.ts <log file> <node|browser> <sources|bundle>
 // A fresh process, so its high-water RSS is this one cold parse's, garbage not yet collected included.
 
 import { readFileSync } from 'node:fs';
@@ -13,9 +14,10 @@ export interface PeakResult {
 }
 
 async function main(): Promise<void> {
-  const path = argv[2];
-  if (!path) throw new Error('usage: peak.ts <log file> [node|browser]');
-  const engine = await engineNamed(argv[3] ?? null);
+  const [path, name, code] = argv.slice(2);
+  if (!path || !name || (code !== 'sources' && code !== 'bundle'))
+    throw new Error('usage: peak.ts <log file> <node|browser> <sources|bundle>');
+  const engine = await engineNamed(name, code);
   // A Buffer is a Uint8Array, so the parse reads the file's bytes with no copy.
   const bytes = readFileSync(path);
   const highBefore = resourceUsage().maxRSS * 1024;

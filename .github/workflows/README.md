@@ -31,7 +31,7 @@ collection in wall time, so `pnpm run bench:large` parses them locally.
 
 CodSpeed cannot see the V8 heap, so the `heap` job measures it on each pull request. It runs
 `bench:large` with `--runs=3` on the base commit, then on the head with `--baseline`, on one
-runner, and fails when the median heap of a log grows by more than 2%. The job summary lists every log. It reports
+runner. `bench:large` builds the bench bundle first and times it, as the package bundles it. The job fails when the median heap of a log grows by more than 2%. The job summary lists every log. It reports
 time too, but does not gate on it.
 
 Each log opens with one 2.5 s method, so every later time is past 2^31 ns. Node's V8 stores a

@@ -115,8 +115,7 @@ export function isTypeName(bytes: Uint8Array, start: number, end: number): boole
   return true;
 }
 
-// Local, not imported, and inline below: under Vite's module runner, as CodSpeed runs, an
-// imported binding is a getter, and V8's lower tiers inline no call.
+// Local, not imported, and inline below: the package bundle runs real logs slower imported.
 const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
