@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import type { LimitMetric, Limits } from '../limits.js';
+import { LIMIT_METRICS } from '../limits.js';
 import { parse } from './helpers.js';
 
 const CUMULATIVE_BLOCK =
@@ -10,6 +11,7 @@ const CUMULATIVE_BLOCK =
   '  Number of SOQL queries: 8 out of 100\n' +
   '  Number of query rows: 26 out of 50000\n' +
   '  Number of SOSL queries: 0 out of 20\n' +
+  '  Number of Aggregate queries: 0 out of 300\n' +
   '  Number of DML statements: 3 out of 150\n' +
   '  Number of Publish Immediate DML: 0 out of 150\n' +
   '  Number of DML rows: 12 out of 10000\n' +
@@ -42,6 +44,11 @@ describe('the cumulative limit block', () => {
     });
     expect(snapshot?.limits.dmlRows).toEqual({ used: 12, limit: 10000, percentUsed: 0.12 });
     expect(snapshot?.limits.mobileApexPushCalls).toEqual({ used: 0, limit: 10, percentUsed: 0 });
+  });
+
+  it('keeps only the tracked metrics, so a label no metric tracks adds none', () => {
+    const snapshot = apexLog.limits.snapshots.at(-1);
+    expect(Object.keys(snapshot?.limits ?? {}).sort()).toEqual(Object.keys(LIMIT_METRICS).sort());
   });
 
   it('limit and percentUsed are null for a metric the block never stated', () => {
