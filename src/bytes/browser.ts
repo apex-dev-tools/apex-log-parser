@@ -13,7 +13,7 @@ declare const TextDecoder: new (
   options: { ignoreBOM: boolean },
 ) => { decode(input: Uint8Array): string };
 
-// Local and inline, as in lines.ts: an imported binding is a getter under Vite's module runner.
+// Local and inline, as in lines.ts: the package bundle runs real logs slower imported.
 const ONES = 0x01010101;
 const HIGHS = 0x80808080;
 const LFS = 0x0a0a0a0a;
