@@ -7,17 +7,20 @@ const shared = {
   outExtensions: () => ({ js: '.js' }),
 } as const;
 
-export default defineConfig([
-  {
-    ...shared,
-    // package.json's `node` condition picks the node build; every other host the browser one.
-    entry: {
-      node: 'src/node.ts',
-      browser: 'src/browser.ts',
-    },
-    format: 'esm',
-    clean: true,
+// Exported for tsdown.bench.config.ts, which may change only the entries and the output folder.
+export const packageBuild = {
+  ...shared,
+  // package.json's `node` condition picks the node build; every other host the browser one.
+  entry: {
+    node: 'src/node.ts',
+    browser: 'src/browser.ts',
   },
+  format: 'esm',
+  clean: true,
+} as const;
+
+export default defineConfig([
+  packageBuild,
   // Each worker is one file with no imports, so a caller can start it from a blob: URL.
   {
     ...shared,

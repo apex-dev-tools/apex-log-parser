@@ -22,8 +22,8 @@ JIT, locally. Each push to `main` records a baseline. On a pull request, CodSpee
 per benchmark, and its check fails when a benchmark regresses past the threshold set on
 codspeed.io.
 
-The benchmarks are in `benchmarks/parse.bench.ts`. They parse 3 synthetic logs of 19 KB to 2 MB,
-which `benchmarks/fixtures/fixtures.ts` generates, and `BenchFixtures.test.ts` checks those logs in
+The benchmarks are in `benchmarks/parse.bench.ts`. The node engine, as the package bundles it,
+parses 3 synthetic logs of 19 KB to 2 MB, which `benchmarks/fixtures/fixtures.ts` generates, and `BenchFixtures.test.ts` checks those logs in
 normal CI. The plugin parses each log 8 times under simulation, so the logs stay small to keep
 the job between 1 and 2 minutes. An instruction count changes by the same percentage at 1 MB as at 20 MB,
 unless the cost grows faster than the log. Logs of 8 to 100 MB show garbage

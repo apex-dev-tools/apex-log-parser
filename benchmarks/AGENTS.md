@@ -6,9 +6,10 @@ applies.
 ## Layout
 
 - `parse.bench.ts` — the `pnpm run bench` suite, which CodSpeed runs on every pull request. It
-  times the build from bytes; `bench:async` times `parse()`. It uses CodSpeed's default setup, with
-  Vite's module runner. The runner reads each import through a getter, so the suite is slower than
-  a consumer's build. `bench:large` times the parser as Node runs it.
+  times the node engine's build from bytes, as the package bundles it (`tsdown.bench.config.ts`);
+  `bench:async` times `parse()`. `bench:bundle` and `bench:run` are its two steps, for CI. The
+  sources under Vite's module runner would read each import through a getter. `bench:large` times
+  the sources as Node runs them.
 - `fixtures/` — the synthetic logs. `fixtures.ts` generates them from a seed, with placeholder
   content only. Its profiles (small, developer and large) take their event mix, depth and wrapped
   lines from `profiles.json`, which holds only numbers measured from real logs. A new hot path in
@@ -77,7 +78,7 @@ The scripts import `scripts/cli.ts` and `scripts/child.ts`, which the scraper sh
 - Local `pnpm run bench` numbers are wall time; CI on a pull request reports instruction counts and
   allocations. Do not compare the two.
 - A perf change is slower in neither `bench:large` nor `bench:simulation`. CodSpeed's tiers inline
-  no call, so a hot loop inlines small bodies and keeps its constants in its module.
+  no call, so a hot loop inlines small bodies.
 - Name each log in `benchLogs` and `largeLogs` `parse_<size>`, in lowercase, with an optional
   `_<what>` suffix: `parse_2mb`, `parse_500kb_uncommon`. CodSpeed and the `heap` job match logs by
   name, so a rename starts a new CodSpeed baseline and skips the heap gate for one run.
