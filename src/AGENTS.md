@@ -75,12 +75,6 @@ both.
   caller can tell "not stated" from "zero". Not `''`, and not an absent or `undefined` field, whose
   shape depends on the transport. A sub-object whose source field is missing is `null` itself, not
   an object of nulls.
-- The package build puts the modules both `node.ts` and `browser.ts` reach in one shared chunk.
-  A module only one of them reaches, such as `bytes/browser.ts`, is outside it. A constant such a
-  module imports from the chunk can become an export of the chunk (the build inlines only small
-  ones), which V8 reads more slowly than a plain constant: the SWAR masks, imported into
-  `bytes/browser.ts`, made real logs parse 21% slower (measured). Such a module declares a
-  constant its hot loop reads locally. Inside the chunk, import it.
 
 ## Adding an event type
 
