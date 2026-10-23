@@ -11,8 +11,8 @@ For coding agents working on the parser. The root [AGENTS.md](../AGENTS.md) stil
   `scripts/__tests__/CatalogDocs.test.ts` fail when either drifts from the event database.
 - `bytes/` — reads the bytes: a `Source` per build (`node.ts`, `browser.ts`), the `ByteFields`
   cursor, the type id lookup. `ascii.ts`: the byte constants and searches all readers share.
-  `words.ts`: the 4-bytes-at-a-time (SWAR) form the scans inline, `digits`, and `wordsOf`, the
-  `DataView` each `Source` holds as `words`.
+  `words.ts`: the 4-bytes-at-a-time (SWAR) masks and form the scans write out, `digits`, and
+  `wordsOf`, the `DataView` each `Source` holds as `words`.
   `lines.ts`: the line tests (timestamp, type name, first event line), the truncation-marker forms
   that the builder and `engine/markers.ts` test against, and the `LineScanner`, which finds each
   line's end and first pipes in one pass for the builder. Every `Fields` adapter passes
@@ -75,10 +75,12 @@ both.
   caller can tell "not stated" from "zero". Not `''`, and not an absent or `undefined` field, whose
   shape depends on the transport. A sub-object whose source field is missing is `null` itself, not
   an object of nulls.
-- A hot-path module reads its imports through local aliases (`import { X as X_ }`, then
-  `const X = X_`, as in `engine/builder.ts`) and declares its SWAR masks locally. Without them, the
-  package bundle parses real logs 21% slower (measured). The cause is not known; rolldown's
-  `inlineConst` is not it. Measure a new alias on the bundle before you add it.
+- The package build puts the modules both `node.ts` and `browser.ts` reach in one shared chunk.
+  A module only one of them reaches, such as `bytes/browser.ts`, is outside it. A constant such a
+  module imports from the chunk can become an export of the chunk (the build inlines only small
+  ones), which V8 reads more slowly than a plain constant: the SWAR masks, imported into
+  `bytes/browser.ts`, made real logs parse 21% slower (measured). Such a module declares a
+  constant its hot loop reads locally. Inside the chunk, import it.
 
 ## Adding an event type
 
