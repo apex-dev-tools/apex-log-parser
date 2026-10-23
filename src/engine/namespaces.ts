@@ -18,6 +18,7 @@ import {
 } from '../bytes/ascii.js';
 import type { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
+import { HIGHS, ONES, PIPES } from '../bytes/words.js';
 import type { NamespaceRule } from '../catalog/catalog.js';
 import type { StringTable } from '../store/strings.js';
 
@@ -52,12 +53,8 @@ const UNIT_TYPES = [
   '__sfdc_trigger',
 ];
 
-// Local and inline, as in lines.ts: the package bundle runs real logs slower imported.
-const ONES = 0x01010101;
-const HIGHS = 0x80808080;
 const LPARENS = 0x28282828;
 const DOTS = 0x2e2e2e2e;
-const PIPES = 0x7c7c7c7c;
 
 /**
  * Each event's own namespace, by pre-0.4 rules, read from the line's bytes. A rule that looks a

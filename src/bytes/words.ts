@@ -3,7 +3,7 @@
  */
 
 // Four bytes at a time (SWAR): a 32-bit word read little-endian, so its lowest byte comes first.
-// The scans inline their masks, as V8's lower tiers inline no call. For `x = word ^ (byte *
+// Each scan writes its test out, as V8's lower tiers inline no call. For `x = word ^ (byte *
 // 0x01010101)`, `~(((x | 0x80808080) - 0x01010101) | x) & 0x80808080` marks each byte equal to
 // `byte` by its high bit: the OR stops a borrow crossing a byte, so only a 0 byte keeps 0x80.
 // `bits & -bits` keeps the first marked; `3 - (Math.clz32(bit) >>> 3)` is its byte, 0 to 3.
@@ -12,6 +12,12 @@
 
 import { ZERO } from './ascii.js';
 import type { Source } from './source.js';
+
+/** The SWAR masks, and each byte's search word: that byte in all four. */
+export const ONES = 0x01010101;
+export const HIGHS = 0x80808080;
+export const LFS = 0x0a0a0a0a;
+export const PIPES = 0x7c7c7c7c;
 
 /**
  * The unsigned decimal in bytes `start` to `end` of `source`, or NaN when it is not one or is not
