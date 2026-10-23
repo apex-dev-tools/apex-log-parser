@@ -11,7 +11,7 @@ import { typeIdAt } from '../bytes/typeIds.js';
 import { digits } from '../bytes/words.js';
 import { EVENT_TYPE_NAMES } from '../catalog/types.js';
 import { describeFieldsContract } from './fieldsContract.js';
-import { encode } from './helpers.js';
+import { encode, watchedFields } from './helpers.js';
 
 /**
  * `text` at byte `offset` of a larger buffer, so a view's offset is not word aligned. The padding is
@@ -83,17 +83,7 @@ describe.each(SOURCES)('%s', (_, sourceOf) => {
       const start = BEFORE.length;
       const end = start + encode(line).length;
       const bytes = at(1, `${BEFORE}${continuation ? `${line}\n${continuation}` : line}`);
-      const source = sourceOf(bytes);
-      const watched: Source = {
-        bytes,
-        words: source.words,
-        lineEnd: (from) => source.lineEnd(from),
-        text: (from, to) => {
-          if (to > end) onContinuation?.();
-          return source.text(from, to);
-        },
-      };
-      const fields = new ByteFields(watched);
+      const fields = watchedFields(sourceOf(bytes), end, onContinuation);
       point(fields, bytes, start, end, continuation ? end + 1 : end);
       return fields;
     };
