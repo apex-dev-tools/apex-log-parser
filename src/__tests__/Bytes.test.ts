@@ -292,6 +292,8 @@ describe('digits', () => {
     ['123456789', 123456789],
     ['a1', Number.NaN],
     ['1-', Number.NaN],
+    ['12345/', Number.NaN],
+    ['12345:', Number.NaN],
     ['1234/678', Number.NaN],
     ['123:5678', Number.NaN],
     ['12345?78', Number.NaN],
