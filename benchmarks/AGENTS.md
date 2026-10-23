@@ -56,7 +56,9 @@ applies.
   loop, then after each of several full GCs. `__tests__/deopt.test.ts` runs it under
   `--trace-deopt` for each build. It fails on any deopt in the loop, and on any deopt a GC causes.
   A tier up from Maglev to TurboFan in a hot loop (`prepare for on stack replacement`) is not a
-  loss, and can land in the loop on a slower machine, so the test lets it through.
+  loss, and can land in the loop on a slower machine, so the test lets it through. So is one
+  `Insufficient type feedback` deopt per function: Node 26 recompiles a function once, at a random
+  parse, when one path had no feedback. A second for the same function fails.
 - `scripts/runs.ts` — `median`, `runsFlag` and `timedRuns`: the repeat-and-median loop the scripts
   share. `timedRuns` reads the heap each run, so it needs `--expose-gc`.
 - `scripts/memory.ts` — `liveBytes()`, the one memory reading: heap plus array buffers, once a
