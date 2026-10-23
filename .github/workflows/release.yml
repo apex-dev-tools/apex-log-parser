@@ -22,7 +22,7 @@ jobs:
         with:
           # tsdown 0.23 needs Node ^22.18, ^24.11 or >=26, and both `build` here and
           # `prepublishOnly` in the publish step run it.
-          node-version: 24
+          node-version-file: .nvmrc
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile

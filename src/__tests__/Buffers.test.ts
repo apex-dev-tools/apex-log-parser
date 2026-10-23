@@ -6,6 +6,7 @@ import { toBuffers } from '../api/buffers.js';
 import { fromBuffers as browserFromBuffers } from '../browser.js';
 import { fromBuffers as nodeFromBuffers, parse } from '../node.js';
 import type { ApexLog } from '../views/log.js';
+import { buildOfLog } from '../views/log.js';
 import type { Variable } from '../views/variables.js';
 import { encode } from './helpers.js';
 
@@ -146,6 +147,18 @@ describe.each([
     const again = fromBuffers(toBuffers(log).buffers);
     expect(summary(again)).toEqual(summary(log));
     expect(again.columns.type.buffer).toBe(log.columns.type.buffer);
+  });
+
+  it('restores the build in the builder’s object layout', async () => {
+    // V8 gives two objects one layout only when their keys come in the same order.
+    const built = buildOfLog(await parse(LOG));
+    const restored = buildOfLog(fromBuffers(moved(await parse(LOG))));
+    for (const [a, b] of [
+      [restored, built],
+      [restored.store, built.store],
+      [restored.strings, built.strings],
+    ] as const)
+      expect(Object.keys(a)).toEqual(Object.keys(b));
   });
 
   it('reads a log with no events', async () => {

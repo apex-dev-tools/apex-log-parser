@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
+import { ByteFields } from '../bytes/cursor.js';
+import { NodeSource } from '../bytes/node.js';
+import type { Source } from '../bytes/source.js';
 import type { Fields } from '../catalog/types.js';
 import { nodeEngine } from '../engine/node.js';
 import type { ApexLog } from '../views/log.js';
@@ -47,34 +50,31 @@ export const outline = (log: ApexLog): string[] =>
       `${'  '.repeat(e.depth - 1)}${e.type}@${e.startTimestamp}${e.isFrame ? `-${e.endTimestamp}${END_MARK[e.endedBy]}` : ''}`,
   );
 
-const INTEGER = /^-?\d+$/;
-const LINE_NUMBER = /^\[\d+\]$/;
-
-const safe = (digits: string): number => {
-  const n = Number(digits);
-  return Number.isSafeInteger(n) ? n : Number.NaN;
-};
-
-function intOf(text: string, prefix: string): number | null {
-  if (!text) return null;
-  const digits = text.startsWith(prefix) ? text.slice(prefix.length) : '';
-  return INTEGER.test(digits) ? safe(digits) : Number.NaN;
+/**
+ * The engine's `Fields` over a line and its continuation lines. `onContinuation` runs on each read
+ * of the continuation.
+ */
+export function fieldsOf(line: string, continuation = '', onContinuation?: () => void): Fields {
+  const end = encode(line).length;
+  const bytes = encode(continuation ? `${line}\n${continuation}` : line);
+  const fields = watchedFields(new NodeSource(bytes), end, onContinuation);
+  fields.reset(0, end, continuation ? end + 1 : end, bytes.length);
+  return fields;
 }
 
-/** `Fields` over a line of text and its continuation lines, or a function that gives them. */
-export function fieldsOf(line: string, continuation: string | (() => string) = ''): Fields {
-  const parts = line.split('|');
-  return {
-    count: parts.length,
-    continuation: typeof continuation === 'function' ? continuation : () => continuation,
-    at: (i) => parts[i] ?? '',
-    from: (i, separator) => (i < 0 ? '' : parts.slice(i).join(separator)),
-    lineNumber: (i) => {
-      const text = parts[i] ?? '';
-      if (!text) return null;
-      if (text === '[EXTERNAL]') return 'EXTERNAL';
-      return LINE_NUMBER.test(text) ? safe(text.slice(1, -1)) : Number.NaN;
+/** A `ByteFields` over `source` that runs `onContinuation` on each read past `end`. */
+export function watchedFields(
+  source: Source,
+  end: number,
+  onContinuation?: () => void,
+): ByteFields {
+  return new ByteFields({
+    bytes: source.bytes,
+    words: source.words,
+    lineEnd: (from) => source.lineEnd(from),
+    text: (from, to) => {
+      if (to > end) onContinuation?.();
+      return source.text(from, to);
     },
-    int: (i, prefix = '') => intOf(parts[i] ?? '', prefix),
-  };
+  });
 }
