@@ -16,6 +16,8 @@ test('build', async ({ bench }) => {
   for (const [name, options] of Object.entries(benchLogs)) {
     // Built outside the bench, so it measures the build alone; bench:async times parse()'s slices.
     const bytes = new TextEncoder().encode(makeLog(options));
+    // Experiment: an untimed build first, so V8's first-call compile is outside the bench.
+    nodeEngine.build(bytes);
     await bench(name, () => {
       nodeEngine.build(bytes);
     }).run();
