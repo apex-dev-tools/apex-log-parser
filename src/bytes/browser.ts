@@ -5,7 +5,7 @@
 import { indexOfByte, LF } from './ascii.js';
 import type { Source } from './source.js';
 import { checkSize } from './source.js';
-import { wordsOf } from './words.js';
+import { HIGHS, LFS, ONES, wordsOf } from './words.js';
 
 // `tsconfig.json` keeps ambient DOM types out, so declare the one WHATWG global used here.
 declare const TextDecoder: new (
@@ -13,10 +13,6 @@ declare const TextDecoder: new (
   options: { ignoreBOM: boolean },
 ) => { decode(input: Uint8Array): string };
 
-// Local, not from words.ts: an entry's import makes the shared chunk export them, a slower read.
-const ONES = 0x01010101;
-const HIGHS = 0x80808080;
-const LFS = 0x0a0a0a0a;
 // TextDecoder's call cost dominates on short input in Chromium, so short ASCII text is built here.
 const SHORT = 128;
 

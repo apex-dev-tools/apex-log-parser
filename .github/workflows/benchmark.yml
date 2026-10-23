@@ -42,11 +42,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Outside valgrind, where tsdown starts fast.
-      # The chunk must be dist's, or CodSpeed times code no consumer runs.
+      # Each file must be dist's, or CodSpeed times code no consumer runs. Its last line, the
+      # exports, also names the engine.
       - run: |
           node --run bench:bundle
           pnpm exec tsdown
-          cmp dist/engine-*.js benchmarks/.bundle/engine-*.js
+          for entry in node browser; do
+            cmp <(sed '$d' "dist/$entry.js") <(sed '$d' "benchmarks/.bundle/$entry.js")
+          done
       - uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
         with:
           mode: ${{ matrix.mode }}
