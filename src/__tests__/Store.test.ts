@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { NodeSource } from '../bytes/node.js';
-import { COUNTER, HEAP, NO_LINE, NONE, Store } from '../store/store.js';
+import { COUNTER, COUNTERS, HEAP, NO_LINE, NONE, Store } from '../store/store.js';
 import { StringTable } from '../store/strings.js';
 import { encode } from './helpers.js';
 
@@ -24,30 +24,19 @@ describe('Store', () => {
     ]).toEqual([NO_LINE, NONE, NONE, NONE]);
   });
 
-  it('states its columns in the order restore reads them', () => {
+  it('lists every per-row column, so each one grows, trims and moves', () => {
     const store = new Store(0);
     store.add(1, 2, 3, 4, NONE, 0);
     store.finish(2);
-    // The order is the buffer format: a column moved here reads as another after a restore.
-    const order = [
-      store.type,
-      store.start,
-      store.end,
-      store.timestamp,
-      store.exitStamp,
-      store.parent,
-      store.subtreeEnd,
-      store.depth,
-      store.lineNumber,
-      store.namespace,
-      store.flags,
-      store.durationSelf,
-      store.countSlot,
-      store.heapSlot,
-    ];
-    const { columns } = store.state();
-    expect(columns).toHaveLength(order.length);
-    for (const [i, column] of order.entries()) expect(columns[i]).toBe(column);
+    const listed = new Set<unknown>(store.state().columns);
+    const unlisted = Object.entries(store)
+      .filter(([, value]) => ArrayBuffer.isView(value) && !listed.has(value))
+      .map(([name]) => name);
+    expect(unlisted).toEqual(['counts', 'heap', 'typeStart']);
+  });
+
+  it('sizes the count pool for every counter', () => {
+    expect(COUNTERS).toBe(Object.keys(COUNTER).length);
   });
 
   it('grows past its first size and keeps every row', () => {

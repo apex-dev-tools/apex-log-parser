@@ -22,9 +22,13 @@ const database = eventDatabase as {
 const text = (
   type: EventType,
   line: string,
-  continuation: string | (() => string) = '',
+  continuation = '',
+  onContinuation?: () => void,
 ): string | null =>
-  eventText(idOfType(type), fieldsOf(`00:00:00.0 (1)|${type}|${line}`, continuation));
+  eventText(
+    idOfType(type),
+    fieldsOf(`00:00:00.0 (1)|${type}|${line}`, continuation, onContinuation),
+  );
 
 describe('the catalog against the event database', () => {
   it('holds every documented event, and no other', () => {
@@ -298,12 +302,12 @@ describe('event text', () => {
   });
 
   it('reads the continuation lazily, once, and only for types that take text', () => {
-    const continuation = vi.fn(() => 'more');
-    text('STATEMENT_EXECUTE', '[3]', continuation);
-    text('XDS_RESPONSE_ERROR', 'error', continuation);
-    expect(continuation).not.toHaveBeenCalled();
-    text('USER_DEBUG', '[3]|DEBUG|first', continuation);
-    expect(continuation).toHaveBeenCalledTimes(1);
+    const read = vi.fn();
+    text('STATEMENT_EXECUTE', '[3]', 'more', read);
+    text('XDS_RESPONSE_ERROR', 'error', 'more', read);
+    expect(read).not.toHaveBeenCalled();
+    text('USER_DEBUG', '[3]|DEBUG|first', 'more', read);
+    expect(read).toHaveBeenCalledTimes(1);
   });
 
   it('is the continuation alone when the line states no text', () => {

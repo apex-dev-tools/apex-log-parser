@@ -15,8 +15,8 @@ For coding agents working on the parser. The root [AGENTS.md](../AGENTS.md) stil
   `wordsOf`, the `DataView` each `Source` holds as `words`.
   `lines.ts`: the line tests (timestamp, type name, first event line), the truncation-marker forms
   that the builder and `engine/markers.ts` test against, and the `LineScanner`, which finds each
-  line's end and first pipes in one pass for the builder. Every `Fields` adapter passes
-  `__tests__/fieldsContract.ts`.
+  line's end and first pipes in one pass for the builder. `ByteFields` passes
+  `__tests__/fieldsContract.ts` for each way the engine points it at a line.
 - `store/` — events as typed-array columns, sparse count and heap pools, and the string table of
   interned byte ranges.
 - `engine/` — builds the tree, runs the passes after the scan, makes the indexes the views read on

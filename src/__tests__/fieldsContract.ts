@@ -4,8 +4,8 @@
 import type { Fields } from '../catalog/types.js';
 
 /**
- * Builds the adapter under test from a line of text, without its line ending, and its continuation
- * lines. The line split strips `\r`, so no field ends in one. The adapter calls `onContinuation`
+ * Builds the cursor under test from a line of text, without its line ending, and its continuation
+ * lines. The line split strips `\r`, so no field ends in one. The cursor calls `onContinuation`
  * when it reads the continuation lines, so the suite can check it reads them only when asked.
  */
 export type MakeFields = (
@@ -14,7 +14,7 @@ export type MakeFields = (
   onContinuation?: () => void,
 ) => Fields;
 
-/** What every `Fields` adapter must do, so the test fake and the byte cursor agree. */
+/** What `ByteFields` must do, for each way the engine points it at a line. */
 export function describeFieldsContract(name: string, make: MakeFields): void {
   const head = '00:00:00.0 (1)|SOQL_EXECUTE_END';
 
