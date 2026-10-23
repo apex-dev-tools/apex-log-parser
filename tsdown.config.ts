@@ -7,20 +7,16 @@ const shared = {
   outExtensions: () => ({ js: '.js' }),
 } as const;
 
+// One file per entry, no shared chunk: V8 reads a binding one chunk imports from another slowly.
 // Exported for tsdown.bench.config.ts, which may change only the entries and the output folder.
-export const packageBuild = {
-  ...shared,
+export const packageBuilds = [
   // package.json's `node` condition picks the node build; every other host the browser one.
-  entry: {
-    node: 'src/node.ts',
-    browser: 'src/browser.ts',
-  },
-  format: 'esm',
-  clean: true,
-} as const;
+  { ...shared, entry: { node: 'src/node.ts' }, format: 'esm', clean: true },
+  { ...shared, entry: { browser: 'src/browser.ts' }, format: 'esm', clean: false },
+] as const;
 
 export default defineConfig([
-  packageBuild,
+  ...packageBuilds,
   // Each worker is one file with no imports, so a caller can start it from a blob: URL.
   {
     ...shared,
