@@ -18,8 +18,7 @@ For coding agents working on the parser. The root [AGENTS.md](../AGENTS.md) stil
   line's end and first pipes in one pass for the builder. `ByteFields` passes
   `__tests__/fieldsContract.ts` for each way the engine points it at a line.
 - `store/` — events as typed-array columns, sparse count and heap pools, and the string table of
-  interned byte ranges. `tags.ts` reads a value's type tag, which holds across realms where
-  `instanceof` fails.
+  interned byte ranges.
 - `engine/` — builds the tree, runs the passes after the scan, makes the indexes the views read on
   first use. See `engine/AGENTS.md`.
 - `views/` — reads the store as events, and row 0 as `ApexLog`. Event ids start at 1; id 0 is the
@@ -37,6 +36,7 @@ For coding agents working on the parser. The root [AGENTS.md](../AGENTS.md) stil
   `worker/serve.ts` is the worker's side. `worker/node.ts` and `worker/browser.ts` start it, each
   built as one file with no imports, so a webview can start it from a `blob:` URL.
 - `limits.ts` — parses limit text, derives the whole-log figures.
+- `tags.ts` — reads a value's type tag, which holds across realms where `instanceof` fails.
 - `__tests__/` — vitest suites. `helpers.ts`: shared fixtures.
 
 V8 drops a class's object layout, and the code it optimised for it, once no instance is alive; the
