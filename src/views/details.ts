@@ -5,6 +5,7 @@ import {
   codeUnitType,
   eventBody,
   fieldPosition,
+  HEAP_PREFIX,
   idOfType,
   splitTrailingFields,
 } from '../catalog/catalog.js';
@@ -198,7 +199,7 @@ reader('FLOW_START_INTERVIEWS_BEGIN', () => (_f, _explain, _isCaught, flowType) 
 }));
 for (const type of ['HEAP_ALLOCATE', 'HEAP_DEALLOCATE', 'BULK_HEAP_ALLOCATE'] as const) {
   reader(type, (t) => {
-    const bytes = int(t, 'bytes', 'Bytes:');
+    const bytes = int(t, 'bytes', HEAP_PREFIX);
     return (f) => ({ bytes: bytes(f) });
   });
 }
