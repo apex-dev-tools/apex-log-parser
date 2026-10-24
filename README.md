@@ -8,21 +8,19 @@
 Fast Apex log parser for Salesforce debug logs: a typed call tree with timings, governor limits
 and SOQL/DML counts. TypeScript, Node.js and browser.
 
-It parses a 100 MB debug log in about 135 ms, with no dependencies.
+It parses a 100 MB log in 131 ms and holds 37 MB of memory, with no dependencies.
 
 It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
 VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).
 
 ## Features
 
-- **Fast and small.** Parses a 100 MB log in about 135 ms, against 829 ms in v0.3, and holds
-  37 MB of memory against 812 MB. See [Performance](#performance).
-- **Responsive.** `parse` is async and works in time slices of 5 ms, so the page or the event
-  loop stays responsive. Stop it with an `AbortSignal`, and follow it with `onProgress`.
+- **Fast and small.** A 100 MB log parses in 131 ms vs 829 ms in v0.3 (6× faster), and holds
+  37 MB vs 812 MB (22× less). See [Performance](#performance).
+- **Responsive.** `parse` is async and works in time slices of 5 ms. It takes an `AbortSignal`
+  and an `onProgress` callback, and can run in a worker.
 - **Any source.** A string, bytes, a `Blob`, a `fetch` `Response`, a `ReadableStream` or an async
   iterable.
-- **Node and browser builds**, with one API. An optional worker moves the parse off the main
-  thread.
 - **Every documented event type**, each with its kind of work (`kind`), its debug level and its
   extra values (`details`), such as a query's plan or whether a throw was caught.
 - **An event tree** where each entry is matched to its exit, with self and total times in
@@ -31,7 +29,6 @@ VS Code extension and its [MCP server](https://github.com/certinia/debug-log-ana
   object at any address the log writes.
 - **Counts up the tree**: SOQL, DML and SOSL statements and rows, exceptions and heap.
 - **Governor limits** per namespace, with a snapshot for each limit block in the log.
-- **No dependencies**, ESM only.
 
 ## Install
 
@@ -91,13 +88,10 @@ EXECUTION_STARTED  (3.53ms)
 
 Note the shape:
 
-- `parse()` returns the log, `ApexLog`. Its `children` are the events at the top of the log.
 - A frame (`isFrame: true`) spans time and has `children`. A leaf is one point in time, and its
   `children` is always empty.
 - `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not events of their own. Each closes its
-  matching entry and sets that event's `endTimestamp` and `duration`. A leaf's `endTimestamp` is its `startTimestamp`.
-- A frame's `endedBy` says whether the log states its end (`'exit'`, `'next'`) or the parser
-  inferred it (`'unwind'`, `'log-end'`). `log.unclosedFrames` lists the inferred ones.
+  matching entry and sets that event's `duration`.
 - `text` is null when the line states nothing, as for `EXECUTION_STARTED`. Use `text ?? type` for
   a label.
 
@@ -216,26 +210,16 @@ for (let id = 1; id <= log.eventCount; id++) {
 ## API
 
 Everything comes from the package root: `parse`, `toBuffers`, `fromBuffers`, the event catalog
-(`EVENT_TYPES`, `eventType`), every type, and the const companions that go with them
-(`DEBUG_CATEGORY`, `ENDED_BY`, `EVENT_TYPE_NAMES`, `FLOW_TYPE`, `ISSUE_TYPE`, `KIND`, `LEVEL`, `LIMIT_UNIT`, `PARSE_PHASE`,
-`SHAPE`, `TRUNCATION_KIND`). `DEBUG_CATEGORY_TOKEN` gives the header token of each debug category,
-and `LIMIT_METRICS` gives the unit of each limit metric:
-
-```typescript
-import { eventType, parse, type ApexLog } from '@apexdevtools/apex-log-parser';
-```
+(`EVENT_TYPES`, `eventType`), every type and its const companion. The type declarations document
+every field, so your editor shows them.
 
 `ApexLog` is the log. Besides its rollups and `children`, it has `event(id)`, `ofType()`, `at(ns)`,
 `columns`, `limits`, `namespaces`, `debugLevels`, `debugLevelSettings`, `userInfo`, `entryPoints`,
 `exceptions`, `truncation`, `unclosedFrames`, `issues` and `parsingErrors`.
 
-The type declarations in the package document every field, event type and type, so your editor
-shows them.
-
 ## Tips
 
-**Capture the log at the right levels.** The parser reports what the log contains. A log captured
-at a low level is missing whole categories of line, and the matching fields stay empty: a count or
+**Capture the log at the right levels.** The parser reports what the log contains. A count or
 heap figure the header's level does not record is `null`, not 0. This is the most common surprise:
 
 | You want | The log needs |
@@ -250,9 +234,6 @@ heap figure the header's level does not record is `null`, not 0. This is the mos
 `limits.final` and `limits.peak` metric stays at `{ used: 0, limit: null, percentUsed: null }`. That
 is not a transaction that used nothing.
 
-**Read totals from the log.** It already sums the tree, so you do not need to walk it to count
-SOQL or DML.
-
 **Use `id` as a key within one parse.** Ids start at 1 and follow log order. `event(id)` gives the
 same object on every call, so an event also works as a `WeakMap` key. Ids are not stable across
 parses.
@@ -260,9 +241,6 @@ parses.
 **Two lists, two meanings.** `parsingErrors` holds lines the parser could not read, which is a
 parser problem. `issues` holds problems in the transaction the log describes, such as a truncated
 log or an unexpected exit.
-
-**Null means "not stated".** A value the log does not state is `null`, never `0` or `''`, so you
-can tell the two apart.
 
 ## Performance
 
@@ -302,18 +280,9 @@ To measure on your machine, clone the repository and run `pnpm run bench:large`.
 - **ESM only.** There is no CommonJS build, so `require()` does not work.
 - **TypeScript declarations ship with the package.** No `@types` install is needed.
 
-**Tests under jsdom**, as in Jest's `jsdom` environment, do not have all the globals the parser
-uses. Both builds need `structuredClone`. The Node build needs `setImmediate`. The browser build
-needs `MessageChannel` where `scheduler.yield` is not available. Add the missing ones in a setup
-file. For the Node build:
-
-```typescript
-import { setImmediate } from 'node:timers';
-import { deserialize, serialize } from 'node:v8';
-
-globalThis.setImmediate ??= setImmediate;
-globalThis.structuredClone ??= (value) => deserialize(serialize(value));
-```
+**Tests under jsdom**, as in Jest's `jsdom` environment, lack globals the parser uses. Add them in
+a setup file: `structuredClone` for both builds, `setImmediate` for the Node build, and
+`MessageChannel` for the browser build where `scheduler.yield` is not available.
 
 To upgrade from a version before 0.4, see the 0.4.0 entry in the [CHANGELOG](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CHANGELOG.md).
 
