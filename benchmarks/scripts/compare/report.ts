@@ -37,7 +37,8 @@ function inBand(results: readonly FileResult[], band: (typeof BANDS)[number]): F
   return results.filter((r) => BANDS.find((b) => r.bytes <= b.max) === band);
 }
 
-const steady = (m: Measurement): number => percentile(m.warmRunsMs, 50);
+const p50 = (values: readonly number[]): number => percentile(values, 50);
+const steady = (m: Measurement): number => p50(m.warmRunsMs);
 const cold = (m: Measurement): number => m.coldMs;
 const kept = (m: Measurement): number => m.retainedBytes;
 
@@ -138,7 +139,7 @@ function renderPerformance(results: readonly FileResult[], engines: readonly str
         const ratios = rows.flatMap((r) =>
           r.base && pick(r.base) > 0 ? [pick(r.m) / pick(r.base)] : [],
         );
-        return fromRatio(percentile(ratios, 50), measure);
+        return fromRatio(p50(ratios), measure);
       };
       out.push(
         `| ${name} | ${formatMs(at(steady, 50))} | ${formatMs(at(steady, 95))} | ${formatMs(at(cold, 50))} | ${formatMs(at(cold, 95))} | ${formatBytes(at(kept, 50))} | ${formatBytes(at(kept, 95))} | ${vsBase(steady, 'time')} | ${vsBase(cold, 'time')} | ${vsBase(kept, 'memory')} |`,
@@ -229,17 +230,10 @@ function renderChange(
         format: (n: number) => string,
         measure: Measure,
       ): string => {
-        const was = percentile(
-          pairs.map((p) => pick(p.was)),
-          50,
-        );
-        const now = percentile(
-          pairs.map((p) => pick(p.now)),
-          50,
-        );
-        const ratio = percentile(
+        const was = p50(pairs.map((p) => pick(p.was)));
+        const now = p50(pairs.map((p) => pick(p.now)));
+        const ratio = p50(
           pairs.flatMap((p) => (pick(p.was) > 0 ? [pick(p.now) / pick(p.was)] : [])),
-          50,
         );
         return `${format(was)} → ${format(now)}, ${fromRatio(ratio, measure)}`;
       };

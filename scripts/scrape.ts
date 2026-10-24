@@ -18,8 +18,8 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { argv, env } from 'node:process';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { parse as parseHtml } from 'node-html-parser';
 import { flag, runIfMain } from './cli.js';
@@ -145,10 +145,6 @@ const USER_AGENT =
 
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const RETRY_ATTEMPTS = 3;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Fetches and parses JSON. Both Salesforce sources answer a failed request with
@@ -646,11 +642,10 @@ function crossCheck(s1Events: ScrapedEvent[], s2Events: ScrapedEvent[]): Disagre
       disagreements.push({ event: name, reason: 'only-in-s1' });
       continue;
     }
-    if (s1.category !== s2.category) {
-      disagreements.push({ event: name, reason: 'category', s1: s1.category, s2: s2.category });
-    }
-    if (s1.level !== s2.level) {
-      disagreements.push({ event: name, reason: 'level', s1: s1.level, s2: s2.level });
+    for (const field of ['category', 'level'] as const) {
+      if (s1[field] !== s2[field]) {
+        disagreements.push({ event: name, reason: field, s1: s1[field], s2: s2[field] });
+      }
     }
   }
 
@@ -842,23 +837,16 @@ function restatements(entry: EventEntry, index: SourceIndex): Restatement[] {
     const scraped = byName.get(entry.event);
     if (!scraped) continue;
     const recorded = entry.source_levels[source];
-    if (scraped.category !== entry.category && scraped.category !== recorded?.category) {
-      found.push({
-        event: entry.event,
-        source,
-        field: 'category',
-        stored: entry.category,
-        scraped: scraped.category,
-      });
-    }
-    if (scraped.level !== entry.level && scraped.level !== recorded?.level) {
-      found.push({
-        event: entry.event,
-        source,
-        field: 'level',
-        stored: entry.level,
-        scraped: scraped.level,
-      });
+    for (const field of ['category', 'level'] as const) {
+      if (scraped[field] !== entry[field] && scraped[field] !== recorded?.[field]) {
+        found.push({
+          event: entry.event,
+          source,
+          field,
+          stored: entry[field],
+          scraped: scraped[field],
+        });
+      }
     }
   }
 
@@ -970,142 +958,104 @@ function generateMarkdown(data: EventsJson): string {
   const officialEvents = data.events.filter((e) => e.official);
   const catLabelMap = new Map(data.categories.map((c) => [c.name, c.label]));
 
-  const lines: string[] = [];
-
-  // Header
-  lines.push('# Salesforce Debug Log Events Reference');
-  lines.push('');
-  lines.push(
-    `**Source:** [Working with Logs in the Developer Console](https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_debugging_system_log_console.htm)`,
-  );
-  lines.push(`**Date Extracted:** ${data.last_updated}`);
-  lines.push(
-    `**Total Events:** ${officialEvents.length} (official), ${data.events.length} (including unofficial)`,
-  );
-  lines.push('');
-
-  // Log Structure
+  const labelOf = (category: string) => catLabelMap.get(category) ?? category;
   const ls = data.log_structure;
   const maxMb = ls.max_size_bytes / 1024 / 1024;
   const chunkKb = ls.truncation_chunk_bytes / 1024;
-  lines.push('## Log Structure');
-  lines.push('');
-  lines.push(`- **Max size:** ${maxMb} MB`);
-  lines.push(`- **Truncation chunk:** ${chunkKb} KB removed when max size reached`);
-  lines.push(
-    `- **Retention:** System logs ${ls.retention.system_debug_logs_hours}h, Monitoring logs ${ls.retention.monitoring_debug_logs_days} days`,
-  );
-  lines.push(
-    `- **Generation limit:** ${ls.generation_limits.max_mb_per_15min} MB per 15 min window`,
-  );
-  lines.push(`- **Header format:** \`${ls.header_format}\``);
-  lines.push(`- **Timestamp:** \`${ls.timestamp_format}\``);
-  lines.push(`- **Field delimiter:** \`${ls.delimiter}\``);
-  lines.push(`- **Session IDs:** Replaced with \`${ls.session_id_masking}\``);
-  lines.push(`- **Managed package/built-in code:** \`${ls.external_marker}\``);
-  lines.push('');
-  lines.push(`**Not included in debug logs:** ${ls.exclusions.join(', ')}`);
-  lines.push('');
-
-  // Categories
-  lines.push('## Debug Log Categories');
-  lines.push('');
-  lines.push('| Category | Default Level | Description |');
-  lines.push('|---|---|---|');
-  for (const cat of data.categories) {
-    const level = cat.default_level ?? '—';
-    lines.push(`| **${cat.label}** | ${level} | ${cat.description} |`);
-  }
-  lines.push('');
-  lines.push('Default levels apply when no trace flags are active (e.g. during Apex tests).');
-  lines.push('');
-
-  // Log Levels
-  lines.push('## Debug Log Levels');
-  lines.push('');
-  lines.push(`Log levels (from lowest to highest): ${data.log_levels.join(' < ')}`);
-  lines.push('');
-  lines.push(
-    'The level is cumulative. Selecting FINE includes all events at DEBUG, INFO, WARN, and ERROR levels.',
-  );
-  lines.push('');
-
-  // Truncation Policy
   const protected_ = data.events.filter((e) => e.truncation_protected);
-  lines.push('## Truncation Policy');
-  lines.push('');
-  lines.push(
-    `When a log exceeds ${maxMb} MB, ${chunkKb} KB chunks are removed, usually starting with older lines. Lines can be removed from any location.`,
-  );
-  lines.push('');
-  lines.push(`The following ${protected_.length} events are **never removed** during truncation:`);
-  lines.push('');
-  for (const e of protected_) {
-    lines.push(`- \`${e.event}\``);
-  }
-  lines.push('');
-  lines.push('Content *between* protected start/end pairs may still be removed.');
-  lines.push('');
-
-  // Code Unit Types
   const cut = data.code_unit_types;
-  lines.push('## Code Unit Types');
-  lines.push('');
-  lines.push(`${cut.description}`);
-  lines.push('');
-  for (const t of cut.types) {
-    lines.push(`- ${t}`);
-  }
-  lines.push('');
 
-  // Event Summary by category
   const byCategory = new Map<string, EventEntry[]>();
   for (const e of officialEvents) {
     const list = byCategory.get(e.category) ?? [];
     list.push(e);
     byCategory.set(e.category, list);
   }
+  const sortedCategories = [...byCategory].sort(([a], [b]) => labelOf(a).localeCompare(labelOf(b)));
 
-  const sortedCategories = [...byCategory.keys()].sort((a, b) => {
-    const la = catLabelMap.get(a) ?? a;
-    const lb = catLabelMap.get(b) ?? b;
-    return la.localeCompare(lb);
-  });
+  return [
+    // Header
+    '# Salesforce Debug Log Events Reference',
+    '',
+    `**Source:** [Working with Logs in the Developer Console](https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_debugging_system_log_console.htm)`,
+    `**Date Extracted:** ${data.last_updated}`,
+    `**Total Events:** ${officialEvents.length} (official), ${data.events.length} (including unofficial)`,
+    '',
 
-  lines.push('## Event Summary');
-  lines.push('');
-  lines.push('| Category | Event Count |');
-  lines.push('|---|---|');
-  for (const cat of sortedCategories) {
-    const label = catLabelMap.get(cat) ?? cat;
-    lines.push(`| ${label} | ${byCategory.get(cat)!.length} |`);
-  }
-  lines.push(`| **Total (official)** | **${officialEvents.length}** |`);
-  lines.push('');
+    '## Log Structure',
+    '',
+    `- **Max size:** ${maxMb} MB`,
+    `- **Truncation chunk:** ${chunkKb} KB removed when max size reached`,
+    `- **Retention:** System logs ${ls.retention.system_debug_logs_hours}h, Monitoring logs ${ls.retention.monitoring_debug_logs_days} days`,
+    `- **Generation limit:** ${ls.generation_limits.max_mb_per_15min} MB per 15 min window`,
+    `- **Header format:** \`${ls.header_format}\``,
+    `- **Timestamp:** \`${ls.timestamp_format}\``,
+    `- **Field delimiter:** \`${ls.delimiter}\``,
+    `- **Session IDs:** Replaced with \`${ls.session_id_masking}\``,
+    `- **Managed package/built-in code:** \`${ls.external_marker}\``,
+    '',
+    `**Not included in debug logs:** ${ls.exclusions.join(', ')}`,
+    '',
 
-  // All Events alphabetical
-  lines.push('## All Events (Alphabetical)');
-  lines.push('');
-  lines.push('| Event Name | Category | Log Level |');
-  lines.push('|---|---|---|');
-  for (const e of officialEvents) {
-    const label = catLabelMap.get(e.category) ?? e.category;
-    lines.push(`| ${e.event} | ${label} | ${e.level} |`);
-  }
-  lines.push('');
+    '## Debug Log Categories',
+    '',
+    '| Category | Default Level | Description |',
+    '|---|---|---|',
+    ...data.categories.map(
+      (cat) => `| **${cat.label}** | ${cat.default_level ?? '—'} | ${cat.description} |`,
+    ),
+    '',
+    'Default levels apply when no trace flags are active (e.g. during Apex tests).',
+    '',
 
-  // Events by category
-  lines.push('## Events by Category');
-  lines.push('');
-  for (const cat of sortedCategories) {
-    const label = catLabelMap.get(cat) ?? cat;
-    const catEvents = byCategory.get(cat)!;
-    lines.push(`### ${label} (${catEvents.length} events)`);
-    lines.push(catEvents.map((e) => e.event).join(', '));
-    lines.push('');
-  }
+    '## Debug Log Levels',
+    '',
+    `Log levels (from lowest to highest): ${data.log_levels.join(' < ')}`,
+    '',
+    'The level is cumulative. Selecting FINE includes all events at DEBUG, INFO, WARN, and ERROR levels.',
+    '',
 
-  return lines.join('\n');
+    '## Truncation Policy',
+    '',
+    `When a log exceeds ${maxMb} MB, ${chunkKb} KB chunks are removed, usually starting with older lines. Lines can be removed from any location.`,
+    '',
+    `The following ${protected_.length} events are **never removed** during truncation:`,
+    '',
+    ...protected_.map((e) => `- \`${e.event}\``),
+    '',
+    'Content *between* protected start/end pairs may still be removed.',
+    '',
+
+    '## Code Unit Types',
+    '',
+    `${cut.description}`,
+    '',
+    ...cut.types.map((t) => `- ${t}`),
+    '',
+
+    '## Event Summary',
+    '',
+    '| Category | Event Count |',
+    '|---|---|',
+    ...sortedCategories.map(([cat, events]) => `| ${labelOf(cat)} | ${events.length} |`),
+    `| **Total (official)** | **${officialEvents.length}** |`,
+    '',
+
+    '## All Events (Alphabetical)',
+    '',
+    '| Event Name | Category | Log Level |',
+    '|---|---|---|',
+    ...officialEvents.map((e) => `| ${e.event} | ${labelOf(e.category)} | ${e.level} |`),
+    '',
+
+    '## Events by Category',
+    '',
+    ...sortedCategories.flatMap(([cat, events]) => [
+      `### ${labelOf(cat)} (${events.length} events)`,
+      events.map((e) => e.event).join(', '),
+      '',
+    ]),
+  ].join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -1185,9 +1135,10 @@ async function main(): Promise<ScrapeReport> {
     throw new Error(`--api-version must be a number, got "${requested}"`);
   }
 
-  const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../data');
-  const jsonPath = join(dataDir, 'salesforce-debug-log-events.json');
-  const mdPath = join(dataDir, 'salesforce-debug-log-events.md');
+  const jsonPath = fileURLToPath(
+    new URL('../data/salesforce-debug-log-events.json', import.meta.url),
+  );
+  const mdPath = fileURLToPath(new URL('../data/salesforce-debug-log-events.md', import.meta.url));
   const existing = JSON.parse(readFileSync(jsonPath, 'utf-8')) as EventsJson;
   const vocab = vocabulary(existing);
 
@@ -1280,16 +1231,13 @@ async function main(): Promise<ScrapeReport> {
 runIfMain(import.meta.url, main);
 
 export type {
-  Disagreement,
   DocVersion,
   EventsJson,
   ReportInput,
-  Restatement,
   S1Metadata,
   ScrapedEvent,
   ScrapeReport,
   ScrapeRun,
-  Vocabulary,
 };
 export {
   articleHtml,
@@ -1297,13 +1245,11 @@ export {
   buildReport,
   checkNotOlder,
   crossCheck,
-  generateMarkdown,
   mergeEvents,
   parseEventTable,
   pickDocVersion,
   releaseCovers,
   releaseIdentity,
-  reportDisagreements,
   resolveRelease,
   squeezeRow,
   vocabulary,
