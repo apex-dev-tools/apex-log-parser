@@ -35,7 +35,7 @@ import type { Issues, Truncation } from './issues.js';
 import { ISSUE, truncationOf } from './issues.js';
 import { LogMarkers, opensLog } from './markers.js';
 import { DEFAULT, Namespaces, UNSTATED } from './namespaces.js';
-import type { FlowTotal, LogTimes, MergedTail } from './rollups.js';
+import type { FlowTotal, MergedTail } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
 import {
   ACCEPTS_TEXT,
@@ -162,7 +162,8 @@ export class LogBuilder {
   /** The `PASS` that `settle` runs next, and the id it goes on from. */
   private pass: number = PASS.times;
   private passFrom = 0;
-  private logTimes: LogTimes | null = null;
+  /** The first top-level event with a time, or `NONE`; `settle` sets it. */
+  private firstTimed = NONE;
   /** Where the next unread line starts. */
   private pos = 0;
   private discontinuity = false;
@@ -259,7 +260,7 @@ export class LogBuilder {
     const store = this.store;
     if (this.pass === PASS.times) {
       store.subtreeEnd[0] = store.count;
-      this.logTimes = setLogTimes(store, this.mergedTail);
+      this.firstTimed = setLogTimes(store, this.mergedTail);
       this.passFrom = store.count - 1;
       this.pass = PASS.rollUp;
     }
@@ -288,8 +289,7 @@ export class LogBuilder {
     const store = this.store;
     const len = this.bytes.length;
     const eventsStart = this.eventsStart;
-    // settle set them
-    const { first } = this.logTimes!;
+    const first = this.firstTimed;
     // With no timestamped line, the header is the whole text.
     const debug = debugSettings(this.source.text(0, eventsStart < 0 ? len : eventsStart));
     const { issues, parsingErrors, snapshots } = this.markers;

@@ -26,14 +26,11 @@ export interface MergedTail {
   timestamp: number;
 }
 
-/** What `setLogTimes` finds besides row 0's times. */
-export interface LogTimes {
-  /** The first top-level event with a time, or `NONE`. */
-  first: number;
-}
-
-/** The times of row 0: from the first top-level event to the last one's end. */
-export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
+/**
+ * The times of row 0: from the first top-level event to the last one's end. Returns that first
+ * event with a time, or `NONE`.
+ */
+export function setLogTimes(store: Store, tail: MergedTail | null): number {
   let first = NONE;
   let last = NONE;
   // Each top-level event's subtree ends where the next one starts; every id here is a row.
@@ -47,7 +44,7 @@ export function setLogTimes(store: Store, tail: MergedTail | null): LogTimes {
   else if (last !== NONE) end = store.exitStamp[last]! || store.timestamp[last]!;
   store.timestamp[0] = first === NONE ? 0 : store.timestamp[first]!;
   store.exitStamp[0] = end;
-  return { first };
+  return first;
 }
 
 /**

@@ -81,11 +81,7 @@ export class LogMarkers {
    */
   otherLine(start: number, end: number, at: number, id: number, exitType: number | null): boolean {
     const text = this.source.text(start, end);
-    if (id === NONE) {
-      if (!SETTINGS_LINE.test(text)) this.parsingErrors.push(`Invalid log line: ${text}`);
-      return false;
-    }
-    const marker = TRUNCATION_MARKER.exec(text);
+    const marker = id === NONE ? null : TRUNCATION_MARKER.exec(text);
     const skipped = marker?.[1];
     if (skipped !== undefined) {
       const issue = this.after(
