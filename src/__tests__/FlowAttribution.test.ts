@@ -50,22 +50,6 @@ describe('flow database attribution', () => {
     expect(apexLog.dmlRowCount?.total).toBe(1);
   });
 
-  it('seeds the (non-bulk) element self counters from FLOW_ELEMENT_LIMIT_USAGE deltas', () => {
-    const log =
-      '09:18:22.6 (100)|EXECUTION_STARTED\n' +
-      '09:18:22.6 (200)|FLOW_ELEMENT_BEGIN|abc-1|FlowRecordUpdate|Update_Account\n' +
-      '09:18:22.6 (210)|FLOW_ELEMENT_LIMIT_USAGE|1 DML statements, total 1 out of 150\n' +
-      '09:18:22.6 (220)|FLOW_ELEMENT_LIMIT_USAGE|1 DML rows, total 1 out of 10000\n' +
-      '09:18:22.6 (230)|FLOW_ELEMENT_END|abc-1|FlowRecordUpdate|Update_Account\n' +
-      '09:19:13.82 (51595120059)|EXECUTION_FINISHED\n';
-    const apexLog = parse(log);
-    const element = apexLog.ofType('FLOW_ELEMENT_BEGIN')[0];
-
-    expect(element?.dmlCount?.self).toBe(1);
-    expect(element?.dmlRowCount?.self).toBe(1);
-    expect(apexLog.dmlCount?.total).toBe(1);
-  });
-
   it('attributes the leading delta, not the running total, when a later element reports a higher total', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n' +

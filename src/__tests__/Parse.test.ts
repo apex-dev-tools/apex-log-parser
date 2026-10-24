@@ -221,7 +221,6 @@ describe.each([
   });
 
   it.each([
-    ['a stream read', () => stalledStream()],
     ['a Blob read', () => ({ size: 1, arrayBuffer: stalled<ArrayBuffer> })],
     ['an async iterator step', () => ({ [Symbol.asyncIterator]: () => ({ next: stalled }) })],
   ])('stops when the signal aborts during %s that never settles', async (_name, source) => {

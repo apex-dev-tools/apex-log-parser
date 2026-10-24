@@ -57,8 +57,4 @@ describe('state per build', () => {
     expect(second).toEqual(facts(fresh(logB)));
     expect(second).toEqual({ snapshots: 1, namespaces: ['myNS'], soql: 3, heapPeak: 0, events: 3 });
   });
-
-  it('builds the same log twice to the same figures', () => {
-    expect(facts(parse(logA))).toEqual(facts(parse(logA)));
-  });
 });

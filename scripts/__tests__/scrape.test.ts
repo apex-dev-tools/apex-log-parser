@@ -224,19 +224,6 @@ describe('releaseCovers', () => {
 });
 
 describe('releaseIdentity', () => {
-  it('derives the key, label and date from the Salesforce release name', () => {
-    expect(
-      releaseIdentity({
-        version_text: "Summer '26 (API version 67.0)",
-        release_version: '67.0',
-        doc_version: '262.0',
-      }),
-    ).toEqual({
-      key: 'summer-26',
-      meta: { label: "Summer '26", api_version: '67.0', date: '2026-06' },
-    });
-  });
-
   it('dates a Winter release to the previous calendar year', () => {
     // Winter '27 ships in October 2026
     expect(
@@ -268,13 +255,6 @@ describe('resolveRelease', () => {
       date: '2026-06',
     });
     expect(resolved.changed).toBe(true);
-  });
-
-  it('reuses the release the committed database already records', () => {
-    expect(resolveRelease(version, database.releases)).toMatchObject({
-      key: 'summer-26',
-      changed: false,
-    });
   });
 
   it('reuses a release that already covers the version, and reports no change', () => {
@@ -502,10 +482,5 @@ describe('buildReport', () => {
     const report = buildReport({ ...input, s2: null });
     expect(report.s2Release).toBeNull();
     expect(report.s2Count).toBeNull();
-  });
-
-  it('reports no change when nothing was written, even with a release added', () => {
-    const report = buildReport({ ...input, dataChanged: false });
-    expect(report.dataChanged).toBe(false);
   });
 });

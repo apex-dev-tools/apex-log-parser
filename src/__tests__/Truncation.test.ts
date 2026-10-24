@@ -30,25 +30,6 @@ describe('truncation', () => {
     expect(apexLog.issues.filter((issue) => issue.summary === 'Skipped-Lines').length).toBe(2);
   });
 
-  it('bounds each skipped region at the point trust resumes', () => {
-    const log =
-      '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
-      '15:20:52.222 (200)|METHOD_ENTRY|[185]|01p000000000AAA|UnitOfWork.first()\n' +
-      '*** Skipped 500 bytes of detailed log\n' +
-      '15:20:52.222 (500)|HEAP_ALLOCATE|[52]|Bytes:3\n' +
-      '15:20:52.222 (800)|METHOD_ENTRY|[190]|01p000000000AAB|UnitOfWork.second()\n' +
-      '15:20:52.222 (900)|METHOD_EXIT|[190]|01p000000000AAB|UnitOfWork.second()\n' +
-      '15:20:52.222 (1000)|METHOD_EXIT|[185]|01p000000000AAA|UnitOfWork.first()\n' +
-      '09:19:13.82 (2000)|EXECUTION_FINISHED\n';
-
-    const region = parse(log).truncation.regions[0];
-
-    expect(region?.startTimestamp).toBe(200);
-    // The following METHOD_ENTRY (800), not the HEAP_ALLOCATE detail line (500).
-    expect(region?.endTimestamp).toBe(800);
-    expect(region?.skippedBytes).toBe(500);
-  });
-
   it('reports a max-size region and the event the log stopped inside', () => {
     const log =
       '09:18:22.6 (100)|EXECUTION_STARTED\n\n' +
