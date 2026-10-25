@@ -23,7 +23,7 @@ export const TRUNCATION_KIND = {
 export type TruncationKind = (typeof TRUNCATION_KIND)[keyof typeof TRUNCATION_KIND];
 
 /** Something wrong or missing in the log that the caller should know. */
-export interface Issue {
+export interface Issue extends IssueText {
   /** Nanoseconds. */
   startTime: number;
   /** Nanoseconds; null when the issue is at one point in time. */
@@ -32,9 +32,6 @@ export interface Issue {
   id: number;
   /** The type of the exit line that closed `id`, when the issue is about that line; else null. */
   exitType: number | null;
-  summary: string;
-  description: string;
-  type: IssueType;
   /** The bytes the platform states it dropped, for a skipped block; else null. */
   skippedBytes: number | null;
   /** The first row the log states after the line the issue is on. Where an end time search starts. */
@@ -42,15 +39,11 @@ export interface Issue {
 }
 
 /** A part of the log the platform dropped, from its issue. */
-export interface TruncationRegion {
+export interface TruncationRegion
+  extends Pick<Issue, 'startTime' | 'id' | 'exitType' | 'skippedBytes'> {
   kind: TruncationKind;
-  /** Nanoseconds. */
-  startTime: number;
   /** Nanoseconds: where the log can be trusted again. */
   endTime: number;
-  id: number;
-  exitType: number | null;
-  skippedBytes: number | null;
 }
 
 /** Every region the platform dropped, in log order. */

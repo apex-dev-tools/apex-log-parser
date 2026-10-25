@@ -35,7 +35,7 @@ import type { Issues, Truncation } from './issues.js';
 import { ISSUE, truncationOf } from './issues.js';
 import { LogMarkers, opensLog } from './markers.js';
 import { DEFAULT, Namespaces, UNSTATED } from './namespaces.js';
-import type { FlowTotal, MergedTail } from './rollups.js';
+import type { FlowTotal } from './rollups.js';
 import { applyFlowResiduals, rollUp, setLogTimes } from './rollups.js';
 import {
   ACCEPTS_TEXT,
@@ -151,8 +151,8 @@ export class LogBuilder {
   private readonly frameLastChild: number[] = [NONE];
   /** Each open frame's package run: the package entry the next one in its namespace merges into. */
   private readonly framePackage: number[] = [NONE];
-  /** Set while the log's last child is a package entry that merged. */
-  private mergedTail: MergedTail | null = null;
+  /** Nanoseconds; set while the log's last child is a package entry that merged, else NaN. */
+  private mergedTail = Number.NaN;
   private readonly flowTotals = new Map<number, FlowTotal>();
   /** Bytes; the running live heap, clamped at 0. */
   private runningHeap = 0;
@@ -484,10 +484,10 @@ export class LogBuilder {
       if (IS_FRAME[type] && type !== ENTERING_MANAGED_PKG && store.exitStamp[previous]) run = NONE;
     }
     let id = NONE;
-    if (top < 0) this.mergedTail = null;
+    if (top < 0) this.mergedTail = Number.NaN;
     if (this.nextType !== ENTERING_MANAGED_PKG) id = this.take(parent, depth);
     else if (run !== NONE && store.namespace[run] === this.namespaceUnder(parent)) {
-      if (top < 0) this.mergedTail = { timestamp: this.nextTimestamp };
+      if (top < 0) this.mergedTail = this.nextTimestamp;
       this.mergePackage(run);
     } else {
       id = this.take(parent, depth);
