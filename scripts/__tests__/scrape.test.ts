@@ -209,6 +209,17 @@ describe('crossCheck', () => {
     );
     expect(conflicts).toEqual([]);
   });
+
+  it('names each field the two sources state differently', () => {
+    const s1 = s2Events.map((e) =>
+      e.name === 'SOQL_EXECUTE_BEGIN' ? { ...e, category: 'APEX_CODE', level: 'FINEST' } : e,
+    );
+
+    expect(crossCheck(s1, s2Events)).toEqual([
+      { event: 'SOQL_EXECUTE_BEGIN', reason: 'category', s1: 'APEX_CODE', s2: 'DB' },
+      { event: 'SOQL_EXECUTE_BEGIN', reason: 'level', s1: 'FINEST', s2: 'INFO' },
+    ]);
+  });
 });
 
 describe('releaseCovers', () => {
@@ -396,23 +407,26 @@ describe('mergeEvents', () => {
     expect(data.events.find((e) => e.event === 'ZZZ_HELP_ONLY_EVENT')).toBeUndefined();
   });
 
-  it('reports a contradicted category without overwriting it', () => {
+  it.each([
+    ['category', 'DB', 'APEX_CODE'],
+    ['level', 'INFO', 'FINEST'],
+  ] as const)('reports a contradicted %s without overwriting it', (field, stored, scraped) => {
     const moved = s1Events.map((e) =>
-      e.name === 'SOQL_EXECUTE_BEGIN' ? { ...e, category: 'APEX_CODE' } : e,
+      e.name === 'SOQL_EXECUTE_BEGIN' ? { ...e, [field]: scraped } : e,
     );
     const { data, restated } = mergeEvents(database, { ...run, s1: { ...run.s1, events: moved } });
 
     expect(restated).toContainEqual({
       event: 'SOQL_EXECUTE_BEGIN',
       source: 'S1',
-      field: 'category',
-      stored: 'DB',
-      scraped: 'APEX_CODE',
+      field,
+      stored,
+      scraped,
     });
 
     const entry = data.events.find((e) => e.event === 'SOQL_EXECUTE_BEGIN');
-    expect(entry?.category).toBe('DB');
-    expect(entry?.source_levels.S1?.category).toBe('APEX_CODE');
+    expect(entry?.[field]).toBe(stored);
+    expect(entry?.source_levels.S1?.[field]).toBe(scraped);
   });
 
   it('reports nothing restated while the sources say what they said before', () => {
@@ -460,7 +474,7 @@ describe('buildReport', () => {
   };
 
   it('states what only the scrape knows, and passes the merge lists through', () => {
-    expect(buildReport(input)).toEqual({
+    expect(buildReport({ ...input, dataChanged: false })).toEqual({
       docVersion: '262.0',
       apiVersion: '67.0',
       releaseKey: 'summer-26',
@@ -469,7 +483,7 @@ describe('buildReport', () => {
       s2Count: 179,
       versionBefore: '3.0.2',
       versionAfter: '3.0.3',
-      dataChanged: true,
+      dataChanged: false,
       added: ['ZZZ_NEW'],
       changed: ['SOQL_EXECUTE_BEGIN'],
       notInS1: [],
