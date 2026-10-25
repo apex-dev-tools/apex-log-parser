@@ -35,7 +35,6 @@
     "bench:simulation": "node --run bench:bundle && node --no-opt --no-maglev --predictable --hash-seed=1 --random-seed=1 --expose-gc --max-old-space-size=8192 --import tsx benchmarks/scripts/large.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "format": "biome format --write .",
     "ci": "biome check . && tsc --noEmit && tsc -p tsconfig.scripts.json && vitest run",
     "version:packages": "changeset version && biome check --write package.json",
     "prepublishOnly": "pnpm run build",

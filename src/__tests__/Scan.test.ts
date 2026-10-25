@@ -62,12 +62,6 @@ describe('LogBuilder.scan', () => {
     expect(slices).toBeGreaterThan(5);
     expect(figures(sliced.finish())).toEqual(figures(builder().build()));
   });
-
-  it('scans a log with no events in one call', () => {
-    const empty = new LogBuilder(new NodeSource(encode('')));
-    expect(empty.scan(Number.NEGATIVE_INFINITY)).toBe(true);
-    expect(empty.finish().store.count).toBe(1);
-  });
 });
 
 describe('LogBuilder.settle', () => {

@@ -31,7 +31,7 @@ const current: Engine = {
 
 const ENGINES: readonly Engine[] = [current];
 
-const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+export const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 /** The engine's parse, from its bundle in `bundleDir`, or from its source when that is null. */
 export async function loadEngine(

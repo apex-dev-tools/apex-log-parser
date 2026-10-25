@@ -21,16 +21,11 @@
         "noUnusedImports": "error"
       },
       "complexity": {
-        "noForEach": "off",
         "noUselessConstructor": "off"
       },
       "style": {
-        "noParameterAssign": "off",
         "noNonNullAssertion": "off",
-        "noUselessElse": "off",
-        "useSingleVarDeclarator": "off",
-        "useTemplate": "off",
-        "noUnusedTemplateLiteral": "off"
+        "useTemplate": "off"
       },
       "suspicious": {
         "noAssignInExpressions": "off",
@@ -50,12 +45,6 @@
     }
   },
   "files": {
-    "includes": [
-      "**",
-      "!**/dist",
-      "!**/node_modules",
-      "!**/data/**/*.json",
-      "!**/scripts/__fixtures__"
-    ]
+    "includes": ["**", "!**/data/**/*.json", "!**/scripts/__fixtures__"]
   }
 }

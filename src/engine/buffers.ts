@@ -37,26 +37,17 @@ export function isOwned(bytes: Uint8Array): boolean {
 
 /** `built` as data that shares its memory. */
 export function dataOf(built: Built): BuiltData {
-  const bytes = built.source.bytes;
+  const { store, strings, issues, source, ...rest } = built;
+  const bytes = source.bytes;
   return {
     bytes,
     // A caller's whole buffer can move too; a part of one, as a pooled Node Buffer, cannot.
     ownsBytes:
       OWNED.has(bytes) || (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength),
-    store: built.store.state(),
-    strings: built.strings.state(),
-    issues: built.issues.list,
-    parsingErrors: built.parsingErrors,
-    unclosedFrames: built.unclosedFrames,
-    seen: built.seen,
-    namespaces: built.namespaces,
-    snapshots: built.snapshots,
-    size: built.size,
-    startTime: built.startTime,
-    debugLevels: built.debugLevels,
-    debugLevelSettings: built.debugLevelSettings,
-    userInfo: built.userInfo,
-    truncation: built.truncation,
+    store: store.state(),
+    strings: strings.state(),
+    issues: issues.list,
+    ...rest,
   };
 }
 

@@ -157,22 +157,7 @@ const owned = <T>(value: T): T => deepFreeze(structuredClone(value));
 class LogView extends RollupView implements ApexLog {
   private readonly built: Built;
   private readonly all: LogEvents;
-  private memo: {
-    children?: readonly ApexEvent[];
-    columns?: Columns;
-    frames?: Int32Array;
-    issues?: readonly LogIssue[];
-    truncation?: LogTruncation;
-    unclosedFrames?: readonly FrameEvent[];
-    parsingErrors?: readonly string[];
-    limits?: GovernorLimits;
-    namespaces?: readonly string[];
-    exceptions?: readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[];
-    entryPoints?: readonly EventOf<'CODE_UNIT_STARTED'>[];
-    userInfo?: UserInfo | null;
-    debugLevels?: Partial<Record<DebugCategory, Level>>;
-    debugLevelSettings?: readonly DebugLevelSetting[];
-  } = {};
+  private memo: { -readonly [K in keyof ApexLog]?: ApexLog[K] } & { frames?: Int32Array } = {};
 
   constructor(built: Built) {
     super(built.store, 0);

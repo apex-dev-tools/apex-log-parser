@@ -11,7 +11,6 @@
     "isolatedDeclarations": true,
     "noEmit": true,
     "declaration": true,
-    "declarationMap": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "erasableSyntaxOnly": true,

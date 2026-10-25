@@ -313,10 +313,8 @@ export class VariableIndex {
       runType.push(cls);
     }
     const runIds = Int32Array.from(runWrite.keys());
-    const runs = grouped(strings.size, runIds, (r) => {
-      // Every run's write reports an address
-      return writeOwner[runWrite[r]!]!;
-    });
+    // Every run's write reports an address
+    const runs = grouped(strings.size, runIds, (r) => writeOwner[runWrite[r]!]!);
 
     // A static lives for the transaction, so its lines are one list per name, wherever made.
     const firstDeclared = new Int32Array(strings.size).fill(NONE);
