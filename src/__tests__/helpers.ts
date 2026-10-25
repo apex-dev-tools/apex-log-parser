@@ -18,6 +18,22 @@ export const encode = (text: string): Uint8Array => new TextEncoder().encode(tex
 /** The log `text` states, through the views. */
 export const parse = (text: string): ApexLog => apexLog(nodeEngine.build(encode(text)));
 
+/** A method around a debug line of multi-byte characters: 2 events. */
+export const SMALL_LOG: string = [
+  '64.0 APEX_CODE,FINE',
+  '09:00:00.001 (1000)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()',
+  '09:00:00.001 (1500)|USER_DEBUG|[2]|DEBUG|café ☕ 😀',
+  '09:00:00.001 (4000)|METHOD_EXIT|[1]|01p000000000AAA|MyClass.run()',
+].join('\n');
+
+/** Enough lines that a parse takes many slices. */
+export function longLog(): string {
+  const lines = ['64.0 APEX_CODE,FINE'];
+  for (let i = 0; i < 200_000; i++)
+    lines.push(`09:00:00.0 (${i + 1})|USER_DEBUG|[1]|DEBUG|line ${i}`);
+  return lines.join('\n');
+}
+
 /** A settings line, for a log built from event lines. */
 export const HEADER = '64.0 APEX_CODE,FINE;APEX_PROFILING,INFO;DB,INFO';
 

@@ -13,7 +13,7 @@ import { readBytes } from '../api/sources.js';
 import { parse as browserParse } from '../browser.js';
 import { parse as nodeParse } from '../node.js';
 import type { ApexLog } from '../views/log.js';
-import { encode, parse as syncParse } from './helpers.js';
+import { encode, longLog, SMALL_LOG, parse as syncParse } from './helpers.js';
 
 declare const setTimeout: (callback: () => void, ms: number) => unknown;
 
@@ -51,28 +51,14 @@ const abortSoon = (controller: { abort(): void }): void => {
   setTimeout(() => controller.abort(), 5);
 };
 
-const LOG = [
-  '64.0 APEX_CODE,FINE',
-  '09:00:00.001 (1000)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()',
-  '09:00:00.001 (1500)|USER_DEBUG|[2]|DEBUG|café ☕ 😀',
-  '09:00:00.001 (4000)|METHOD_EXIT|[1]|01p000000000AAA|MyClass.run()',
-].join('\n');
-const BYTES = encode(LOG);
+const BYTES = encode(SMALL_LOG);
 
 /** What a parse states, to compare one source's result with another's. */
 const summary = (log: ApexLog) => ({
   size: log.size,
   events: [...log.events].map((e) => [e.type, e.text, e.duration.total]),
 });
-const expected = summary(syncParse(LOG));
-
-/** Enough lines that a parse takes several slices. */
-function longLog(): string {
-  const lines = ['64.0 APEX_CODE,FINE'];
-  for (let i = 0; i < 200_000; i++)
-    lines.push(`09:00:00.0 (${i + 1})|USER_DEBUG|[1]|DEBUG|line ${i}`);
-  return lines.join('\n');
-}
+const expected = summary(syncParse(SMALL_LOG));
 
 /** A stream that hands out `chunks` one read at a time, each `delayMs` after it is asked for. */
 function streamOf(chunks: Uint8Array[], delayMs = 0): LogStream & { cancelled: unknown } {
@@ -114,7 +100,7 @@ describe.each([
   ['browser', browserParse],
 ])('parse, %s build', (_build, parse) => {
   it.each([
-    ['a string', () => LOG],
+    ['a string', () => SMALL_LOG],
     ['bytes', () => BYTES],
     ['an ArrayBuffer', () => BYTES.slice().buffer],
     ['a Blob', () => new platform.Blob([BYTES])],
@@ -164,7 +150,7 @@ describe.each([
 
   it('reports each phase in order, ending with every byte', async () => {
     const phases: ParseProgress[] = [];
-    await parse(LOG, { onProgress: (p) => phases.push(p) });
+    await parse(SMALL_LOG, { onProgress: (p) => phases.push(p) });
     const order = phases.map((p) => p.phase).filter((p, i, all) => p !== all[i - 1]);
     expect(order).toEqual(['read', 'scan', 'finish']);
     expect(phases.at(-1)).toEqual({
@@ -178,7 +164,7 @@ describe.each([
     const controller = new platform.AbortController();
     controller.abort();
     const onProgress = vi.fn();
-    const error = await parse(LOG, { signal: controller.signal, onProgress }).catch((e) => e);
+    const error = await parse(SMALL_LOG, { signal: controller.signal, onProgress }).catch((e) => e);
     expect(error).toBe(controller.signal.reason);
     expect(onProgress).not.toHaveBeenCalled();
   });
@@ -200,7 +186,7 @@ describe.each([
 
   it('rejects when the signal aborts in the last scan report of a small log', async () => {
     const controller = new platform.AbortController();
-    const error = await parse(LOG, {
+    const error = await parse(SMALL_LOG, {
       signal: controller.signal,
       onProgress: (p) => {
         if (p.phase === 'scan') controller.abort();
@@ -248,12 +234,12 @@ describe.each([
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
     };
-    await expect(parse(LOG, { signal })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(parse(SMALL_LOG, { signal })).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   it('rejects a stream of text, which would read as zeros', async () => {
     const text = (async function* () {
-      yield LOG;
+      yield SMALL_LOG;
     })();
     await expect(parse(text as never)).rejects.toThrow('not text');
   });
