@@ -12,7 +12,7 @@ VS Code.
 
 ## Features
 
-- **Fast.** A 100 MB log parses in 131 ms and holds 37 MB.
+- **Fast.** A 20 MB log parses in 33 ms and holds 11 MB; 100 MB in 131 ms and 37 MB.
 - **Any source.** A string, bytes, `Blob`, `fetch` `Response`, `ReadableStream` or async iterable.
 - **Off the main thread.** Parses in 5 ms slices with `signal` and `onProgress`, or in a worker
   (`@apexdevtools/apex-log-parser/worker`).
