@@ -4,14 +4,17 @@
 import {
   codeUnitType,
   eventBody,
+  eventText,
   fieldPosition,
   HEAP_PREFIX,
   idOfType,
   splitTrailingFields,
 } from '../catalog/catalog.js';
 import type { EventType, Fields } from '../catalog/types.js';
-import type { LimitUsage, RunningUsage } from '../limits.js';
-import { codedUsage, labelledUsage, runningUsage } from '../limits.js';
+import type { Limits, LimitUsage, RunningUsage } from '../limits.js';
+import { codedUsage, labelledUsage, limitsOfBlock, runningUsage } from '../limits.js';
+import type { ProfilingDetails } from './profiling.js';
+import { profilingDetails } from './profiling.js';
 
 /** The query optimizer's plan for one query. Each value is null when the plan does not state it. */
 export interface ExplainPlan {
@@ -74,6 +77,12 @@ export interface EventDetails {
   readonly FLOW_INTERVIEW_FINISHED_LIMIT_USAGE: LimitUsage | null;
   readonly FLOW_ELEMENT_LIMIT_USAGE: RunningUsage | null;
   readonly FLOW_BULK_ELEMENT_LIMIT_USAGE: RunningUsage | null;
+  /**
+   * The usage the block states. A metric it leaves out reads `used: 0, limit: null`, as `log.limits`
+   * does. A block states heap as 0, so `heapSize.used` is 0.
+   */
+  readonly LIMIT_USAGE_FOR_NS: { readonly limits: Limits };
+  readonly CUMULATIVE_PROFILING: ProfilingDetails;
   /** The element that failed. Its text holds the message only. */
   readonly FLOW_ELEMENT_ERROR: {
     readonly elementType: string | null;
@@ -222,6 +231,13 @@ for (const [type, parse] of FLOW_USAGE) {
     };
   });
 }
+
+// The text the scan's limit hook reads, so these figures match `log.limits.snapshots`.
+reader('LIMIT_USAGE_FOR_NS', (t) => (f) => ({ limits: limitsOfBlock(eventText(t, f) ?? '') }));
+reader('CUMULATIVE_PROFILING', (t) => {
+  const section = text(t, 'section');
+  return (f) => profilingDetails(section(f), f.continuation());
+});
 
 reader('FLOW_ELEMENT_ERROR', (t) => (f) => {
   // A message can span lines; then the element follows it on the last line.

@@ -22,7 +22,8 @@ VS Code extension and its [MCP server](https://github.com/certinia/debug-log-ana
 - **Any source.** A string, bytes, a `Blob`, a `fetch` `Response`, a `ReadableStream` or an async
   iterable.
 - **Every documented event type**, each with its kind of work (`kind`), its debug level and its
-  extra values (`details`), such as a query's plan or whether a throw was caught.
+  extra values (`details`), such as a query's plan, whether a throw was caught, each
+  cumulative profiling row, or the figures of one limit block.
 - **An event tree** where each entry is matched to its exit, with self and total times in
   nanoseconds.
 - **Variables** that each event of a `FINEST` log could see, as the log recorded them, and the
@@ -122,6 +123,17 @@ for (const query of log.ofType('SOQL_EXECUTE_BEGIN')) {
   // details is typed by the event type: here the aggregations, and the plan when the log states one.
   // soqlRowCount is null for a query with no end line, as one an exception stopped.
   console.log(query.lineNumber, query.soqlRowCount?.self, query.details.explain?.relativeCost);
+}
+
+// Each profiling row: what ran, how often, and its time in nanoseconds.
+const rows = log.ofType('CUMULATIVE_PROFILING').flatMap((e) => e.details.rows);
+console.table(
+  rows.map((r) => ({ at: r.location, detail: r.detail, count: r.count, durationNs: r.duration })),
+);
+
+// Each limit block's own figures. Two blocks can share a timestamp.
+for (const block of log.ofType('LIMIT_USAGE_FOR_NS')) {
+  console.log(block.namespace, block.details.limits.soqlQueries.used);
 }
 ```
 

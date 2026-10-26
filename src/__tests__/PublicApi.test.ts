@@ -49,6 +49,9 @@ import type {
   ParseOptions,
   ParsePhase,
   ParseProgress,
+  ProfilingDetails,
+  ProfilingRow,
+  ProfilingSection,
   Rollups,
   RunningUsage,
   SelfTotal,
@@ -84,6 +87,7 @@ const PUBLIC_EXPORTS = [
   'LINE_NUMBER',
   'parse',
   'PARSE_PHASE',
+  'PROFILING_SECTION',
   'SHAPE',
   'toBuffers',
   'TRUNCATION_KIND',
@@ -138,6 +142,9 @@ interface PublicTypeSurface {
   parseOptions: ParseOptions;
   parsePhase: ParsePhase;
   parseProgress: ParseProgress;
+  profilingDetails: ProfilingDetails;
+  profilingRow: ProfilingRow;
+  profilingSection: ProfilingSection;
   rollups: Rollups;
   runningUsage: RunningUsage;
   selfTotal: SelfTotal;
