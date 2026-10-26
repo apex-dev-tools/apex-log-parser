@@ -6,10 +6,12 @@ applies.
 ## Layout
 
 - `parse.bench.ts` — the `pnpm run bench` suite, which CodSpeed runs on every pull request. It
-  times the node engine's build from bytes, as the package bundles it (`tsdown.bench.config.ts`);
-  `bench:async` times `parse()`. `bench:bundle` and `bench:run` are its two steps, for CI. The
-  sources under Vite's module runner would read each import through a getter. `bench:large` and
-  `bench:simulation` build the bundle too, and time it.
+  times the node engine's build from bytes, as the package bundles it (`tsdown.bench.config.ts`),
+  and, on `parse_2mb`, what each read in `READS` (`scripts/reads.ts`) adds: on a new view each run
+  (`read`), and again on one view (`again`), as a redraw does. `bench:async` times `parse()`.
+  `bench:bundle` and `bench:run` are its two steps, for CI. The sources under Vite's module runner
+  would read each import through a getter. `bench:large` and `bench:simulation` build the bundle
+  too, and time it.
 - `fixtures/` — the synthetic logs. `fixtures.ts` generates them from a seed, with placeholder
   content only. Its profiles (small, developer and large) take their event mix, depth and wrapped
   lines from `profiles.json`, which holds only numbers measured from real logs. A new hot path in
@@ -36,9 +38,11 @@ applies.
   instead: from a file's bytes, with the decode the legacy parser needs and the bytes the log
   keeps, so their figures differ from this file's.
 - `scripts/views.ts` — `pnpm run bench:views`, what reading the parser's views adds to its
-  build on the same logs: every column of every event, an object for every event, and the
-  variables at every 1000th variable line, which indexes them all. At 100 MB it fails above
-  30 ms, 250 ms and 50 ms. Local only.
+  build on the same logs: every column of every event, an object for every event, a walk of the
+  tree through `children`, every event's text, `columns.text`, and the variables at every 1000th
+  variable line, which indexes them all. At 100 MB it fails above 120 ms, 25 ms, 50 ms, 200 ms,
+  150 ms and 50 ms. Local only. The reads are in
+  `scripts/reads.ts`, with type imports only, so the CodSpeed bench loads no second engine.
 - `scripts/async.ts` — `pnpm run bench:async`, the parser's async `parse()` on the same logs:
   the longest host turn it holds, its total against a direct build, how soon an abort rejects,
   the same parse in a worker thread, and the reopen of a log moved to another thread. At 100 MB
