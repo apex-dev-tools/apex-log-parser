@@ -26,12 +26,12 @@ VS Code.
 
 Parse:
 
-| Log size | v0.2 | v0.3 | v0.4 |
-| --- | --- | --- | --- |
-| 8 MB | 106 ms, 104 MB | 86 ms, 77 MB | 15 ms, 4 MB |
-| 20 MB | 274 ms, 259 MB | 221 ms, 190 MB | 33 ms, 11 MB |
-| 50 MB | 550 ms, 555 MB | 426 ms, 408 MB | 66 ms, 19 MB |
-| 100 MB | 1,116 ms, 1,105 MB | 829 ms, 812 MB | 131 ms, 37 MB |
+| Log size | v0.2               | v0.3           | v0.4          |
+| -------- | ------------------ | -------------- | ------------- |
+| 8 MB     | 106 ms, 104 MB     | 86 ms, 77 MB   | 15 ms, 4 MB   |
+| 20 MB    | 274 ms, 259 MB     | 221 ms, 190 MB | 33 ms, 11 MB  |
+| 50 MB    | 550 ms, 555 MB     | 426 ms, 408 MB | 66 ms, 19 MB  |
+| 100 MB   | 1,116 ms, 1,105 MB | 829 ms, 812 MB | 131 ms, 37 MB |
 
 Synthetic logs, median of 5 runs, M4 Pro, Node.js 24. The log is in memory before the timer
 starts: bytes for v0.4, a string for v0.2 and v0.3. Memory is what the parsed log holds, without
@@ -39,11 +39,11 @@ the log itself.
 
 Read, after the parse: a 95 MB real log, 432,000 events, first read / repeat read:
 
-| Work | Event objects | `log.columns` |
-| --- | --- | --- |
-| Numbers only: depth, self time, SOQL count | 11 / 10 ms | 9 / 4 ms |
-| Flame chart: tree walk, a label per frame | 108 / 26 ms | 87 / 16 ms |
-| Call tree: self time per method | 117 / 36 ms | 83 / 5 ms |
+| Work                                       | Event objects | `log.columns` |
+| ------------------------------------------ | ------------- | ------------- |
+| Numbers only: depth, self time, SOQL count | 11 / 10 ms    | 9 / 4 ms      |
+| Flame chart: tree walk, a label per frame  | 108 / 26 ms   | 87 / 16 ms    |
+| Call tree: self time per method            | 117 / 36 ms   | 83 / 5 ms     |
 
 The parse holds 25 MB. Reads add 0–2 MB through event objects, 3–6 MB through `columns` (26 MB
 for every column). v0.3 held 761 MB.

@@ -13,12 +13,12 @@ body. Read the form first and build the body to match it.
 `.github/ISSUE_TEMPLATE/` holds `bug_report.yml`, `feature_request.yml` and `chore.yml`. Pick on
 `name` and `description`, not on which is nearest to hand. The front matter says what to send:
 
-| Front matter | What to send |
-| --- | --- |
+| Front matter                 | What to send                                |
+| ---------------------------- | ------------------------------------------- |
 | `title: '🔧 chore: <title>'` | the title starts with that prefix, verbatim |
-| `type: Task` | the issue type |
-| `labels: ['chore']` | those labels |
-| each body field's `label:` | an `###` heading, in the form's order |
+| `type: Task`                 | the issue type                              |
+| `labels: ['chore']`          | those labels                                |
+| each body field's `label:`   | an `###` heading, in the form's order       |
 
 A `validations: required` field must be answered. No form fits — a perf task, say — take the closest
 and say in the body that it is the closest.

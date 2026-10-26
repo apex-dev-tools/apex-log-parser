@@ -32,10 +32,10 @@ Add `ApexLog.entryPoints`, the entry point of every execution in the log (#90)
 
 ## Wrong, then right
 
-| Wrong | Right |
-|---|---|
-| `Breaking: remove the /types entry point. The root now exports every public type and the const companions (LOG_LEVEL, LOG_CATEGORY, ...). To migrate, ...` | `` Breaking: remove the `/types` entry point. To migrate, change `from '@apexdevtools/apex-log-parser/types'` to `from '@apexdevtools/apex-log-parser'`. `` |
-| `Read userInfo from the first timestamped line only. Before, an anonymous Apex echo ... The search also no longer scans the whole log.` | `` Fix a wrong or missing `userInfo` when a log quotes a `USER_INFO` or `EXECUTION_STARTED` line `` |
-| `Improve search performance` | `Search a 100MB log 10× faster` |
+| Wrong                                                                                                                                                      | Right                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Breaking: remove the /types entry point. The root now exports every public type and the const companions (LOG_LEVEL, LOG_CATEGORY, ...). To migrate, ...` | ``Breaking: remove the `/types` entry point. To migrate, change `from '@apexdevtools/apex-log-parser/types'` to `from '@apexdevtools/apex-log-parser'`.`` |
+| `Read userInfo from the first timestamped line only. Before, an anonymous Apex echo ... The search also no longer scans the whole log.`                    | ``Fix a wrong or missing `userInfo` when a log quotes a `USER_INFO` or `EXECUTION_STARTED` line``                                                         |
+| `Improve search performance`                                                                                                                               | `Search a 100MB log 10× faster`                                                                                                                           |
 
 When trimming, show each file's old and new text.
