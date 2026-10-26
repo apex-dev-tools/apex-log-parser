@@ -158,7 +158,7 @@ export interface FrameEvent extends EventBase {
    * the log stopped or a new execution started first, at the last time inside the frame.
    */
   readonly endedBy: EndedBy;
-  /** In log order. */
+  /** In log order. A new array on each read. */
   readonly children: readonly ApexEvent[];
 }
 
@@ -243,15 +243,18 @@ export class LogEvents {
     return new EventView(this, this.store, this.strings, id) as unknown as ApexEvent;
   }
 
-  /** The events directly under row `id`, which is the log for 0, in log order. A new array each call. */
-  childrenOf(id: number): readonly ApexEvent[] {
+  /**
+   * The events directly under row `id`, which is the log for 0, in log order. A new array each
+   * call, so not frozen: a freeze makes a tree walk about 30% slower, and guards no shared array.
+   */
+  childrenOf(id: number): ApexEvent[] {
     const { subtreeEnd } = this.store;
     const out: ApexEvent[] = [];
     // A child's subtree ends where its next sibling starts; every id here is a row, so an event.
     for (let child = id + 1; child < subtreeEnd[id]!; child = subtreeEnd[child]!) {
       out.push(this.event(child)!);
     }
-    return Object.freeze(out);
+    return out;
   }
 }
 

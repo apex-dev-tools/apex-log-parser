@@ -3,7 +3,7 @@
  */
 import { idOfType } from '../catalog/catalog.js';
 import { nodeEngine } from '../engine/node.js';
-import type { EventOf } from '../views/events.js';
+import type { ApexEvent, EventOf } from '../views/events.js';
 import { apexLog } from '../views/log.js';
 import { at, encode, HEADER, logOf, method } from './helpers.js';
 
@@ -102,6 +102,31 @@ describe('ApexLog', () => {
     expect([...columns.endTimestamp].slice(1)).toEqual([100, 90, 50, 60]);
     expect([...columns.durationTotal]).toEqual([90, 90, 70, 20, 0]);
     expect([...columns.durationSelf]).toEqual([0, 20, 50, 20, 0]);
+  });
+
+  // Catches an iterator that keeps its place between loops: the second loop would be empty.
+  it('gives every event in id order on each loop over events', () => {
+    const log = logOf(...method);
+    const { events } = log;
+    expect([ids(events), ids(events)]).toEqual([
+      [1, 2, 3, 4],
+      [1, 2, 3, 4],
+    ]);
+    // As a generator's: the iterator is iterable too, so a loop can take it.
+    const iterator = events[Symbol.iterator]() as IterableIterator<ApexEvent>;
+    iterator.next();
+    expect(ids(iterator)).toEqual([2, 3, 4]);
+  });
+
+  // Catches one array shared between reads: a caller's change would reach every other caller.
+  it("gives an event's children as a new array on each read, and the log's as one frozen array", () => {
+    const log = logOf(...method);
+    const unit = log.event(1);
+    const first = unit?.children as ApexEvent[];
+    first.pop();
+    expect(ids(unit?.children ?? [])).toEqual([2]);
+    expect(log.children).toBe(log.children);
+    expect(Object.isFrozen(log.children)).toBe(true);
   });
 
   it('points each issue at its event and the exit line it is on', () => {
