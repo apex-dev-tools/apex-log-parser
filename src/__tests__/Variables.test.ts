@@ -30,7 +30,7 @@ describe('variables', () => {
   it("gives each local's last write by the end of the frame, with its type and id", () => {
     const log = logOf(...OUTER);
     const outer = eventWith(log, 'ns.Outer.run()');
-    expect(outer.variables?.frame).toBe(outer);
+    expect(outer.variables?.frame?.id).toBe(outer.id);
     expect(outer.variables?.locals).toEqual([
       {
         name: 'total',
@@ -63,7 +63,7 @@ describe('variables', () => {
       `${at(1400)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
     );
     const query = eventWith(log, 'SOQL_EXECUTE_BEGIN').variables;
-    expect(query?.frame).toBe(eventWith(log, 'ns.Outer.run()'));
+    expect(query?.frame?.id).toBe(eventWith(log, 'ns.Outer.run()').id);
     expect(query?.locals.map((v) => [v.name, v.value])).toEqual([
       ['compId', '"first"'],
       ['qry', '"SELECT Id FROM Account"'],
@@ -148,7 +148,7 @@ describe('variables', () => {
       `${at(1700)}|METHOD_EXIT|[1]|01p000000000AAA|ns.Outer.run()`,
     );
     const query = eventWith(log, 'SOQL_EXECUTE_BEGIN').variables;
-    expect(query?.frame).toBe(eventWith(log, 'ns.Outer.run()'));
+    expect(query?.frame?.id).toBe(eventWith(log, 'ns.Outer.run()').id);
     expect(query?.locals.map((v) => v.name)).toEqual(['a']);
   });
 

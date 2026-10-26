@@ -5,8 +5,8 @@ For coding agents working on the views. The root [AGENTS.md](../../AGENTS.md) an
 
 ## Layout
 
-- `events.ts` — the store as events: one runtime class for every type; each event made on first
-  read, then the same object for its id.
+- `events.ts` — the store as events: one runtime class for every type; a new view on each read,
+  so the log keeps no object per event.
 - `lines.ts` — an event's text, raw line and fields, read from the source when a caller asks,
   through the catalog's rules. The flow interviews name needs the tree, so it is the one rule held
   here.

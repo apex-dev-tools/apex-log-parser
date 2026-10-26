@@ -26,10 +26,9 @@ describe('events', () => {
     const unit = frame(log.event(1));
     const run = frame(unit.children[0]);
     expect([unit.parent, unit.depth]).toEqual([null, 1]);
-    expect([run.parent, run.depth]).toEqual([unit, 2]);
+    expect([run.parent?.id, run.depth]).toEqual([unit.id, 2]);
     expect(run.children.map((e) => e.type)).toEqual(['SOQL_EXECUTE_BEGIN', 'STATEMENT_EXECUTE']);
-    expect(run.children).toBe(run.children);
-    expect(run.children.every((e) => e.parent === run && e.depth === 3)).toBe(true);
+    expect(run.children.every((e) => e.parent?.id === run.id && e.depth === 3)).toBe(true);
   });
 
   it('states times, rollups and the type info, from the columns', () => {

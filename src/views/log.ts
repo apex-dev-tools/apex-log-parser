@@ -88,7 +88,7 @@ export interface ApexLog extends Rollups {
   readonly events: Iterable<ApexEvent>;
   /** The number of events. The log itself is not one. */
   readonly eventCount: number;
-  /** The event with `id`, the same object on every call; null when no event has it. */
+  /** The event with `id`, a new object each call; null when no event has it. Key by `id`. */
   event(id: number): ApexEvent | null;
   /** Every event of the given types, in id order. Throws a RangeError for a name no type has. */
   ofType<T extends EventType>(...types: T[]): readonly EventOf<T>[];

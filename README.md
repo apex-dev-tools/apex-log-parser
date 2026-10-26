@@ -234,9 +234,9 @@ heap figure the header's level does not record is `null`, not 0. This is the mos
 `limits.final` and `limits.peak` metric stays at `{ used: 0, limit: null, percentUsed: null }`. That
 is not a transaction that used nothing.
 
-**Use `id` as a key within one parse.** Ids start at 1 and follow log order. `event(id)` gives the
-same object on every call, so an event also works as a `WeakMap` key. Ids are not stable across
-parses.
+**Use `id` as a key within one parse.** Ids start at 1 and follow log order. Each read gives a new
+event object, so the log holds no object per event: key a `Map` by `id`, not by the event. Ids are
+not stable across parses.
 
 **Two lists, two meanings.** `parsingErrors` holds lines the parser could not read, which is a
 parser problem. `issues` holds problems in the transaction the log describes, such as a truncated

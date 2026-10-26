@@ -10,16 +10,13 @@ import { at, encode, HEADER, logOf, method } from './helpers.js';
 const ids = (events: Iterable<{ id: number }>): number[] => [...events].map((e) => e.id);
 
 describe('ApexLog', () => {
-  it('holds every event, its top level as children, and the same object as event()', () => {
+  it('holds every event and its top level as children', () => {
     const log = logOf(...method, `${at(110)}|STATEMENT_EXECUTE|[9]`);
     expect([log.eventCount, ids(log.events), ids(log.children)]).toEqual([
       5,
       [1, 2, 3, 4, 5],
       [1, 5],
     ]);
-    expect(log.children).toBe(log.children);
-    expect(log.children[0]).toBe(log.event(1));
-    expect([...log.events][1]).toBe(log.event(2));
     expect([0, 6, -1, 1.5, Number.NaN].map((id) => log.event(id))).toEqual([
       null,
       null,

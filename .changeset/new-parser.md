@@ -15,6 +15,7 @@ What breaks:
 
 - **Async.** `const log = await parse(text)`.
 - **Views, not classes.** No event classes, `ApexLogParser` or `instanceof`. Use `event.type`, `event.kind` or `log.ofType(type)`.
+- **A new event object per read.** `log.event(1) !== log.event(1)`, so key a `Map` by `id`.
 - **Exit lines are not events.** They set the end and duration of their frame.
 - **`null` means not stated**, not `''`, `0` or `'default'`.
 - **Renamed:** `eventIndex` → `id`, `timestamp` → `startTimestamp`, `exitStamp` → `endTimestamp`, `isParent` → `isFrame`, `isTruncated` → `endedBy`, `logIssues` → `issues`, `governorLimits` → `limits`. Import from the root; `./next` is gone. The compiler finds the rest.

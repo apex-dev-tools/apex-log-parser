@@ -212,14 +212,13 @@ function recordedOf({ seen, debugLevels }: Built): Uint8Array {
 }
 const NO_CHILDREN: readonly ApexEvent[] = Object.freeze([]);
 
-/** The events of one build, each made on first read and then the same object. */
+/** The events of one build. Each read makes a new view, so the log keeps no object per event. */
 export class LogEvents {
   private readonly store: Store;
   private readonly strings: StringTable;
   private readonly source: Source;
   /** Shared by every event of the build, so no event holds its own. */
   readonly lines: EventLines;
-  private readonly views: (ApexEvent | undefined)[];
   private vars: LogVariables | null = null;
   readonly recorded: Uint8Array;
 
@@ -230,7 +229,6 @@ export class LogEvents {
     this.strings = strings;
     this.source = source;
     this.lines = new EventLines(store, source, issues);
-    this.views = new Array(store.count);
   }
 
   /** Each event's variables, shared like `lines`; made on first read. */
@@ -242,12 +240,7 @@ export class LogEvents {
   event(id: number): ApexEvent | null {
     if (!(id >= 1 && id < this.store.count && Number.isInteger(id))) return null;
     // One runtime class serves both shapes; `isFrame` tells them apart.
-    return (this.views[id] ??= new EventView(
-      this,
-      this.store,
-      this.strings,
-      id,
-    ) as unknown as ApexEvent);
+    return new EventView(this, this.store, this.strings, id) as unknown as ApexEvent;
   }
 
   /** The events directly under row `id`, which is the log for 0, in log order. A new array each call. */
@@ -358,7 +351,6 @@ export abstract class RollupView implements Rollups {
 class EventView extends RollupView {
   private readonly events: LogEvents;
   private readonly strings: StringTable;
-  private kids: readonly ApexEvent[] | null = null;
   // undefined until read; null is text the line does not state.
   private said: string | null | undefined = undefined;
   // undefined until read; null is a type that states no details.
@@ -410,7 +402,7 @@ class EventView extends RollupView {
 
   get children(): readonly ApexEvent[] {
     if (!this.isFrame) return NO_CHILDREN;
-    return (this.kids ??= this.events.childrenOf(this.id));
+    return this.events.childrenOf(this.id);
   }
 
   get lineNumber(): number | 'EXTERNAL' | null {
