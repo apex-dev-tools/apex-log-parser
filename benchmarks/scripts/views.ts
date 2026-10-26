@@ -1,7 +1,8 @@
 // What reading the parser's views adds to its build, on the synthetic logs. Local only.
 //   pnpm run bench:views [--runs=5] [--log=<name>]
-// Gates (100 MB): reading every column adds < 30 ms; an object for every event < 250 ms; the
-// variables at every 1000th variable line, which indexes them all, < 50 ms.
+// Gates (100 MB): reading every column adds < 85 ms; an object for every event < 15 ms; a walk of
+// the tree through children < 35 ms; every event's text < 145 ms; every frame's text from the
+// columns < 115 ms; the variables at every 1000th variable line, which indexes them all, < 50 ms.
 
 import process, { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
@@ -10,41 +11,20 @@ import { nodeEngine } from '../../src/engine/node.js';
 import type { ApexLog } from '../../src/views/log.js';
 import { apexLog } from '../../src/views/log.js';
 import { largeLogs, makeLog } from '../fixtures/fixtures.js';
+import { READS } from './reads.js';
 import { runsFlag, timedRuns } from './runs.js';
 import { versus } from './versus.js';
 
 /** The gates, in milliseconds over the build, for the 100 MB log. */
-const GATES = { columns: 30, events: 250, variables: 50 } as const;
+const GATES: Readonly<Record<string, number>> = {
+  columns: 85,
+  events: 15,
+  tree: 35,
+  text: 145,
+  textColumn: 115,
+  variables: 50,
+};
 const GATE_LOG = 'parse_100mb';
-
-/** Reads every column of every event row once, as a caller that reads them all does. */
-export function readColumns(log: ApexLog): number {
-  const {
-    type,
-    parent,
-    depth,
-    subtreeEnd,
-    startTimestamp,
-    endTimestamp,
-    durationSelf,
-    durationTotal,
-  } = log.columns;
-  // A sum of every read, so none is dead code the compiler can drop.
-  let sum = 0;
-  // Row 0 is the log, not an event. Every index is a row, so in range.
-  for (let id = 1; id < type.length; id++) {
-    sum += type[id]! + parent[id]! + depth[id]! + subtreeEnd[id]!;
-    sum += startTimestamp[id]! + endTimestamp[id]! + durationSelf[id]! + durationTotal[id]!;
-  }
-  return sum;
-}
-
-/** Makes the object for every event, and reads one field from each so none is skipped. */
-export function readEvents(log: ApexLog): number {
-  let sum = 0;
-  for (const event of log.events) sum += event.depth;
-  return sum;
-}
 
 const ASSIGNMENT = idOfType('VARIABLE_ASSIGNMENT');
 
@@ -81,9 +61,8 @@ async function main(): Promise<void> {
     const rows = built.store.count - 1;
     console.log(`${name}: ${rows} events, build ${ms(build.ms)}, keeps ${mb(build.heapBytes)}`);
 
-    const work: [keyof typeof GATES, (log: ApexLog) => unknown][] = [
-      ['columns', readColumns],
-      ['events', readEvents],
+    const work: (readonly [string, (log: ApexLog) => unknown])[] = [
+      ...READS,
       ['variables', readVariables],
     ];
     for (const [what, run] of work) {
@@ -92,7 +71,8 @@ async function main(): Promise<void> {
         const log = apexLog(built);
         return [log, run(log)];
       });
-      const gate = name === GATE_LOG ? GATES[what] : null;
+      if (!(what in GATES)) throw new Error(`No gate for ${what}`);
+      const gate = name === GATE_LOG ? (GATES[what] ?? null) : null;
       const verdict =
         gate === null ? '' : `, gate < ${gate} ms: ${result.ms < gate ? 'pass' : 'FAIL'}`;
       if (gate !== null && result.ms >= gate) failed = true;

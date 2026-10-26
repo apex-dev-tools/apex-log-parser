@@ -9,34 +9,13 @@ import type { IssueType, TruncationKind } from '../engine/issues.js';
 import { isFrameRow } from '../engine/tables.js';
 import type { GovernorLimits } from '../limits.js';
 import { governorLimits } from '../limits.js';
+import type { Columns } from './columns.js';
+import { columnsOf } from './columns.js';
 import type { ApexEvent, EventOf, FrameEvent, Rollups } from './events.js';
 import { LogEvents, RollupView } from './events.js';
 
 // WHATWG and Node 17+; declared here so `lib` stays ES2022.
 declare function structuredClone<T>(value: T): T;
-
-/**
- * The log's events as parallel arrays indexed by id, for a caller that reads every event. Row 0 is
- * the log. The arrays are the parse's own, not copies: read them, never write them.
- */
-export interface Columns {
-  /** Type ids: `eventType(type[id])`. Row 0 holds one past the last type id. */
-  readonly type: Uint16Array;
-  /** The parent's id: 0 for an event at the top of the log, -1 for the log. */
-  readonly parent: Int32Array;
-  /** 0 for the log, 1 for an event at its top. */
-  readonly depth: Uint16Array;
-  /** One past the last id under each row, so its descendants are `id + 1` to `subtreeEnd[id] - 1`. */
-  readonly subtreeEnd: Int32Array;
-  /** Nanoseconds. */
-  readonly startTimestamp: Float64Array;
-  /** Nanoseconds; a leaf ends where it starts. */
-  readonly endTimestamp: Float64Array;
-  /** Nanoseconds. */
-  readonly durationSelf: Float64Array;
-  /** Nanoseconds; 0 without an exit, or with one at 0, as `duration.total`. */
-  readonly durationTotal: Float64Array;
-}
 
 /** Where in the tree an issue or a truncation region is. */
 export interface LogPlace {
@@ -79,7 +58,9 @@ export interface LogTruncation {
 
 /**
  * One parsed log, and the root of its event tree. Every object it returns is frozen, apart from
- * the typed arrays in `columns` and the `Map` in `limits`, which JavaScript cannot freeze.
+ * the typed arrays in `columns` and the `Map` in `limits`, which JavaScript cannot freeze, and
+ * what is new on each read, so a change reaches no other caller: an event, its rollups such as
+ * `duration`, and its `children`.
  */
 export interface ApexLog extends Rollups {
   /** The events at the top of the log, in log order. Their `parent` is null. */
@@ -88,13 +69,13 @@ export interface ApexLog extends Rollups {
   readonly events: Iterable<ApexEvent>;
   /** The number of events. The log itself is not one. */
   readonly eventCount: number;
-  /** The event with `id`, the same object on every call; null when no event has it. */
+  /** The event with `id`, a new object each call; null when no event has it. Key by `id`. */
   event(id: number): ApexEvent | null;
   /** Every event of the given types, in id order. Throws a RangeError for a name no type has. */
   ofType<T extends EventType>(...types: T[]): readonly EventOf<T>[];
   /** The deepest frame running at `ns`: its startTimestamp ≤ ns < its endTimestamp. Null when none is. */
   at(ns: number): FrameEvent | null;
-  /** Every event's tree links and times as arrays, made on first read. */
+  /** Every event as arrays, for a pass over every event or one you repeat. */
   readonly columns: Columns;
   /** Bytes of the source. */
   readonly size: number;
@@ -153,6 +134,34 @@ function deepFreeze<T>(value: T): T {
 /** A frozen copy, so a caller never reaches the build through it. */
 const owned = <T>(value: T): T => deepFreeze(structuredClone(value));
 
+/**
+ * Each event in id order. A class, not a generator: a loop over every event runs 20–25% faster.
+ * On `Iterator.prototype` where the host has it, so the iterator helpers work, as on a generator.
+ */
+class EventIterator implements IterableIterator<ApexEvent> {
+  private readonly all: LogEvents;
+  private readonly count: number;
+  private id = 0;
+
+  constructor(all: LogEvents, count: number) {
+    this.all = all;
+    this.count = count;
+  }
+
+  next(): IteratorResult<ApexEvent> {
+    // Every id from 1 below count is a row, so an event.
+    return ++this.id < this.count
+      ? { value: this.all.event(this.id)!, done: false }
+      : { value: undefined, done: true };
+  }
+
+  [Symbol.iterator](): this {
+    return this;
+  }
+}
+const ITERATOR = (globalThis as { Iterator?: { prototype: object } }).Iterator;
+if (ITERATOR) Object.setPrototypeOf(EventIterator.prototype, ITERATOR.prototype);
+
 /** Row 0, read as the log. Each figure that needs work is made on first read. */
 class LogView extends RollupView implements ApexLog {
   private readonly built: Built;
@@ -175,18 +184,14 @@ class LogView extends RollupView implements ApexLog {
   }
 
   get children(): readonly ApexEvent[] {
-    return (this.memo.children ??= this.all.childrenOf(0));
+    // Held, so frozen: unlike an event's children, every caller gets this one array.
+    return (this.memo.children ??= Object.freeze(this.all.childrenOf(0)));
   }
 
   get events(): Iterable<ApexEvent> {
     const all = this.all;
     const count = this.store.count;
-    return {
-      *[Symbol.iterator]() {
-        // Every id from 1 below count is a row, so an event.
-        for (let id = 1; id < count; id++) yield all.event(id)!;
-      },
-    };
+    return { [Symbol.iterator]: () => new EventIterator(all, count) };
   }
 
   get eventCount(): number {
@@ -231,7 +236,7 @@ class LogView extends RollupView implements ApexLog {
   }
 
   get columns(): Columns {
-    return (this.memo.columns ??= this.makeColumns());
+    return (this.memo.columns ??= columnsOf(this.built, this.all, this.namespaces));
   }
 
   get size(): number {
@@ -340,22 +345,6 @@ class LogView extends RollupView implements ApexLog {
       at += list.length;
     }
     return ids.sort();
-  }
-
-  private makeColumns(): Columns {
-    const store = this.store;
-    const durationTotal = new Float64Array(store.count);
-    for (let id = 0; id < store.count; id++) durationTotal[id] = store.durationTotal(id);
-    return Object.freeze({
-      type: store.type,
-      parent: store.parent,
-      depth: store.depth,
-      subtreeEnd: store.subtreeEnd,
-      startTimestamp: store.timestamp,
-      endTimestamp: store.exitStamp,
-      durationSelf: store.durationSelf,
-      durationTotal,
-    });
   }
 
   private makeEntryPoints(): readonly EventOf<'CODE_UNIT_STARTED'>[] {

@@ -52,6 +52,17 @@ const LOG = [
   '09:00:00.0 (1100)|METHOD_ENTRY|[5]|01p000000000AAA|ns.MyClass.last()',
 ].join('\n');
 
+/** Typed arrays as plain arrays, and objects by their data fields, so `toEqual` compares values. */
+const valuesOf = (value: unknown): unknown => {
+  if (ArrayBuffer.isView(value)) return [...(value as Int32Array)];
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, v]) => typeof v !== 'function')
+      .map(([k, v]) => [k, valuesOf(v)]),
+  );
+};
+
 /** Everything a log states through the views, as plain values. */
 function summary(log: ApexLog): unknown {
   const ids = (events: readonly { id: number }[]) => events.map((e) => e.id);
@@ -81,7 +92,7 @@ function summary(log: ApexLog): unknown {
       endedBy: e.isFrame ? e.endedBy : null,
       endTimestamp: e.endTimestamp,
     })),
-    columns: Object.fromEntries(Object.entries(log.columns).map(([k, v]) => [k, [...v]])),
+    columns: valuesOf(log.columns),
     size: log.size,
     startTime: log.startTime,
     isTruncated: log.isTruncated,

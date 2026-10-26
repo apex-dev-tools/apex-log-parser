@@ -39,6 +39,8 @@ export type {
   RunningUsage,
 } from '../limits.js';
 export { LIMIT_METRICS, LIMIT_UNIT } from '../limits.js';
+export type { Columns, CountColumn, HeapColumn, TextColumn } from '../views/columns.js';
+export { LINE_NUMBER } from '../views/columns.js';
 export type {
   AnyDetails,
   DetailsOf,
@@ -59,7 +61,6 @@ export type {
 export { ENDED_BY } from '../views/events.js';
 export type {
   ApexLog,
-  Columns,
   LogIssue,
   LogPlace,
   LogTruncation,

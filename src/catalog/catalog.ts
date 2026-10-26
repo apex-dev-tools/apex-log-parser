@@ -1837,6 +1837,8 @@ function infoOf(type: EventType, typeId: number): EventTypeInfo {
 interface LineRules {
   readonly rule: TextRule | null;
   readonly after: AfterRule | null;
+  /** The first field the rule reads; -1 when it reads none. */
+  readonly firstField: number;
 }
 
 const fieldNamesOf = (type: EventType): readonly string[] =>
@@ -1877,10 +1879,16 @@ function positionIn(type: EventType): FieldPosition {
 
 function lineRulesOf(type: EventType): LineRules {
   const def = ENTRIES[type];
-  return {
-    rule: def.text?.(positionIn(type)) ?? null,
-    after: def.after ?? null,
+  const position = positionIn(type);
+  let firstField = -1;
+  // Rules resolve their field names once, here, so this sees every field a rule reads.
+  const recording: FieldPosition = (name) => {
+    const at = position(name);
+    if (firstField < 0 || at < firstField) firstField = at;
+    return at;
   };
+  const rule = def.text?.(recording) ?? null;
+  return { rule, after: def.after ?? null, firstField };
 }
 
 /** Every event type, indexed by type id. */
@@ -1917,6 +1925,14 @@ export function eventBody(typeId: number, f: Fields): string | null {
   const base = text.rule?.(f) || null;
   const more = grammar.acceptsText ? f.continuation() : '';
   return (base === null ? more : more ? `${base}\n${more}` : base) || null;
+}
+
+/**
+ * The first field a type's text reads; -1 when its rule reads none. Two lines of the type with the
+ * same bytes from there to the row's end have the same text. Internal.
+ */
+export function textFieldStart(typeId: number): number {
+  return LINE_RULES[typeId]?.firstField ?? -1;
 }
 
 /** An event's text: its body, then its type's rewrite. Null when no text is left. */

@@ -3,23 +3,20 @@
  */
 import { idOfType } from '../catalog/catalog.js';
 import { nodeEngine } from '../engine/node.js';
-import type { EventOf } from '../views/events.js';
+import type { ApexEvent, EventOf } from '../views/events.js';
 import { apexLog } from '../views/log.js';
-import { at, encode, HEADER, logOf, method } from './helpers.js';
+import { at, encode, HEADER, logOf, method, parse } from './helpers.js';
 
 const ids = (events: Iterable<{ id: number }>): number[] => [...events].map((e) => e.id);
 
 describe('ApexLog', () => {
-  it('holds every event, its top level as children, and the same object as event()', () => {
+  it('holds every event and its top level as children', () => {
     const log = logOf(...method, `${at(110)}|STATEMENT_EXECUTE|[9]`);
     expect([log.eventCount, ids(log.events), ids(log.children)]).toEqual([
       5,
       [1, 2, 3, 4, 5],
       [1, 5],
     ]);
-    expect(log.children).toBe(log.children);
-    expect(log.children[0]).toBe(log.event(1));
-    expect([...log.events][1]).toBe(log.event(2));
     expect([0, 6, -1, 1.5, Number.NaN].map((id) => log.event(id))).toEqual([
       null,
       null,
@@ -105,6 +102,167 @@ describe('ApexLog', () => {
     expect([...columns.endTimestamp].slice(1)).toEqual([100, 90, 50, 60]);
     expect([...columns.durationTotal]).toEqual([90, 90, 70, 20, 0]);
     expect([...columns.durationSelf]).toEqual([0, 20, 50, 20, 0]);
+  });
+
+  // Catches a shared-text key that drops the line number for a rule that reads it: both queries
+  // would read `line: 4`.
+  it('gives frames with the same text one text id, frames with different text another', () => {
+    const log = logOf(
+      `${at(1)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
+      `${at(2)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(3)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(4)}|METHOD_ENTRY|[7]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(5)}|METHOD_EXIT|[7]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(6)}|QUERY_MORE_BEGIN|[4]`,
+      `${at(7)}|QUERY_MORE_END|[4]`,
+      `${at(8)}|QUERY_MORE_BEGIN|[9]`,
+      `${at(9)}|QUERY_MORE_END|[9]`,
+      `${at(10)}|USER_DEBUG|[3]|DEBUG|hello`,
+      `${at(11)}|CODE_UNIT_FINISHED|execute_anonymous_apex`,
+    );
+    const { ids, values, at: textAt } = log.columns.text;
+    expect(ids[2]).toBe(ids[3]);
+    expect(values[ids[2]!]).toBe('ns.MyClass.run()');
+    expect([textAt(4), textAt(5)]).toEqual(['line: 4', 'line: 9']);
+    expect(ids[4]).not.toBe(ids[5]);
+    // A leaf has no id; its text still reads.
+    expect([ids[6], textAt(6)]).toEqual([-1, 'DEBUG | hello']);
+    expect([textAt(0), textAt(7)]).toEqual([null, null]);
+  });
+
+  // Catches a shared-text key that stops at the first line: both formulas would read the first.
+  // WF_FORMULA is the frame whose text runs on to its continuation lines.
+  it('gives frames whose text differs only after the first line their own text id', () => {
+    const log = parse(
+      `${at(1)}|WF_FORMULA|Formula:AND(\nISBLANK(Name))|Values:Name=null\n` +
+        `${at(2)}|WF_FORMULA|Formula:AND(\nISBLANK(Phone))|Values:Phone=null\n`,
+    );
+    const { ids, at: textAt } = log.columns.text;
+    expect(ids[1]).not.toBe(ids[2]);
+    expect([textAt(1), textAt(2)]).toEqual([
+      'Formula:AND(\nISBLANK(Name)) : Values:Name=null',
+      'Formula:AND(\nISBLANK(Phone)) : Values:Phone=null',
+    ]);
+  });
+
+  // The contract: a call tree groups by name, whatever the frame's type.
+  it('gives frames of different types with the same text one text id', () => {
+    const log = logOf(
+      `${at(1)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(2)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(3)}|SYSTEM_METHOD_ENTRY|[2]|ns.MyClass.run()`,
+      `${at(4)}|SYSTEM_METHOD_EXIT|[2]|ns.MyClass.run()`,
+    );
+    const { ids, at: textAt } = log.columns.text;
+    expect([textAt(1), textAt(2)]).toEqual(['ns.MyClass.run()', 'ns.MyClass.run()']);
+    expect(ids[1]).toBe(ids[2]);
+  });
+
+  // Catches a read past the arrays: an id that is no event gives undefined, not null.
+  it('gives null from every text column for an id that is no event', () => {
+    const { text, namespace, endedBy } = logOf(...method).columns;
+    const none = [0, 5, -1, 1.5, Number.NaN];
+    expect([text, namespace, endedBy].map((column) => none.map((id) => column.at(id)))).toEqual([
+      [null, null, null, null, null],
+      [null, null, null, null, null],
+      [null, null, null, null, null],
+    ]);
+    expect([text.ids[0], namespace.ids[0], endedBy.ids[0]]).toEqual([-1, -1, -1]);
+  });
+
+  // Catches an iterator that keeps its place between loops: the second loop would be empty.
+  it('gives every event in id order on each loop over events', () => {
+    const log = logOf(...method);
+    const { events } = log;
+    expect([ids(events), ids(events)]).toEqual([
+      [1, 2, 3, 4],
+      [1, 2, 3, 4],
+    ]);
+    // As a generator's: the iterator is iterable too, so a loop can take it.
+    const iterator = events[Symbol.iterator]() as IterableIterator<ApexEvent>;
+    iterator.next();
+    expect(ids(iterator)).toEqual([2, 3, 4]);
+  });
+
+  // Catches one array shared between reads: a caller's change would reach every other caller.
+  it("gives an event's children as a new array on each read, and the log's as one frozen array", () => {
+    const log = logOf(...method);
+    const unit = log.event(1);
+    const first = unit?.children as ApexEvent[];
+    first.pop();
+    expect(ids(unit?.children ?? [])).toEqual([2]);
+    expect(log.children).toBe(log.children);
+    expect(Object.isFrozen(log.children)).toBe(true);
+  });
+
+  // Catches a column read at the wrong row or from the wrong figure. Each value comes from the
+  // fixture's lines. No header, so the log records every line, heap lines too.
+  it('gives each event field the columns hold, row 0 as the log', () => {
+    const log = parse(
+      [
+        `${at(1)}|CODE_UNIT_STARTED|[EXTERNAL]|execute_anonymous_apex`,
+        `${at(2)}|METHOD_ENTRY|[1]|01p000000000AAA|ns.MyClass.run()`,
+        `${at(3)}|HEAP_ALLOCATE|[2]|Bytes:10`,
+        `${at(4)}|HEAP_DEALLOCATE|[2]|Bytes:4`,
+        `${at(5)}|SOQL_EXECUTE_BEGIN|[3]|Aggregations:0|SELECT Id FROM Account`,
+        `${at(6)}|METHOD_EXIT|[1]|01p000000000AAA|ns.MyClass.run()`,
+        `${at(7)}|ENTERING_MANAGED_PKG|ns`,
+        `${at(8)}|METHOD_ENTRY|[4]|01p000000000AAA|ns.MyClass.go()`,
+        `${at(9)}|HEAP_ALLOCATE|[5]|Bytes:32`,
+      ].join('\n'),
+    );
+    const c = log.columns;
+    const [unit, run, alloc, , query, pkg, go] = [1, 2, 3, 4, 5, 6, 7];
+    const row = (id: number) => ({
+      isFrame: c.isFrame[id],
+      isApexCall: c.isApexCall[id],
+      lineNumber: c.lineNumber[id],
+      endedBy: c.endedBy.at(id),
+      text: c.text.at(id),
+    });
+    // The query has no end line, so an exit not its own ends it; the package run ends on the next
+    // line; nothing closes the last method or the code unit.
+    expect([unit, run, query, pkg, go].map(row)).toEqual([
+      {
+        isFrame: 1,
+        isApexCall: 0,
+        lineNumber: -1,
+        endedBy: 'log-end',
+        text: 'execute_anonymous_apex',
+      },
+      { isFrame: 1, isApexCall: 1, lineNumber: 1, endedBy: 'exit', text: 'ns.MyClass.run()' },
+      {
+        isFrame: 1,
+        isApexCall: 0,
+        lineNumber: 3,
+        endedBy: 'unwind',
+        text: 'SELECT Id FROM Account',
+      },
+      { isFrame: 1, isApexCall: 0, lineNumber: -2, endedBy: 'next', text: 'ns' },
+      { isFrame: 1, isApexCall: 1, lineNumber: 4, endedBy: 'log-end', text: 'ns.MyClass.go()' },
+    ]);
+    expect([c.isFrame[alloc], c.text.ids[alloc], c.endedBy.ids[alloc]]).toEqual([0, -1, -1]);
+    expect([c.namespace.at(pkg), c.namespace.at(run)]).toEqual(['ns', null]);
+    // Its event says null: the rows are not stated. The column gives 0.
+    expect(log.event(query)?.soqlRowCount).toBeNull();
+    expect([c.soqlRowCount?.self[query], c.soqlCount?.total[query]]).toEqual([0, 1]);
+    // Net bytes 10 - 4 = 6, gross counts allocations only: 10. The log adds the 32 after.
+    const heap = (id: number) => [
+      c.heapAllocated?.total[id],
+      c.heapGross?.total[id],
+      c.heapPeak?.[id],
+    ];
+    expect(heap(run)).toEqual([6, 10, 10]);
+    expect(heap(0)).toEqual([38, 42, 38]);
+  });
+
+  it('gives null heap columns when the log does not record heap lines', () => {
+    const { columns } = logOf(...method);
+    expect([columns.heapAllocated, columns.heapGross, columns.heapPeak]).toEqual([
+      null,
+      null,
+      null,
+    ]);
   });
 
   it('points each issue at its event and the exit line it is on', () => {

@@ -6,6 +6,7 @@ import type {
   ApexEvent,
   ApexLog,
   Columns,
+  CountColumn,
   DebugCategory,
   DebugCategoryToken,
   DebugLevelSetting,
@@ -20,6 +21,7 @@ import type {
   FlowType,
   FrameEvent,
   GovernorLimits,
+  HeapColumn,
   IssueType,
   Kind,
   LeafEvent,
@@ -53,6 +55,7 @@ import type {
   Shape,
   StaticClass,
   StreamRead,
+  TextColumn,
   TransferableLog,
   TruncationKind,
   UserInfo,
@@ -78,6 +81,7 @@ const PUBLIC_EXPORTS = [
   'LEVEL',
   'LIMIT_METRICS',
   'LIMIT_UNIT',
+  'LINE_NUMBER',
   'parse',
   'PARSE_PHASE',
   'SHAPE',
@@ -91,6 +95,7 @@ interface PublicTypeSurface {
   apexEvent: ApexEvent;
   apexLog: ApexLog;
   columns: Columns;
+  countColumn: CountColumn;
   debugCategory: DebugCategory;
   debugCategoryToken: DebugCategoryToken;
   debugLevelSetting: DebugLevelSetting;
@@ -105,6 +110,7 @@ interface PublicTypeSurface {
   flowType: FlowType;
   frameEvent: FrameEvent;
   governorLimits: GovernorLimits;
+  heapColumn: HeapColumn;
   issueType: IssueType;
   kind: Kind;
   leafEvent: LeafEvent;
@@ -139,6 +145,7 @@ interface PublicTypeSurface {
   staticClass: StaticClass;
   streamRead: StreamRead;
   transferableLog: TransferableLog;
+  textColumn: TextColumn;
   truncationKind: TruncationKind;
   userInfo: UserInfo;
   variable: Variable;

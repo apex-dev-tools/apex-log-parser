@@ -1,7 +1,8 @@
 import { idOfType } from '../../src/catalog/catalog.js';
 import { nodeEngine } from '../../src/engine/node.js';
 import { apexLog } from '../../src/views/log.js';
-import { readColumns, readEvents, readVariables } from '../scripts/views.js';
+import { readColumns, readEvents, readTree } from '../scripts/reads.js';
+import { readVariables } from '../scripts/views.js';
 
 const log = apexLog(
   nodeEngine.build(
@@ -22,14 +23,22 @@ describe('readColumns', () => {
   it('reads every column of every event, and not the log', () => {
     const types = 2 * idOfType('METHOD_ENTRY') + idOfType('STATEMENT_EXECUTE');
     // parent 0+1+1, depth 1+2+2, subtreeEnd 4+3+4, startTimestamp 1000+1500+2000,
-    // endTimestamp 4000+1500 (the leaf ends where it starts)+2500, self 2500+0+500, total 3000+0+500.
-    expect(readColumns(log)).toBe(types + 2 + 5 + 11 + 4500 + 8000 + 3000 + 3500);
+    // endTimestamp 4000+1500 (the leaf ends where it starts)+2500, self 2500+0+500, total 3000+0+500,
+    // isFrame 1+0+1, isApexCall 1+0+1, lineNumber 1+2+3, an endedBy for each frame 1+0+1.
+    // No count line, so every count is 0; FINE records no heap line, so there is no heap column.
+    expect(readColumns(log)).toBe(types + 2 + 5 + 11 + 4500 + 8000 + 3000 + 3500 + 2 + 2 + 6 + 2);
   });
 });
 
 describe('readEvents', () => {
   it('reads every event', () => {
     expect(readEvents(log)).toBe(1 + 2 + 2);
+  });
+});
+
+describe('readTree', () => {
+  it('reads every event through the children of each frame', () => {
+    expect(readTree(log)).toBe(1 + 2 + 2);
   });
 });
 

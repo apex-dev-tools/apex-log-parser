@@ -26,10 +26,9 @@ describe('events', () => {
     const unit = frame(log.event(1));
     const run = frame(unit.children[0]);
     expect([unit.parent, unit.depth]).toEqual([null, 1]);
-    expect([run.parent, run.depth]).toEqual([unit, 2]);
+    expect([run.parent?.id, run.depth]).toEqual([unit.id, 2]);
     expect(run.children.map((e) => e.type)).toEqual(['SOQL_EXECUTE_BEGIN', 'STATEMENT_EXECUTE']);
-    expect(run.children).toBe(run.children);
-    expect(run.children.every((e) => e.parent === run && e.depth === 3)).toBe(true);
+    expect(run.children.every((e) => e.parent?.id === run.id && e.depth === 3)).toBe(true);
   });
 
   it('states times, rollups and the type info, from the columns', () => {
@@ -89,6 +88,11 @@ describe('events', () => {
       COUNTERS.map((name) => e[name]?.total ?? null);
     expect(totals(log)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(totals(run)).toEqual([1, 2, 1, 3, 1, 0, 0]);
+    // The columns, the log's row 0 too, give each counter its own column.
+    const columns = (id: number): (number | null)[] =>
+      COUNTERS.map((name) => log.columns[name]?.total[id] ?? null);
+    expect(columns(0)).toEqual([1, 2, 1, 3, 1, 0, 0]);
+    expect(columns(run.id)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(run.dmlCount).not.toBe(run.dmlCount);
     expect(run.dmlCount).toEqual(run.dmlCount);
   });

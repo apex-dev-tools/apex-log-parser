@@ -196,16 +196,41 @@ const log = fromBuffers(message.data);
 
 ### Read every event
 
-For a flame chart or other work over every event, `columns` gives the tree links and times as
-typed arrays indexed by id, with no object per event:
+Use event objects first: `log.events`, `children`, `ofType()` and `log.event(id)`. Each read
+makes a new object from the parsed arrays, so the log holds no object per event. An event gives
+every field, typed by its type.
+
+`columns` gives the same figures as arrays indexed by id, with no object per event. Use them for a
+pass you repeat, as a redraw, for a pass that reads only numbers, or to group by name. For a line's
+fields, `details` or `variables`, read `log.event(id)` for those ids only. See
+[Performance](#performance) for the costs.
 
 ```typescript
-const { type, depth, startTimestamp, durationTotal } = log.columns;
-for (let id = 1; id <= log.eventCount; id++) {
-  // eventType(type[id]) gives the type's name and kind.
-  draw(type[id], depth[id], startTimestamp[id], durationTotal[id]);
+const { count, depth, startTimestamp, durationTotal, text } = log.columns;
+for (let id = 1; id <= count; id++) {
+  draw(depth[id], startTimestamp[id], durationTotal[id], () => text.at(id));
 }
 ```
+
+`columns.text` and `columns.namespace` hold each distinct string once. `ids[id]` is a number to
+group by, and `values[ids[id]]` is its string; `at(id)` reads it directly. For `text`, only frames
+have an id: a leaf's is -1, and `at(id)` still reads its text. To total self time by method:
+
+```typescript
+const { count, durationSelf, text } = log.columns;
+const selfTime = new Float64Array(text.values.length);
+for (let id = 1; id <= count; id++) {
+  if (text.ids[id] >= 0) selfTime[text.ids[id]] += durationSelf[id];
+}
+// selfTime[k] is the total for text.values[k]
+```
+
+The counts and heap figures are there too, as `soqlCount.self[id]` and `soqlCount.total[id]`. A
+count or heap column is null when the log's debug levels do not record its lines. Where an event
+says null, as the rows of a query with no end line, its column gives 0. `columns` also gives
+`isFrame`, `isApexCall`, `lineNumber` and `endedBy`, which are never null; `LINE_NUMBER` names the
+two `lineNumber` values that are not a line. `kind`, `debugCategory` and the type's `debugLevel`
+come from `eventType(type[id])`.
 
 ## API
 
@@ -234,9 +259,9 @@ heap figure the header's level does not record is `null`, not 0. This is the mos
 `limits.final` and `limits.peak` metric stays at `{ used: 0, limit: null, percentUsed: null }`. That
 is not a transaction that used nothing.
 
-**Use `id` as a key within one parse.** Ids start at 1 and follow log order. `event(id)` gives the
-same object on every call, so an event also works as a `WeakMap` key. Ids are not stable across
-parses.
+**Use `id` as a key within one parse.** Ids start at 1 and follow log order. Each read gives a new
+event object, so the log holds no object per event: key a `Map` by `id`, not by the event. Ids are
+not stable across parses.
 
 **Two lists, two meanings.** `parsingErrors` holds lines the parser could not read, which is a
 parser problem. `issues` holds problems in the transaction the log describes, such as a truncated
@@ -270,7 +295,27 @@ Memory:
 | 75 MB | 828 MB | 608 MB | 28 MB |
 | 100 MB | 1,105 MB | 812 MB | 37 MB |
 
-To measure on your machine, clone the repository and run `pnpm run bench:large`.
+Reading the parsed log: a 95 MB log from a real org, 432,000 events. Each figure is the median of 5
+runs, after the parse, as the first read / the same read again on the same log:
+
+| Work | Event objects | `columns` |
+| --- | --- | --- |
+| Numbers only: depth, self time, SOQL count | 11 / 10 ms | 9 / 4 ms |
+| Every field but text | 41 / 38 ms | 25 / 9 ms |
+| Every event's text | 85 / 10 ms | 88 / 11 ms |
+| Flame chart: a tree walk, a label per frame | 108 / 26 ms | 87 / 16 ms |
+| Call tree: self time per method | 117 / 36 ms | 83 / 5 ms |
+
+The parse holds 25 MB. Reading through event objects adds 0–2 MB. Each column is held once it is
+made: reading through `columns` adds 3–6 MB, or 26 MB for every column.
+
+v0.3 decodes everything during its parse, so its reads are fast. But its parse takes about 9× as
+long, and it holds 761 MB. With the parse included, v0.4 is 4.6–5.0× faster through event objects,
+and 5.0–5.8× faster through `columns`. `columns` gains most on a flame chart or a call tree, and
+nothing on reading text.
+
+To measure on your machine, clone the repository and run `pnpm run bench:large`, and
+`pnpm run bench:views` for the reads, on the synthetic logs.
 
 ## Requirements
 
