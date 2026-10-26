@@ -50,7 +50,7 @@ jobs:
           for entry in node browser; do
             cmp <(sed '$d' "dist/$entry.js") <(sed '$d' "benchmarks/.bundle/$entry.js")
           done
-      - uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
+      - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
         with:
           mode: ${{ matrix.mode }}
           # Not `pnpm run`: under valgrind, pnpm starts far slower than `node --run`.
