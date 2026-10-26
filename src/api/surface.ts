@@ -66,6 +66,8 @@ export type {
   LogTruncation,
   LogTruncationRegion,
 } from '../views/log.js';
+export type { ProfilingDetails, ProfilingRow, ProfilingSection } from '../views/profiling.js';
+export { PROFILING_SECTION } from '../views/profiling.js';
 export type { ObjectState, StaticClass, Variable, Variables } from '../views/variables.js';
 export type { LogBuffers, TransferableLog } from './buffers.js';
 export { toBuffers } from './buffers.js';

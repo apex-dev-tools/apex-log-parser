@@ -13,6 +13,7 @@ For coding agents working on the views. The root [AGENTS.md](../../AGENTS.md) an
 - `details.ts` — the values a line states beyond its text (`aggregations`, a limit usage), and the
   values the rows after it give (a throw's `isCaught`); one reader per type. `EventDetails` lists
   them; `ofType` types each event's `details`.
+- `profiling.ts` — reads the rows of a `CUMULATIVE_PROFILING` section, for its `details`.
 - `variables.ts` — turns what `engine/variables.ts` finds into frozen `Variable`s, shared between
   events.
 - `columns.ts` — `columns`: every event as typed arrays by id, each made on its first read. The
