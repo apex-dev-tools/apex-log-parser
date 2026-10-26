@@ -3,13 +3,13 @@
 The YAML says what runs. The scripts decide what happens, so the logic is testable
 (`scripts/__tests__/ci.test.ts`) and runs locally.
 
-| Workflow | Trigger |
-| --- | --- |
-| `ci.yml` | push and pull request on `main` |
-| `benchmark.yml` | push and pull request on `main`; pull request adds heap |
-| `codeql.yml` | schedule and pull request |
-| `release.yml` | push on `main`, through Changesets |
-| `scrape-events.yml` | quarterly schedule, dispatch, or another workflow |
+| Workflow            | Trigger                                                 |
+| ------------------- | ------------------------------------------------------- |
+| `ci.yml`            | push and pull request on `main`                         |
+| `benchmark.yml`     | push and pull request on `main`; pull request adds heap |
+| `codeql.yml`        | schedule and pull request                               |
+| `release.yml`       | push on `main`, through Changesets                      |
+| `scrape-events.yml` | quarterly schedule, dispatch, or another workflow       |
 
 ## benchmark.yml
 
@@ -40,23 +40,23 @@ with pointer compression, as in Chrome and Electron, does so from 2^30 ns.
 
 ### Why it is built this way
 
-| Choice | Reason |
-| --- | --- |
-| Simulation mode | Wall time on a shared runner varies by more than the regressions to catch. Instruction counts vary by about 1%. |
-| Memory mode on `ubuntu-24.04` | Peak RSS needs Linux kernel 6.8. `ubuntu-latest` can move. |
-| No walltime job | Wall time on a shared runner is too noisy, and a CodSpeed macro runner needs the org to allow public repositories on its runners, or the job queues and never starts. |
-| Logs of 2.5 MB in all | Each bench parses 8 times under Valgrind, and the job holds up the merge. |
-| Exact Node version | Instruction counts move with the V8 version. A bump shifts the baseline once; acknowledge it on codspeed.io. |
-| No `paths:` filter | A required check that does not run stays "Expected" and blocks the merge. |
-| `id-token: write` at job level | CodSpeed authenticates with OIDC, so no secret is stored. |
-| Fork pull requests | GitHub gives a fork no OIDC token, so CodSpeed uploads without a token. This works for a public repository. Never use `pull_request_target`. |
-| One concurrency group per `main` commit | Each `main` commit is a baseline. A shared group drops a pending run even with `cancel-in-progress` off. |
-| The CodSpeed check is required, not this job | The job passes on a regression. Only the CodSpeed check fails. |
-| Heap gate at 2% | The median heap moves by 0.4% at most between runs. Time moves by up to 6%, so it is not gated. |
-| `--runs=3` in the heap job | The first parse a process measures can read about 20% low. The median of 3 drops that reading. |
-| `shell: bash` on the gated step | It adds `pipefail`. Without it, the job takes the exit code of `tee`, so the gate never fails. |
-| Base and head in one heap job | No stored baseline and no write token, so fork pull requests work. Both runs share a runner and a Node version. |
-| The base runs its own `bench:large` | The head reads the base's `--json`. A change to that file's shape must keep reading the old one. |
+| Choice                                       | Reason                                                                                                                                                                |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Simulation mode                              | Wall time on a shared runner varies by more than the regressions to catch. Instruction counts vary by about 1%.                                                       |
+| Memory mode on `ubuntu-24.04`                | Peak RSS needs Linux kernel 6.8. `ubuntu-latest` can move.                                                                                                            |
+| No walltime job                              | Wall time on a shared runner is too noisy, and a CodSpeed macro runner needs the org to allow public repositories on its runners, or the job queues and never starts. |
+| Logs of 2.5 MB in all                        | Each bench parses 8 times under Valgrind, and the job holds up the merge.                                                                                             |
+| Exact Node version                           | Instruction counts move with the V8 version. A bump shifts the baseline once; acknowledge it on codspeed.io.                                                          |
+| No `paths:` filter                           | A required check that does not run stays "Expected" and blocks the merge.                                                                                             |
+| `id-token: write` at job level               | CodSpeed authenticates with OIDC, so no secret is stored.                                                                                                             |
+| Fork pull requests                           | GitHub gives a fork no OIDC token, so CodSpeed uploads without a token. This works for a public repository. Never use `pull_request_target`.                          |
+| One concurrency group per `main` commit      | Each `main` commit is a baseline. A shared group drops a pending run even with `cancel-in-progress` off.                                                              |
+| The CodSpeed check is required, not this job | The job passes on a regression. Only the CodSpeed check fails.                                                                                                        |
+| Heap gate at 2%                              | The median heap moves by 0.4% at most between runs. Time moves by up to 6%, so it is not gated.                                                                       |
+| `--runs=3` in the heap job                   | The first parse a process measures can read about 20% low. The median of 3 drops that reading.                                                                        |
+| `shell: bash` on the gated step              | It adds `pipefail`. Without it, the job takes the exit code of `tee`, so the gate never fails.                                                                        |
+| Base and head in one heap job                | No stored baseline and no write token, so fork pull requests work. Both runs share a runner and a Node version.                                                       |
+| The base runs its own `bench:large`          | The head reads the base's `--json`. A change to that file's shape must keep reading the old one.                                                                      |
 
 To accept a deliberate regression, acknowledge it on the pull request's CodSpeed report.
 
@@ -67,10 +67,10 @@ sources and opens a pull request. It never pushes to `main`.
 
 ### Its scripts
 
-| Step | Script |
-| --- | --- |
-| `pnpm run ci:seed` | `scripts/ci/seed.ts` |
-| `pnpm scrape` | `scripts/scrape.ts` |
+| Step                 | Script                                             |
+| -------------------- | -------------------------------------------------- |
+| `pnpm run ci:seed`   | `scripts/ci/seed.ts`                               |
+| `pnpm scrape`        | `scripts/scrape.ts`                                |
 | `pnpm run ci:report` | `scripts/ci/report.ts`, on `scripts/ci/actions.ts` |
 
 The scraper writes a run record with `--report=`. The report script renders the pull
@@ -78,18 +78,18 @@ request body and the job summary from that record, so no step parses stdout.
 
 ### Why it is built this way
 
-| Choice | Reason |
-| --- | --- |
-| Cron `0 9 1 3,7,11 *` | The month after each Salesforce release, so the docs have turned over. |
-| `fetch-depth: 0` | The seed step reads the automation branch, which a shallow clone lacks. |
-| Seed `data/` first | A missed merge would otherwise relabel `release_added` and force-push away hand curation. |
-| One fixed branch | An unmerged pull request is updated in place, never duplicated. |
-| `delete-branch: true` | Deletes only after merge or close, so the next run starts clean. |
-| Two gates recorded, not fatal | `pnpm run ci` goes red exactly when the scrape found a new event, which is the run most worth a pull request. |
-| Failure raised last | The report and the pull request exist first, so the evidence survives. |
+| Choice                                    | Reason                                                                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cron `0 9 1 3,7,11 *`                     | The month after each Salesforce release, so the docs have turned over.                                                                                                   |
+| `fetch-depth: 0`                          | The seed step reads the automation branch, which a shallow clone lacks.                                                                                                  |
+| Seed `data/` first                        | A missed merge would otherwise relabel `release_added` and force-push away hand curation.                                                                                |
+| One fixed branch                          | An unmerged pull request is updated in place, never duplicated.                                                                                                          |
+| `delete-branch: true`                     | Deletes only after merge or close, so the next run starts clean.                                                                                                         |
+| Two gates recorded, not fatal             | `pnpm run ci` goes red exactly when the scrape found a new event, which is the run most worth a pull request.                                                            |
+| Failure raised last                       | The report and the pull request exist first, so the evidence survives.                                                                                                   |
 | Pull request only from the default branch | `create-pull-request` cuts its branch from the ref the workflow ran on. Cut from anywhere else, the pull request's merge base is wrong and its diff replays that branch. |
-| Inputs reach scripts as env | Never interpolated into a shell. |
-| `permissions` at job level | Least privilege by default; only this job may write. |
+| Inputs reach scripts as env               | Never interpolated into a shell.                                                                                                                                         |
+| `permissions` at job level                | Least privilege by default; only this job may write.                                                                                                                     |
 
 A step cannot read another step's exit code, so each gate is recorded with
 `continue-on-error` and its `outcome` is passed to the report script. That part stays

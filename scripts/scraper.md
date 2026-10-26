@@ -12,25 +12,25 @@ or authentication**.
 
 Neither source uses a status code to report a bad request. `res.ok` is never a sufficient check.
 
-| What went wrong | What you get back |
-| --- | --- |
-| Blocked as a bot | `403` — the one real status code |
-| Unknown doc version (S1) | `200` with `content-length: 0` |
-| Unknown release (S2) | `200`, `state: "SUCCESS"`, and no `record` key |
-| Large article (S2) | `Content__c` holds a "cannot populate" sentence, not the content |
+| What went wrong          | What you get back                                                |
+| ------------------------ | ---------------------------------------------------------------- |
+| Blocked as a bot         | `403` — the one real status code                                 |
+| Unknown doc version (S1) | `200` with `content-length: 0`                                   |
+| Unknown release (S2)     | `200`, `state: "SUCCESS"`, and no `record` key                   |
+| Large article (S2)       | `Content__c` holds a "cannot populate" sentence, not the content |
 
 ## The User-Agent decides whether you are blocked
 
 developer.salesforce.com sits behind Akamai, which gates on `User-Agent`. Measured 2026-08-27,
 stable across repeats:
 
-| `User-Agent` | Result |
-| --- | --- |
-| `node` — Node `fetch`'s default | 403 |
-| `node-fetch` | 403 |
-| `Mozilla/5.0 (X11; Linux x86_64) … Chrome/131 …` | 403 |
-| `curl/8.7.1` | 200 |
-| `apex-log-parser-scraper/1.0 (+https://github.com/apex-dev-tools/apex-log-parser)` | 200 |
+| `User-Agent`                                                                       | Result |
+| ---------------------------------------------------------------------------------- | ------ |
+| `node` — Node `fetch`'s default                                                    | 403    |
+| `node-fetch`                                                                       | 403    |
+| `Mozilla/5.0 (X11; Linux x86_64) … Chrome/131 …`                                   | 403    |
+| `curl/8.7.1`                                                                       | 200    |
+| `apex-log-parser-scraper/1.0 (+https://github.com/apex-dev-tools/apex-log-parser)` | 200    |
 
 An honest tool name passes. **Impersonating a browser is worse than saying who you are** — do not
 "fix" a 403 by pasting a Chrome string. A 403 is deterministic, so it is never worth retrying.
@@ -47,12 +47,12 @@ An honest tool name passes. **Impersonating a browser is worse than saying who y
 GET https://developer.salesforce.com/docs/get_document_content/{doc_set}/{page_id}/{locale}/{doc_version}
 ```
 
-| Parameter | Description | Example |
-| --- | --- | --- |
-| `doc_set` | Collection id, the URL path segment after `atlas.en-us.` | `apexcode` |
-| `page_id` | Page filename from the display URL | `apex_debugging_system_log_console.htm` |
-| `locale` | Language and region | `en-us` |
-| `doc_version` | Doc version, **discovered** — see below | `262.0` |
+| Parameter     | Description                                              | Example                                 |
+| ------------- | -------------------------------------------------------- | --------------------------------------- |
+| `doc_set`     | Collection id, the URL path segment after `atlas.en-us.` | `apexcode`                              |
+| `page_id`     | Page filename from the display URL                       | `apex_debugging_system_log_console.htm` |
+| `locale`      | Language and region                                      | `en-us`                                 |
+| `doc_version` | Doc version, **discovered** — see below                  | `262.0`                                 |
 
 The response is **JSON**, with the rendered page HTML as a string under `content`.
 
@@ -87,11 +87,11 @@ Content-Type: application/x-www-form-urlencoded; charset=UTF-8
 
 Three form fields:
 
-| Field | Value |
-| --- | --- |
-| `message` | `{"actions":[{"id":"1;a","descriptor":"aura://ApexActionController/ACTION$execute","params":{"classname":…,"method":…,"params":…}}]}` |
-| `aura.context` | `{"app":"siteforce:communityApp"}` |
-| `aura.token` | `null` |
+| Field          | Value                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `message`      | `{"actions":[{"id":"1;a","descriptor":"aura://ApexActionController/ACTION$execute","params":{"classname":…,"method":…,"params":…}}]}` |
+| `aura.context` | `{"app":"siteforce:communityApp"}`                                                                                                    |
+| `aura.token`   | `null`                                                                                                                                |
 
 **`aura.token=null` is the field that makes this work.** `fwuid`, `loaded`, `mode` and
 `aura.pageURI` are all optional, so the SPA shell never has to be scraped for a framework id. No
@@ -144,11 +144,11 @@ way in.
 Both sources render the same table from the same source, so `scrape.ts` parses them with one
 function. They agree on the header row and on nothing else:
 
-| | S1 | S2 |
-| --- | --- | --- |
-| Column attribute | `data-title` | `data-label` |
-| Event name wrapper | `<samp class="codeph nolang">` | `<code>` |
-| Rows | 191, some 5 cells wide | 185, all 4 cells |
+|                    | S1                             | S2               |
+| ------------------ | ------------------------------ | ---------------- |
+| Column attribute   | `data-title`                   | `data-label`     |
+| Event name wrapper | `<samp class="codeph nolang">` | `<code>`         |
+| Rows               | 191, some 5 cells wide         | 185, all 4 cells |
 
 So find the table by its header row —
 `Event Name | Fields or Information Logged with Event | Category Logged | Level Logged` — which
