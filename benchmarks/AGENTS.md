@@ -40,8 +40,8 @@ applies.
 - `scripts/views.ts` — `pnpm run bench:views`, what reading the parser's views adds to its
   build on the same logs: every column of every event, an object for every event, a walk of the
   tree through `children`, every event's text, `columns.text`, and the variables at every 1000th
-  variable line, which indexes them all. At 100 MB it fails above 120 ms, 25 ms, 50 ms, 200 ms,
-  150 ms and 50 ms. Local only. The reads are in
+  variable line, which indexes them all. At 100 MB it fails above 85 ms, 15 ms, 35 ms, 145 ms,
+  115 ms and 50 ms. Local only. The reads are in
   `scripts/reads.ts`, with type imports only, so the CodSpeed bench loads no second engine.
 - `scripts/async.ts` — `pnpm run bench:async`, the parser's async `parse()` on the same logs:
   the longest host turn it holds, its total against a direct build, how soon an abort rejects,

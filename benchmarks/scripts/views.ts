@@ -1,8 +1,8 @@
 // What reading the parser's views adds to its build, on the synthetic logs. Local only.
 //   pnpm run bench:views [--runs=5] [--log=<name>]
-// Gates (100 MB): reading every column adds < 120 ms; an object for every event < 25 ms; a walk of
-// the tree through children < 50 ms; every event's text < 200 ms; every frame's text from the
-// columns < 150 ms; the variables at every 1000th variable line, which indexes them all, < 50 ms.
+// Gates (100 MB): reading every column adds < 85 ms; an object for every event < 15 ms; a walk of
+// the tree through children < 35 ms; every event's text < 145 ms; every frame's text from the
+// columns < 115 ms; the variables at every 1000th variable line, which indexes them all, < 50 ms.
 
 import process, { argv } from 'node:process';
 import { flag, runIfMain } from '../../scripts/cli.js';
@@ -17,11 +17,11 @@ import { versus } from './versus.js';
 
 /** The gates, in milliseconds over the build, for the 100 MB log. */
 const GATES: Readonly<Record<string, number>> = {
-  columns: 120,
-  events: 25,
-  tree: 50,
-  text: 200,
-  textColumn: 150,
+  columns: 85,
+  events: 15,
+  tree: 35,
+  text: 145,
+  textColumn: 115,
   variables: 50,
 };
 const GATE_LOG = 'parse_100mb';
