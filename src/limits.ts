@@ -218,12 +218,7 @@ export function runningUsage(text: string): RunningUsage | null {
 // lose its optimised code across a GC (deopt.test.ts), so they stay apart.
 
 /** A flow report's running total of a tracked metric, for the log's figures. */
-export interface RunningTotal {
-  metric: LimitMetric;
-  used: number;
-  limit: number;
-  delta: number;
-}
+export type RunningTotal = Pick<RunningUsage, 'used' | 'delta'> & { metric: LimitMetric };
 
 /** A running-total line, as `1 SOQL queries, total 1 out of 100`; null for an untracked label. */
 export function runningTotal(text: string): RunningTotal | null {
@@ -239,7 +234,6 @@ export function runningTotal(text: string): RunningTotal | null {
     metric,
     // The pattern matched two digit runs.
     used: Number.parseInt(match[1]!, 10),
-    limit: Number.parseInt(match[2]!, 10),
     delta: Number.parseInt(count, 10),
   };
 }

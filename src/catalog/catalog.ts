@@ -1954,9 +1954,7 @@ export function fieldPosition(typeId: number, name: string): { at: number; last:
   return { at: i + FIRST_FIELD, last: i === fields.length - 1 };
 }
 
-const UNIT_TYPE = codeUnitTypeText(positionIn('CODE_UNIT_STARTED'));
-
 /** A `CODE_UNIT_STARTED` line's unit type, as `Flow`; null when the line states none. */
-export function codeUnitType(f: LineFields): string | null {
-  return UNIT_TYPE(f);
-}
+export const codeUnitType: (f: LineFields) => string | null = codeUnitTypeText(
+  positionIn('CODE_UNIT_STARTED'),
+);

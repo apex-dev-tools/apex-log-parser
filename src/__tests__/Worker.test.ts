@@ -6,7 +6,7 @@ import type { LogWorker } from '../api/worker.js';
 import { parse as browserParse } from '../browser.js';
 import { parse as nodeParse } from '../node.js';
 import type { ApexLog } from '../views/log.js';
-import { encode } from './helpers.js';
+import { encode, longLog, SMALL_LOG } from './helpers.js';
 
 // `src` has no node types, so the parts of Node and the platform used here are declared.
 interface NodeWorker extends LogWorker {
@@ -24,21 +24,6 @@ interface Port extends LogWorker {
 declare const MessageChannel: new () => { port1: Port; port2: Port };
 declare const AbortController: new () => { readonly signal: LogAbortSignal; abort(): void };
 declare const setTimeout: (callback: () => void, ms: number) => unknown;
-
-const LOG = [
-  '64.0 APEX_CODE,FINE',
-  '09:00:00.001 (1000)|METHOD_ENTRY|[1]|01p000000000AAA|MyClass.run()',
-  '09:00:00.001 (1500)|USER_DEBUG|[2]|DEBUG|café ☕ 😀',
-  '09:00:00.001 (4000)|METHOD_EXIT|[1]|01p000000000AAA|MyClass.run()',
-].join('\n');
-
-/** Enough lines that a parse takes many slices. */
-function longLog(): string {
-  const lines = ['64.0 APEX_CODE,FINE'];
-  for (let i = 0; i < 200_000; i++)
-    lines.push(`09:00:00.0 (${i + 1})|USER_DEBUG|[1]|DEBUG|line ${i}`);
-  return lines.join('\n');
-}
 
 const summary = (log: ApexLog) => ({
   size: log.size,
@@ -59,9 +44,9 @@ describe('parse with a Node worker thread', () => {
   afterAll(() => worker.terminate());
 
   it('gives the log a parse on this thread gives, and keeps the caller’s bytes', async () => {
-    const bytes = encode(LOG);
+    const bytes = encode(SMALL_LOG);
     const log = await nodeParse(bytes, { worker });
-    expect(summary(log)).toEqual(summary(await nodeParse(LOG)));
+    expect(summary(log)).toEqual(summary(await nodeParse(SMALL_LOG)));
     expect(bytes.byteLength).toBeGreaterThan(0);
   });
 
@@ -75,7 +60,7 @@ describe('parse with a Node worker thread', () => {
 
   it('parses two logs at once on one worker', async () => {
     const [a, b] = await Promise.all([
-      nodeParse(LOG, { worker }),
+      nodeParse(SMALL_LOG, { worker }),
       nodeParse(longLog(), { worker }),
     ]);
     expect(a.eventCount).toBe(2);
@@ -87,7 +72,7 @@ describe('parse with a Node worker thread', () => {
     const pending = nodeParse(longLog(), { worker, signal: controller.signal });
     setTimeout(() => controller.abort(), 20);
     expect(await pending.catch((e: unknown) => e)).toBe(controller.signal.reason);
-    expect((await nodeParse(LOG, { worker })).eventCount).toBe(2);
+    expect((await nodeParse(SMALL_LOG, { worker })).eventCount).toBe(2);
   });
 });
 
@@ -104,8 +89,8 @@ describe('parse with a web worker', () => {
       scope.self = saved;
     }
     try {
-      const log = await browserParse(LOG, { worker: port1 });
-      expect(summary(log)).toEqual(summary(await browserParse(LOG)));
+      const log = await browserParse(SMALL_LOG, { worker: port1 });
+      expect(summary(log)).toEqual(summary(await browserParse(SMALL_LOG)));
     } finally {
       port1.close();
       port2.close();
@@ -139,26 +124,26 @@ describe('parse with a worker that fails', () => {
     const { worker } = fake((id, emit) =>
       emit('message', { kind: 'error', id, name: 'RangeError', message: 'too big' }),
     );
-    const error = await nodeParse(LOG, { worker }).catch((e: unknown) => e);
+    const error = await nodeParse(SMALL_LOG, { worker }).catch((e: unknown) => e);
     expect(error).toMatchObject({ name: 'RangeError', message: 'too big' });
   });
 
   it('rejects when the worker exits, and stops listening', async () => {
     const { worker, listeners } = fake((_id, emit) => emit('exit', 1));
-    await expect(nodeParse(LOG, { worker })).rejects.toThrow('The parse worker failed');
+    await expect(nodeParse(SMALL_LOG, { worker })).rejects.toThrow('The parse worker failed');
     expect([...listeners.values()].flat()).toHaveLength(0);
   });
 
   it('rejects when a reply cannot be read back', async () => {
     const { worker } = fake((_id, emit) => emit('messageerror', {}));
-    await expect(nodeParse(LOG, { worker })).rejects.toThrow('The parse worker failed');
+    await expect(nodeParse(SMALL_LOG, { worker })).rejects.toThrow('The parse worker failed');
   });
 
   it('rejects, and stops listening, when the request cannot be posted', async () => {
     const { worker, listeners } = fake(() => {
       throw new TypeError('DataCloneError');
     });
-    await expect(nodeParse(LOG, { worker })).rejects.toThrow('DataCloneError');
+    await expect(nodeParse(SMALL_LOG, { worker })).rejects.toThrow('DataCloneError');
     expect([...listeners.values()].flat()).toHaveLength(0);
   });
 
@@ -173,7 +158,7 @@ describe('parse with a worker that fails', () => {
       for (const each of ids)
         emit('message', { kind: 'error', id: each, name: 'Error', message: `${each}` });
     });
-    const results = await Promise.allSettled([1, 2, 3].map(() => nodeParse(LOG, { worker })));
+    const results = await Promise.allSettled([1, 2, 3].map(() => nodeParse(SMALL_LOG, { worker })));
     expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected', 'rejected']);
     expect(results.map((r) => (r as PromiseRejectedResult).reason.message)).toEqual(
       ids.map(String),
@@ -187,6 +172,6 @@ describe('parse with a worker that fails', () => {
       emit('message', { kind: 'error', id: id + 1000, name: 'Error', message: 'not mine' });
       emit('message', { kind: 'error', id, name: 'Error', message: 'mine' });
     });
-    await expect(nodeParse(LOG, { worker })).rejects.toThrow('mine');
+    await expect(nodeParse(SMALL_LOG, { worker })).rejects.toThrow('mine');
   });
 });

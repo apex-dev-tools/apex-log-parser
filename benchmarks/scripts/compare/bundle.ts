@@ -3,12 +3,9 @@
  * harness times these bundles, not the tsx-compiled source.
  */
 
-import { fileURLToPath } from 'node:url';
 import { build } from 'tsdown';
 import { packageBuilds } from '../../../tsdown.config.js';
-import { engine } from './engines.js';
-
-const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+import { engine, ROOT } from './engines.js';
 
 /** Writes `<outDir>/<name>.mjs` for each engine. */
 export async function bundleEngines(names: readonly string[], outDir: string): Promise<void> {
