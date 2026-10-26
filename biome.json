@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -44,7 +44,27 @@
       "trailingCommas": "all"
     }
   },
+  "markdown": {
+    "formatter": {
+      "formatEmbeds": false
+    },
+    "parser": {
+      "frontmatter": true
+    }
+  },
+  "yaml": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
+  },
   "files": {
-    "includes": ["**", "!**/data/**/*.json", "!**/scripts/__fixtures__"]
+    "includes": [
+      "**",
+      "!**/data/**/*.json",
+      "!**/scripts/__fixtures__",
+      "!pnpm-lock.yaml",
+      "!CHANGELOG.md",
+      "!data/salesforce-debug-log-events.md"
+    ]
   }
 }
