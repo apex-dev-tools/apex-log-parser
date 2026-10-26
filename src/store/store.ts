@@ -202,6 +202,34 @@ export class Store {
     return slot === NONE ? -1 : slot * HEAP_STRIDE;
   }
 
+  /** One counter's self and total for every row, row 0 too: 0 for a row with no count slot. */
+  countByRow(counter: number): { self: Int32Array; total: Int32Array } {
+    const self = new Int32Array(this.count);
+    const total = new Int32Array(this.count);
+    const counts = this.counts;
+    for (let id = 0; id < this.count; id++) {
+      const at = this.countIndex(id);
+      if (at < 0) continue;
+      // at is a slot's start, and the slot holds every counter's pair
+      self[id] = counts[at + counter * 2 + SELF]!;
+      total[id] = counts[at + counter * 2 + TOTAL]!;
+    }
+    return { self, total };
+  }
+
+  /** The `HEAP` figures for every row, row 0 too, in one pass: 0 for a row with no heap slot. */
+  heapByRow(...figures: number[]): Float64Array[] {
+    const out = figures.map(() => new Float64Array(this.count));
+    const heap = this.heap;
+    for (let id = 0; id < this.count; id++) {
+      const at = this.heapIndex(id);
+      if (at < 0) continue;
+      // at is a slot's start, and the slot holds every figure; out has one array per figure
+      for (let i = 0; i < figures.length; i++) out[i]![id] = heap[at + figures[i]!]!;
+    }
+    return out;
+  }
+
   /**
    * Nanoseconds from the row's line to its exit; 0 without an exit or with one at 0, as before 0.4.
    */

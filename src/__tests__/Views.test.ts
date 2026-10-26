@@ -88,6 +88,11 @@ describe('events', () => {
       COUNTERS.map((name) => e[name]?.total ?? null);
     expect(totals(log)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(totals(run)).toEqual([1, 2, 1, 3, 1, 0, 0]);
+    // The columns, the log's row 0 too, give each counter its own column.
+    const columns = (id: number): (number | null)[] =>
+      COUNTERS.map((name) => log.columns[name]?.total[id] ?? null);
+    expect(columns(0)).toEqual([1, 2, 1, 3, 1, 0, 0]);
+    expect(columns(run.id)).toEqual([1, 2, 1, 3, 1, 0, 0]);
     expect(run.dmlCount).not.toBe(run.dmlCount);
     expect(run.dmlCount).toEqual(run.dmlCount);
   });

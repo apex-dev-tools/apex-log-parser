@@ -15,5 +15,7 @@ For coding agents working on the views. The root [AGENTS.md](../../AGENTS.md) an
   them; `ofType` types each event's `details`.
 - `variables.ts` — turns what `engine/variables.ts` finds into frozen `Variable`s, shared between
   events.
+- `columns.ts` — `columns`: every event as typed arrays by id, each made on its first read. The
+  count getters come from `COUNT_ROLLUPS` in `events.ts`, as the events' do.
 - `log.ts` — row 0 as `ApexLog`, the root; each figure that needs work is made on first read. A
   merged package run can end after the leaves that follow it, so `at()` searches frames only.

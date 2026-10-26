@@ -9,34 +9,13 @@ import type { IssueType, TruncationKind } from '../engine/issues.js';
 import { isFrameRow } from '../engine/tables.js';
 import type { GovernorLimits } from '../limits.js';
 import { governorLimits } from '../limits.js';
+import type { Columns } from './columns.js';
+import { columnsOf } from './columns.js';
 import type { ApexEvent, EventOf, FrameEvent, Rollups } from './events.js';
 import { LogEvents, RollupView } from './events.js';
 
 // WHATWG and Node 17+; declared here so `lib` stays ES2022.
 declare function structuredClone<T>(value: T): T;
-
-/**
- * The log's events as parallel arrays indexed by id, for a caller that reads every event. Row 0 is
- * the log. The arrays are the parse's own, not copies: read them, never write them.
- */
-export interface Columns {
-  /** Type ids: `eventType(type[id])`. Row 0 holds one past the last type id. */
-  readonly type: Uint16Array;
-  /** The parent's id: 0 for an event at the top of the log, -1 for the log. */
-  readonly parent: Int32Array;
-  /** 0 for the log, 1 for an event at its top. */
-  readonly depth: Uint16Array;
-  /** One past the last id under each row, so its descendants are `id + 1` to `subtreeEnd[id] - 1`. */
-  readonly subtreeEnd: Int32Array;
-  /** Nanoseconds. */
-  readonly startTimestamp: Float64Array;
-  /** Nanoseconds; a leaf ends where it starts. */
-  readonly endTimestamp: Float64Array;
-  /** Nanoseconds. */
-  readonly durationSelf: Float64Array;
-  /** Nanoseconds; 0 without an exit, or with one at 0, as `duration.total`. */
-  readonly durationTotal: Float64Array;
-}
 
 /** Where in the tree an issue or a truncation region is. */
 export interface LogPlace {
@@ -96,7 +75,7 @@ export interface ApexLog extends Rollups {
   ofType<T extends EventType>(...types: T[]): readonly EventOf<T>[];
   /** The deepest frame running at `ns`: its startTimestamp ≤ ns < its endTimestamp. Null when none is. */
   at(ns: number): FrameEvent | null;
-  /** Every event's tree links and times as arrays, made on first read. */
+  /** Every event as arrays, for a pass over every event or one you repeat. */
   readonly columns: Columns;
   /** Bytes of the source. */
   readonly size: number;
@@ -272,7 +251,7 @@ class LogView extends RollupView implements ApexLog {
   }
 
   get columns(): Columns {
-    return (this.memo.columns ??= this.makeColumns());
+    return (this.memo.columns ??= columnsOf(this.built, this.all, this.namespaces));
   }
 
   get size(): number {
@@ -381,22 +360,6 @@ class LogView extends RollupView implements ApexLog {
       at += list.length;
     }
     return ids.sort();
-  }
-
-  private makeColumns(): Columns {
-    const store = this.store;
-    const durationTotal = new Float64Array(store.count);
-    for (let id = 0; id < store.count; id++) durationTotal[id] = store.durationTotal(id);
-    return Object.freeze({
-      type: store.type,
-      parent: store.parent,
-      depth: store.depth,
-      subtreeEnd: store.subtreeEnd,
-      startTimestamp: store.timestamp,
-      endTimestamp: store.exitStamp,
-      durationSelf: store.durationSelf,
-      durationTotal,
-    });
   }
 
   private makeEntryPoints(): readonly EventOf<'CODE_UNIT_STARTED'>[] {

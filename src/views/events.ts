@@ -14,7 +14,7 @@ import {
   FLAG,
   HEAP_SIGN,
   HEAP_SLOT,
-  IS_APEX_CALL,
+  isApexCallRow,
   isFrameRow,
   ROWS_AT,
   ROWS_FROM_EXIT,
@@ -37,6 +37,9 @@ export const ENDED_BY = {
 
 /** What ended a frame: `FrameEvent.endedBy`. */
 export type EndedBy = (typeof ENDED_BY)[keyof typeof ENDED_BY];
+
+/** Every `EndedBy`, in `ENDED_BY` order: the `values` of `columns.endedBy`. */
+export const ENDINGS: readonly EndedBy[] = Object.freeze(Object.values(ENDED_BY));
 
 /** A rollup: the own part, and the part with every descendant. */
 export interface SelfTotal {
@@ -212,6 +215,29 @@ function recordedOf({ seen, debugLevels }: Built): Uint8Array {
 }
 const NO_CHILDREN: readonly ApexEvent[] = Object.freeze([]);
 
+/** The counts `Rollups` states, as `dmlCount`. */
+export type CountRollup = Extract<keyof Rollups, `${string}Count`>;
+
+/** Each count's counter: events and columns make their count getters from it. */
+export const COUNT_ROLLUPS: Readonly<Record<CountRollup, number>> = Object.freeze({
+  dmlCount: COUNTER.dml,
+  soqlCount: COUNTER.soql,
+  soslCount: COUNTER.sosl,
+  dmlRowCount: COUNTER.dmlRows,
+  soqlRowCount: COUNTER.soqlRows,
+  soslRowCount: COUNTER.soslRows,
+  thrownCount: COUNTER.thrown,
+});
+
+/** What ended frame `id`. */
+export function endedByOf(store: Store, id: number): EndedBy {
+  // id is a row, so every column holds it, and its type is a type id
+  const flags = store.flags[id]!;
+  if (flags & FLAG.logEnd) return ENDED_BY.LogEnd;
+  if (flags & FLAG.unwind) return ENDED_BY.Unwind;
+  return ENDS_ON_NEXT[store.type[id]!] ? ENDED_BY.Next : ENDED_BY.Exit;
+}
+
 /** The events of one build. Each read makes a new view, so the log keeps no object per event. */
 export class LogEvents {
   private readonly store: Store;
@@ -282,36 +308,27 @@ export abstract class RollupView implements Rollups {
     return this.store.exitStamp[this.id]!;
   }
 
+  // Getters from COUNT_ROLLUPS, made below.
+  declare readonly dmlCount: SelfTotal | null;
+  declare readonly soqlCount: SelfTotal | null;
+  declare readonly soslCount: SelfTotal | null;
+  declare readonly dmlRowCount: SelfTotal | null;
+  declare readonly soqlRowCount: SelfTotal | null;
+  declare readonly soslRowCount: SelfTotal | null;
+  declare readonly thrownCount: SelfTotal | null;
+
+  static {
+    for (const [name, counter] of Object.entries(COUNT_ROLLUPS)) {
+      Object.defineProperty(RollupView.prototype, name, {
+        get(this: RollupView) {
+          return this.count(counter);
+        },
+      });
+    }
+  }
+
   get duration(): SelfTotal {
     return { self: this.store.durationSelf[this.id]!, total: this.store.durationTotal(this.id) };
-  }
-
-  get dmlCount(): SelfTotal | null {
-    return this.count(COUNTER.dml);
-  }
-
-  get soqlCount(): SelfTotal | null {
-    return this.count(COUNTER.soql);
-  }
-
-  get soslCount(): SelfTotal | null {
-    return this.count(COUNTER.sosl);
-  }
-
-  get dmlRowCount(): SelfTotal | null {
-    return this.count(COUNTER.dmlRows);
-  }
-
-  get soqlRowCount(): SelfTotal | null {
-    return this.count(COUNTER.soqlRows);
-  }
-
-  get soslRowCount(): SelfTotal | null {
-    return this.count(COUNTER.soslRows);
-  }
-
-  get thrownCount(): SelfTotal | null {
-    return this.count(COUNTER.thrown);
   }
 
   get heapAllocated(): SelfTotal | null {
@@ -419,11 +436,7 @@ class EventView extends RollupView {
   }
 
   get endedBy(): EndedBy {
-    // id is a row, so every column holds it
-    const flags = this.store.flags[this.id]!;
-    if (flags & FLAG.logEnd) return ENDED_BY.LogEnd;
-    if (flags & FLAG.unwind) return ENDED_BY.Unwind;
-    return ENDS_ON_NEXT[this.store.type[this.id]!] ? ENDED_BY.Next : ENDED_BY.Exit;
+    return endedByOf(this.store, this.id);
   }
 
   get text(): string | null {
@@ -435,11 +448,8 @@ class EventView extends RollupView {
     return this.events.lines.logLine(this.id);
   }
 
-  /** The type's, unless the line made the event a leaf, as a VF call with no method. */
   get isApexCall(): boolean {
-    const store = this.store;
-    // id is a row, so its type is a type id
-    return IS_APEX_CALL[store.type[this.id]!] === 1 && !(store.flags[this.id]! & FLAG.notEntry);
+    return isApexCallRow(this.store, this.id);
   }
 
   field(name: string): string | null {

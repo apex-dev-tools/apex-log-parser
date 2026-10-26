@@ -139,3 +139,9 @@ export function isFrameRow(store: Store, id: number): boolean {
   // id is a row, so every column holds it
   return IS_FRAME[store.type[id]!] === 1 && !(store.flags[id]! & FLAG.notEntry);
 }
+
+/** The row is a call into Apex code: its type's, unless its line made it a leaf, as a VF call with no method. */
+export function isApexCallRow(store: Store, id: number): boolean {
+  // id is a row, so every column holds it
+  return IS_APEX_CALL[store.type[id]!] === 1 && !(store.flags[id]! & FLAG.notEntry);
+}

@@ -196,16 +196,41 @@ const log = fromBuffers(message.data);
 
 ### Read every event
 
-For a flame chart or other work over every event, `columns` gives the tree links and times as
-typed arrays indexed by id, with no object per event:
+Use event objects first: `log.events`, `children`, `ofType()` and `log.event(id)`. Each read
+makes a new object from the parsed arrays, so the log holds no object per event. An event gives
+every field, typed by its type.
+
+`columns` gives the same figures as arrays indexed by id, with no object per event. Use them for a
+pass you repeat, as a redraw, for a pass that reads only numbers, or to group by name. For a line's
+fields, `details` or `variables`, read `log.event(id)` for those ids only. See
+[Performance](#performance) for the costs.
 
 ```typescript
-const { type, depth, startTimestamp, durationTotal } = log.columns;
-for (let id = 1; id <= log.eventCount; id++) {
-  // eventType(type[id]) gives the type's name and kind.
-  draw(type[id], depth[id], startTimestamp[id], durationTotal[id]);
+const { count, depth, startTimestamp, durationTotal, text } = log.columns;
+for (let id = 1; id <= count; id++) {
+  draw(depth[id], startTimestamp[id], durationTotal[id], () => text.at(id));
 }
 ```
+
+`columns.text` and `columns.namespace` hold each distinct string once. `ids[id]` is a number to
+group by, and `values[ids[id]]` is its string; `at(id)` reads it directly. For `text`, only frames
+have an id: a leaf's is -1, and `at(id)` still reads its text. To total self time by method:
+
+```typescript
+const { count, durationSelf, text } = log.columns;
+const selfTime = new Float64Array(text.values.length);
+for (let id = 1; id <= count; id++) {
+  if (text.ids[id] >= 0) selfTime[text.ids[id]] += durationSelf[id];
+}
+// selfTime[k] is the total for text.values[k]
+```
+
+The counts and heap figures are there too, as `soqlCount.self[id]` and `soqlCount.total[id]`. A
+count or heap column is null when the log's debug levels do not record its lines. Where an event
+says null, as the rows of a query with no end line, its column gives 0. `columns` also gives
+`isFrame`, `isApexCall`, `lineNumber` and `endedBy`, which are never null; `LINE_NUMBER` names the
+two `lineNumber` values that are not a line. `kind`, `debugCategory` and the type's `debugLevel`
+come from `eventType(type[id])`.
 
 ## API
 
