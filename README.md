@@ -295,7 +295,27 @@ Memory:
 | 75 MB | 828 MB | 608 MB | 28 MB |
 | 100 MB | 1,105 MB | 812 MB | 37 MB |
 
-To measure on your machine, clone the repository and run `pnpm run bench:large`.
+Reading the parsed log: a 95 MB log from a real org, 432,000 events. Each figure is the median of 5
+runs, after the parse, as the first read / the same read again on the same log:
+
+| Work | Event objects | `columns` |
+| --- | --- | --- |
+| Numbers only: depth, self time, SOQL count | 11 / 10 ms | 9 / 4 ms |
+| Every field but text | 41 / 38 ms | 25 / 9 ms |
+| Every event's text | 85 / 10 ms | 88 / 11 ms |
+| Flame chart: a tree walk, a label per frame | 108 / 26 ms | 87 / 16 ms |
+| Call tree: self time per method | 117 / 36 ms | 83 / 5 ms |
+
+The parse holds 25 MB. Reading through event objects adds 0–2 MB. Each column is held once it is
+made: reading through `columns` adds 3–6 MB, or 26 MB for every column.
+
+v0.3 decodes everything during its parse, so its reads are fast. But its parse takes about 9× as
+long, and it holds 761 MB. With the parse included, v0.4 is 4.6–5.0× faster through event objects,
+and 5.0–5.8× faster through `columns`. `columns` gains most on a flame chart or a call tree, and
+nothing on reading text.
+
+To measure on your machine, clone the repository and run `pnpm run bench:large`, and
+`pnpm run bench:views` for the reads, on the synthetic logs.
 
 ## Requirements
 
