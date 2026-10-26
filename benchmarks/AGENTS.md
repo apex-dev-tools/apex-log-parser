@@ -7,8 +7,10 @@ applies.
 
 - `parse.bench.ts` — the `pnpm run bench` suite, which CodSpeed runs on every pull request. It
   times the node engine's build from bytes, as the package bundles it (`tsdown.bench.config.ts`),
-  and, on `parse_2mb`, what each read in `READS` (`scripts/reads.ts`) adds: on a new view each run
-  (`read`), and again on one view (`again`), as a redraw does. `bench:async` times `parse()`.
+  and, on `parse_2mb`, what the reads in `scripts/reads.ts` add on a new view each run (`read`):
+  every column, then again on that view, as a redraw does; and every event's object and text, then
+  a walk of the tree. CodSpeed runs each case in two modes, so add few. `bench:async` times
+  `parse()`.
   `bench:bundle` and `bench:run` are its two steps, for CI. The sources under Vite's module runner
   would read each import through a getter. `bench:large` and `bench:simulation` build the bundle
   too, and time it.

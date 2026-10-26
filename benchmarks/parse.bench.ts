@@ -2,9 +2,10 @@
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
 import { test } from 'vitest';
+import type { ApexLog } from '../src/views/log.js';
 import { benchLogs, makeLog } from './fixtures/fixtures.js';
 import { engineNamed, viewsFromBundle } from './scripts/engines.js';
-import { READS } from './scripts/reads.js';
+import { readColumns, readText, readTextColumn, readTree } from './scripts/reads.js';
 
 // Built by `pnpm run bench` first (tsdown.bench.config.ts): the code consumers run.
 const nodeEngine = await engineNamed('node', 'bundle');
@@ -23,6 +24,17 @@ test('build', async ({ bench }) => {
 
 const READ_LOG = 'parse_2mb';
 
+// Two cases, as each runs in two CodSpeed modes; bench:views times each read alone.
+const READS: readonly (readonly [string, (log: ApexLog) => number])[] = [
+  // Every column, its text included, then again on one view, as a redraw does
+  [
+    'columns',
+    (log) => readColumns(log) + readTextColumn(log) + readColumns(log) + readTextColumn(log),
+  ],
+  // Each event's object and text through the loop, then the tree through children
+  ['events', (log) => readText(log) + readTree(log)],
+];
+
 /** The build the reads run on. */
 function readLog(): ReturnType<typeof nodeEngine.build> {
   const options = benchLogs[READ_LOG];
@@ -37,19 +49,6 @@ test('read', async ({ bench }) => {
     // A new view each run, so no run reads another's memo.
     await bench(`${what}_2mb`, () => {
       read(apexLog(built));
-    }).run();
-  }
-});
-
-// Each id reads `parse.bench.ts::again::<what>_2mb`: the same read again on one view, as a redraw
-// does, so it times what the view keeps between reads.
-test('again', async ({ bench }) => {
-  const built = readLog();
-  for (const [what, read] of READS) {
-    const log = apexLog(built);
-    read(log);
-    await bench(`${what}_2mb`, () => {
-      read(log);
     }).run();
   }
 });
