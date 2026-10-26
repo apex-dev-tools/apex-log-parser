@@ -1,339 +1,78 @@
 # Apex Log Parser
 
 [![npm version](https://img.shields.io/npm/v/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
-[![npm downloads](https://img.shields.io/npm/dm/@apexdevtools/apex-log-parser)](https://www.npmjs.com/package/@apexdevtools/apex-log-parser)
 [![CI](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dev-tools/apex-log-parser/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://github.com/apex-dev-tools/apex-log-parser/blob/main/LICENSE)
 
 Fast Apex log parser for Salesforce debug logs: a typed call tree with timings, governor limits
-and SOQL/DML counts. TypeScript, Node.js and browser.
+and SOQL/DML counts. TypeScript, Node.js and browser. No dependencies.
 
-It parses a 100 MB log in 131 ms and holds 37 MB of memory, with no dependencies.
-
-It is the parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer)
-VS Code extension and its [MCP server](https://github.com/certinia/debug-log-analyzer-mcp).
+The parser behind the [Apex Log Analyzer](https://github.com/certinia/debug-log-analyzer) for
+VS Code.
 
 ## Features
 
-- **Fast and small.** A 100 MB log parses in 131 ms vs 829 ms in v0.3 (6× faster), and holds
-  37 MB vs 812 MB (22× less). See [Performance](#performance).
-- **Responsive.** `parse` is async and works in time slices of 5 ms. It takes an `AbortSignal`
-  and an `onProgress` callback, and can run in a worker.
-- **Any source.** A string, bytes, a `Blob`, a `fetch` `Response`, a `ReadableStream` or an async
-  iterable.
-- **Every documented event type**, each with its kind of work (`kind`), its debug level and its
-  extra values (`details`), such as a query's plan or whether a throw was caught.
-- **An event tree** where each entry is matched to its exit, with self and total times in
-  nanoseconds.
-- **Variables** that each event of a `FINEST` log could see, as the log recorded them, and the
-  object at any address the log writes.
-- **Counts up the tree**: SOQL, DML and SOSL statements and rows, exceptions and heap.
-- **Governor limits** per namespace, with a snapshot for each limit block in the log.
+- **Fast.** A 20 MB log parses in 33 ms and holds 11 MB; 100 MB in 131 ms and 37 MB.
+- **Any source.** A string, bytes, `Blob`, `fetch` `Response`, `ReadableStream` or async iterable.
+- **Off the main thread.** Parses in 5 ms slices with `signal` and `onProgress`, or in a worker
+  (`@apexdevtools/apex-log-parser/worker`).
+- **Every documented event type**, matched to its exit, with self and total times in nanoseconds.
+- **Counts up the tree:** SOQL, DML and SOSL statements and rows, exceptions and heap.
+- **Governor limits** per namespace, with a snapshot for each limit block.
+- **Variables** that each event of a `FINEST` log could see.
+- **Column arrays** (`log.columns`) for fast repeated passes, as a flame chart or call tree.
 
-## Install
+## Performance
+
+Parse:
+
+| Log size | v0.2               | v0.3           | v0.4          |
+| -------- | ------------------ | -------------- | ------------- |
+| 8 MB     | 106 ms, 104 MB     | 86 ms, 77 MB   | 15 ms, 4 MB   |
+| 20 MB    | 274 ms, 259 MB     | 221 ms, 190 MB | 33 ms, 11 MB  |
+| 50 MB    | 550 ms, 555 MB     | 426 ms, 408 MB | 66 ms, 19 MB  |
+| 100 MB   | 1,116 ms, 1,105 MB | 829 ms, 812 MB | 131 ms, 37 MB |
+
+Synthetic logs, median of 5 runs, M4 Pro, Node.js 24. The log is in memory before the timer
+starts: bytes for v0.4, a string for v0.2 and v0.3. Memory is what the parsed log holds, without
+the log itself.
+
+Read, after the parse: a 95 MB real log, 432,000 events, first read / repeat read:
+
+| Work                                       | Event objects | `log.columns` |
+| ------------------------------------------ | ------------- | ------------- |
+| Numbers only: depth, self time, SOQL count | 11 / 10 ms    | 9 / 4 ms      |
+| Flame chart: tree walk, a label per frame  | 108 / 26 ms   | 87 / 16 ms    |
+| Call tree: self time per method            | 117 / 36 ms   | 83 / 5 ms     |
+
+The parse holds 25 MB. Reads add 0–2 MB through event objects, 3–6 MB through `columns` (26 MB
+for every column). v0.3 held 761 MB.
+
+## Usage
 
 ```bash
 npm install @apexdevtools/apex-log-parser
 ```
 
-## Quick start
-
-Given this log:
-
-```
-64.0 APEX_CODE,FINE;APEX_PROFILING,FINEST;CALLOUT,NONE;DB,INFO;NBA,NONE;SYSTEM,NONE;VALIDATION,NONE;VISUALFORCE,NONE;WAVE,NONE;WORKFLOW,NONE
-09:18:22.6 (6508409)|USER_INFO|[EXTERNAL]|005000000000AAA|user@example.com|Greenwich Mean Time|GMTZ
-09:18:22.6 (6574780)|EXECUTION_STARTED
-09:18:22.6 (6600000)|CODE_UNIT_STARTED|[EXTERNAL]|01p000000000AAA|AccountService.refresh()
-09:18:22.6 (7000000)|METHOD_ENTRY|[12]|01p000000000AAA|AccountService.loadAccounts()
-09:18:22.6 (7100000)|SOQL_EXECUTE_BEGIN|[14]|Aggregations:0|SELECT Id, Name FROM Account WHERE Industry = :industry
-09:18:22.6 (9100000)|SOQL_EXECUTE_END|[14]|Rows:50
-09:18:22.6 (9200000)|METHOD_EXIT|[12]|01p000000000AAA|AccountService.loadAccounts()
-09:18:22.6 (9300000)|DML_BEGIN|[20]|Op:Update|Type:Account|Rows:50
-09:18:22.6 (9800000)|DML_END|[20]
-09:18:22.6 (9900000)|CODE_UNIT_FINISHED|AccountService.refresh()
-09:18:22.6 (10100000)|EXECUTION_FINISHED
-```
-
-This code:
-
-```typescript
-import { type ApexEvent, parse } from '@apexdevtools/apex-log-parser';
-
-const ms = (ns: number): string => (ns / 1_000_000).toFixed(2);
-
-function printTree(events: readonly ApexEvent[], depth = 0): void {
-  for (const event of events) {
-    console.log(`${'  '.repeat(depth)}${event.type} ${event.text ?? ''} (${ms(event.duration.total)}ms)`);
-    if (event.isFrame) printTree(event.children, depth + 1);
-  }
-}
-
-const log = await parse(logData);
-console.log(`${log.eventCount} events, ${ms(log.duration.total)}ms`);
-printTree(log.children);
-```
-
-Prints:
-
-```
-6 events, 3.59ms
-USER_INFO user@example.com : 005000000000AAA (0.00ms)
-EXECUTION_STARTED  (3.53ms)
-  CODE_UNIT_STARTED AccountService.refresh() (3.30ms)
-    METHOD_ENTRY AccountService.loadAccounts() (2.20ms)
-      SOQL_EXECUTE_BEGIN SELECT Id, Name FROM Account WHERE Industry = :industry (2.00ms)
-    DML_BEGIN DML Op:Update Type:Account (0.50ms)
-```
-
-Note the shape:
-
-- A frame (`isFrame: true`) spans time and has `children`. A leaf is one point in time, and its
-  `children` is always empty.
-- `METHOD_EXIT`, `SOQL_EXECUTE_END` and `DML_END` are not events of their own. Each closes its
-  matching entry and sets that event's `duration`.
-- `text` is null when the line states nothing, as for `EXECUTION_STARTED`. Use `text ?? type` for
-  a label.
-
-## Summarise a transaction
-
-The log sums the whole tree, so SOQL and DML totals need no walk. Governor limits are on the log
-too: `final` is what the transaction had used when the log ended, and `peak` is the highest each
-metric reached. Check `peak` against a limit, because counters can fall mid-log.
-
-`ofType` gives every event of the types you name, typed by its type. To rank methods, sort on
-`duration.self`. It excludes children, so it measures the time spent in the method itself, not in
-what it called.
-
-```typescript
-const log = await parse(logData);
-const { final, peak } = log.limits;
-
-// null when the log's debug levels did not record these lines.
-console.log(`SOQL: ${log.soqlCount?.total} queries, ${log.soqlRowCount?.total} rows`);
-console.log(`DML:  ${log.dmlCount?.total} statements, ${log.dmlRowCount?.total} rows`);
-console.log(`CPU:  ${final.cpuTime.used}/${final.cpuTime.limit}ms`);
-console.log(`SOQL: ${peak.soqlQueries.used} at peak (${peak.soqlQueries.percentUsed}%)`);
-
-const methods = [...log.ofType('METHOD_ENTRY')].sort((a, b) => b.duration.self - a.duration.self);
-console.table(methods.slice(0, 10).map((m) => ({ method: m.text, selfNs: m.duration.self })));
-
-for (const query of log.ofType('SOQL_EXECUTE_BEGIN')) {
-  // details is typed by the event type: here the aggregations, and the plan when the log states one.
-  // soqlRowCount is null for a query with no end line, as one an exception stopped.
-  console.log(query.lineNumber, query.soqlRowCount?.self, query.details.explain?.relativeCost);
-}
-```
-
-## In the browser
-
-The browser build has the same API. Pass the `fetch` response, so the parse reads the body as it
-arrives:
-
 ```typescript
 import { parse } from '@apexdevtools/apex-log-parser';
 
-const log = await parse(await fetch(logUrl));
+const log = await parse(logText);
+
+// null when the log's debug levels did not record these lines.
+console.log(`${log.soqlCount?.total} queries, ${log.dmlRowCount?.total} DML rows`);
+console.log(`CPU: ${log.limits.final.cpuTime.used} ms`);
+
+const slowest = [...log.ofType('METHOD_ENTRY')].sort((a, b) => b.duration.self - a.duration.self);
+for (const method of slowest.slice(0, 10)) console.log(method.text, method.duration.self);
 ```
 
-## Large logs
-
-`parse` yields to the host between slices. For a progress bar and a cancel button:
-
-```typescript
-const controller = new AbortController();
-const log = await parse(file, {
-  signal: controller.signal,
-  onProgress: ({ phase, bytes, totalBytes }) => updateBar(phase, bytes, totalBytes),
-});
-```
-
-`totalBytes` is null when the source does not state its length. An abort rejects the promise with
-the signal's reason within one slice.
-
-### Parse in a worker
-
-For more speed and a clear main thread, the `worker` option runs the parse in a worker. The read
-stays on your thread, and the bytes move to the worker. It pays for logs of a few MB and up: a
-small log parses faster on the main thread.
-
-The worker runs `@apexdevtools/apex-log-parser/worker`. In Node:
-
-```typescript
-import { Worker } from 'node:worker_threads';
-
-const worker = new Worker(new URL(import.meta.resolve('@apexdevtools/apex-log-parser/worker')));
-const log = await parse(bytes, { worker });
-```
-
-In a browser, serve that file and start a `Worker` from it. It is one classic script with no
-imports, so where a page cannot start a worker from a URL, as in a VS Code webview, start it from
-a `blob:` URL:
-
-```typescript
-const script = await (await fetch(workerFileUrl)).text();
-const worker = new Worker(URL.createObjectURL(new Blob([script], { type: 'text/javascript' })));
-const log = await parse(await fetch(logUrl), { worker });
-```
-
-One worker can run many parses, one after another. Bytes that you hold are copied, so you keep
-them.
-
-### Move a log between threads
-
-`toBuffers` turns a parsed log into buffers that `postMessage` moves without a copy, and
-`fromBuffers` opens them on the other side. Both sides must use the same version of this package.
-
-```typescript
-import { fromBuffers, toBuffers } from '@apexdevtools/apex-log-parser';
-
-const { buffers, transfer } = toBuffers(log);
-port.postMessage(buffers, transfer);
-
-// On the other thread:
-const log = fromBuffers(message.data);
-```
-
-### Read every event
-
-Use event objects first: `log.events`, `children`, `ofType()` and `log.event(id)`. Each read
-makes a new object from the parsed arrays, so the log holds no object per event. An event gives
-every field, typed by its type.
-
-`columns` gives the same figures as arrays indexed by id, with no object per event. Use them for a
-pass you repeat, as a redraw, for a pass that reads only numbers, or to group by name. For a line's
-fields, `details` or `variables`, read `log.event(id)` for those ids only. See
-[Performance](#performance) for the costs.
-
-```typescript
-const { count, depth, startTimestamp, durationTotal, text } = log.columns;
-for (let id = 1; id <= count; id++) {
-  draw(depth[id], startTimestamp[id], durationTotal[id], () => text.at(id));
-}
-```
-
-`columns.text` and `columns.namespace` hold each distinct string once. `ids[id]` is a number to
-group by, and `values[ids[id]]` is its string; `at(id)` reads it directly. For `text`, only frames
-have an id: a leaf's is -1, and `at(id)` still reads its text. To total self time by method:
-
-```typescript
-const { count, durationSelf, text } = log.columns;
-const selfTime = new Float64Array(text.values.length);
-for (let id = 1; id <= count; id++) {
-  if (text.ids[id] >= 0) selfTime[text.ids[id]] += durationSelf[id];
-}
-// selfTime[k] is the total for text.values[k]
-```
-
-The counts and heap figures are there too, as `soqlCount.self[id]` and `soqlCount.total[id]`. A
-count or heap column is null when the log's debug levels do not record its lines. Where an event
-says null, as the rows of a query with no end line, its column gives 0. `columns` also gives
-`isFrame`, `isApexCall`, `lineNumber` and `endedBy`, which are never null; `LINE_NUMBER` names the
-two `lineNumber` values that are not a line. `kind`, `debugCategory` and the type's `debugLevel`
-come from `eventType(type[id])`.
-
-## API
-
-Everything comes from the package root: `parse`, `toBuffers`, `fromBuffers`, the event catalog
-(`EVENT_TYPES`, `eventType`), every type and its const companion. The type declarations document
-every field, so your editor shows them.
-
-`ApexLog` is the log. Besides its rollups and `children`, it has `event(id)`, `ofType()`, `at(ns)`,
-`columns`, `limits`, `namespaces`, `debugLevels`, `debugLevelSettings`, `userInfo`, `entryPoints`,
-`exceptions`, `truncation`, `unclosedFrames`, `issues` and `parsingErrors`.
-
-## Tips
-
-**Capture the log at the right levels.** The parser reports what the log contains. A count or
-heap figure the header's level does not record is `null`, not 0. This is the most common surprise:
-
-| You want | The log needs |
-| --- | --- |
-| `duration` on method events | `APEX_CODE` at `FINE` or above, plus `APEX_PROFILING` |
-| `limits` | `APEX_PROFILING` at `FINE` or above, which writes the `CUMULATIVE_LIMIT_USAGE` block |
-| SOQL and DML events and counts | `DB` at `INFO` or above |
-| `heapAllocated`, `heapGross`, `heapPeak` | `APEX_CODE` at `FINER` or above |
-| Flow and Process Builder limit lines | `WORKFLOW` at `FINER` |
-
-**All-zero limits mean "not reported".** Without a `LIMIT_USAGE_FOR_NS` block, every
-`limits.final` and `limits.peak` metric stays at `{ used: 0, limit: null, percentUsed: null }`. That
-is not a transaction that used nothing.
-
-**Use `id` as a key within one parse.** Ids start at 1 and follow log order. Each read gives a new
-event object, so the log holds no object per event: key a `Map` by `id`, not by the event. Ids are
-not stable across parses.
-
-**Two lists, two meanings.** `parsingErrors` holds lines the parser could not read, which is a
-parser problem. `issues` holds problems in the transaction the log describes, such as a truncated
-log or an unexpected exit.
-
-## Performance
-
-_Measured on a 12-core M4 Pro, 24 GB RAM, Node.js 24.22.1; v0.2 and v0.3 on 24.20.0._
-
-Synthetic debug logs, the median of 5 runs. Each log is in memory before the timer
-starts: as bytes for v0.4, and as a string for v0.2 and v0.3, which read only strings. Memory is
-what the parsed log holds, without the log's own bytes or string.
-
-Parse time:
-
-| Log size | v0.2 | v0.3 | v0.4 |
-| --- | --- | --- | --- |
-| 8 MB | 106 ms | 86 ms | 15 ms |
-| 20 MB | 274 ms | 221 ms | 33 ms |
-| 50 MB | 550 ms | 426 ms | 66 ms |
-| 75 MB | 831 ms | 632 ms | 99 ms |
-| 100 MB | 1,116 ms | 829 ms | 131 ms |
-
-Memory:
-
-| Log size | v0.2 | v0.3 | v0.4 |
-| --- | --- | --- | --- |
-| 8 MB | 104 MB | 77 MB | 4 MB |
-| 20 MB | 259 MB | 190 MB | 11 MB |
-| 50 MB | 555 MB | 408 MB | 19 MB |
-| 75 MB | 828 MB | 608 MB | 28 MB |
-| 100 MB | 1,105 MB | 812 MB | 37 MB |
-
-Reading the parsed log: a 95 MB log from a real org, 432,000 events. Each figure is the median of 5
-runs, after the parse, as the first read / the same read again on the same log:
-
-| Work | Event objects | `columns` |
-| --- | --- | --- |
-| Numbers only: depth, self time, SOQL count | 11 / 10 ms | 9 / 4 ms |
-| Every field but text | 41 / 38 ms | 25 / 9 ms |
-| Every event's text | 85 / 10 ms | 88 / 11 ms |
-| Flame chart: a tree walk, a label per frame | 108 / 26 ms | 87 / 16 ms |
-| Call tree: self time per method | 117 / 36 ms | 83 / 5 ms |
-
-The parse holds 25 MB. Reading through event objects adds 0–2 MB. Each column is held once it is
-made: reading through `columns` adds 3–6 MB, or 26 MB for every column.
-
-v0.3 decodes everything during its parse, so its reads are fast. But its parse takes about 9× as
-long, and it holds 761 MB. With the parse included, v0.4 is 4.6–5.0× faster through event objects,
-and 5.0–5.8× faster through `columns`. `columns` gains most on a flame chart or a call tree, and
-nothing on reading text.
-
-To measure on your machine, clone the repository and run `pnpm run bench:large`, and
-`pnpm run bench:views` for the reads, on the synthetic logs.
+The type declarations document every field. Upgrading from v0.3 or earlier: see the
+[CHANGELOG](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CHANGELOG.md).
 
 ## Requirements
 
-- **Node.js 22 or later.** The `worker` option needs Node 22.3 or later in Node.
-- **Modern browsers**, Deno and Bun. The package targets ES2022, reads no files and makes no
-  network calls of its own.
-- **ESM only.** There is no CommonJS build, so `require()` does not work.
-- **TypeScript declarations ship with the package.** No `@types` install is needed.
-
-**Tests under jsdom**, as in Jest's `jsdom` environment, lack globals the parser uses. Add them in
-a setup file: `structuredClone` for both builds, `setImmediate` for the Node build, and
-`MessageChannel` for the browser build where `scheduler.yield` is not available.
-
-To upgrade from a version before 0.4, see the 0.4.0 entry in the [CHANGELOG](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CHANGELOG.md).
-
-## Contributing
-
-See [CONTRIBUTING.md](https://github.com/apex-dev-tools/apex-log-parser/blob/main/CONTRIBUTING.md) for development setup, coding standards, and the PR process.
+Node.js 22+ (the `worker` option needs 22.3+), modern browsers, Deno or Bun. ESM only.
 
 ## License
 
