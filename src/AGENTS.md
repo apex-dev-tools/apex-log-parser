@@ -68,7 +68,8 @@ both.
   global `process.getBuiltinModule`. A test may statically import the data JSON, as
   `Catalog.test.ts` does; `tsconfig.build.json` excludes the tests, so `rootDir` holds for the
   build. A WHATWG global `src/` needs is declared in the module that uses it, as `api/sources.ts`
-  declares `TextEncoder`. Never widen `lib` to `DOM` for one type.
+  declares `TextEncoder`. Never widen `lib` to `DOM` for one type. Only `__tests__/dom/` sees the
+  DOM types, through `tsconfig.dom.json`: it checks that the platform's objects are a `LogSource`.
 - Event times: nanoseconds. Heap figures: bytes. `ApexLog.startTime`: milliseconds since midnight.
   The `cpuTime` limit: milliseconds. State the unit on every new field.
 - Report what the log stated. For a value the log did not give, use `null`, never a default, so a

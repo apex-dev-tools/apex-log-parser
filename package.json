@@ -24,7 +24,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.dom.json",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -35,7 +35,7 @@
     "bench:simulation": "node --run bench:bundle && node --no-opt --no-maglev --predictable --hash-seed=1 --random-seed=1 --expose-gc --max-old-space-size=8192 --import tsx benchmarks/scripts/large.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "ci": "biome check . && tsc --noEmit && tsc -p tsconfig.scripts.json && vitest run",
+    "ci": "biome check . && node --run typecheck && node --run typecheck:scripts && vitest run",
     "version:packages": "changeset version && biome check --write package.json",
     "prepublishOnly": "pnpm run build",
     "scrape": "tsx scripts/scrape.ts",
