@@ -21,7 +21,8 @@
         "noUnusedImports": "error"
       },
       "complexity": {
-        "noUselessConstructor": "off"
+        "noUselessConstructor": "off",
+        "useMathMinMax": "off"
       },
       "style": {
         "noNonNullAssertion": "off",
