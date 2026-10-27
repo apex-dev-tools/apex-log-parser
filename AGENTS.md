@@ -18,8 +18,8 @@ timings, governor limits, SOQL/DML/SOSL counts. No runtime dependencies. ESM onl
 
 ## Commands
 
-`pnpm run ci` — biome, `tsc --noEmit`, `tsc -p tsconfig.scripts.json`, vitest. Run before every
-commit.
+`pnpm run ci` — biome, `pnpm typecheck` (`tsconfig.json` and `tsconfig.dom.json`),
+`tsc -p tsconfig.scripts.json`, vitest. Run before every commit.
 
 - `pnpm ci` is pnpm's `clean-install`: it deletes `node_modules` and reinstalls. Always write `run`.
 - `pnpm run bench` — the benchmarks, no watch. Locally: wall time. CI on a pull request: instruction

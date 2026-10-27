@@ -14,7 +14,10 @@ export interface LogBlob {
 }
 
 /** One read of a `ReadableStream` reader. */
-export type StreamRead = { done: false; value: Uint8Array } | { done: true; value?: undefined };
+export type StreamRead =
+  | { done: false; value: Uint8Array }
+  // lib.dom shares the BYOB done type, which can carry a value; parse ignores it.
+  | { done: true; value?: Uint8Array | undefined };
 
 /** A `ReadableStream` of bytes. */
 export interface LogStream {
@@ -39,6 +42,7 @@ export type LogSource =
   | string
   | Uint8Array
   | ArrayBuffer
+  | SharedArrayBuffer
   | LogBlob
   | LogResponse
   | LogStream
