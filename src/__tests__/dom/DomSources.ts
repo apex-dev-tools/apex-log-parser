@@ -10,8 +10,10 @@ declare const response: Response;
 declare const stream: ReadableStream<Uint8Array>;
 declare const blob: Blob;
 declare const signal: AbortSignal;
+declare const shared: SharedArrayBuffer;
 
 response satisfies LogSource;
 stream satisfies LogSource;
 blob satisfies LogSource;
+shared satisfies LogSource;
 signal satisfies LogAbortSignal;

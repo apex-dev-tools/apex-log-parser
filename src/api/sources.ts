@@ -42,6 +42,7 @@ export type LogSource =
   | string
   | Uint8Array
   | ArrayBuffer
+  | SharedArrayBuffer
   | LogBlob
   | LogResponse
   | LogStream
