@@ -130,7 +130,7 @@ function moved(log: ApexLog): LogBuffers {
 it('the fixture states every part of a build', async () => {
   const log = await parse(LOG);
   expect(log.userInfo).not.toBeNull();
-  expect(log.namespaces).toEqual(['ns']);
+  expect(log.namespaces).toEqual(['default', 'ns']);
   expect(log.limits.snapshots).toHaveLength(1);
   expect(log.issues.map((i) => i.summary)).toContain('Skipped-Lines');
   expect(log.truncation.regions).toHaveLength(1);

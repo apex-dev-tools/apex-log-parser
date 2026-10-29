@@ -18,6 +18,8 @@ export const FLAG = {
   notEntry: 2,
   /** A later exit line, not its own, ended this frame, as when an exception unwinds the stack. */
   unwind: 4,
+  /** The line states no namespace, so the event takes its parent's. */
+  inherited: 8,
 } as const;
 
 /** The type id of the log itself, row 0. One past the event types. */

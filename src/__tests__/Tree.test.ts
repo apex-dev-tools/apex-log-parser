@@ -291,10 +291,10 @@ describe('package entries', () => {
     const top = kids(log.children[0]);
     expect(top.map((e) => [e.type, e.startTimestamp, e.endTimestamp, e.namespace])).toEqual([
       // A three-part name states a namespace only once the log has stated it.
-      ['METHOD_ENTRY', 200, 300, null],
+      ['METHOD_ENTRY', 200, 300, 'default'],
       ['ENTERING_MANAGED_PKG', 400, 700, 'ns'],
       ['ENTERING_MANAGED_PKG', 700, 725, 'ns2'],
-      ['DML_BEGIN', 725, 750, null],
+      ['DML_BEGIN', 725, 750, 'default'],
       ['ENTERING_MANAGED_PKG', 800, 1100, 'ns2'],
     ]);
     expect(kids(top[0]).map((e) => [e.type, e.namespace])).toEqual([

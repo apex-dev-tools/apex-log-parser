@@ -75,7 +75,8 @@ both.
 - Report what the log stated. For a value the log did not give, use `null`, never a default, so a
   caller can tell "not stated" from "zero". Not `''`, and not an absent or `undefined` field, whose
   shape depends on the transport. A sub-object whose source field is missing is `null` itself, not
-  an object of nulls.
+  an object of nulls. A namespace is not such a value: code in no package is in the namespace
+  Salesforce names `default` (`LIMIT_USAGE_FOR_NS`), so `ApexEvent.namespace` is never null.
 
 ## Adding an event type
 

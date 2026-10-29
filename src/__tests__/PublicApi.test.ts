@@ -73,6 +73,7 @@ import * as node from '../node.js';
 const PUBLIC_EXPORTS = [
   'DEBUG_CATEGORY',
   'DEBUG_CATEGORY_TOKEN',
+  'DEFAULT_NAMESPACE',
   'ENDED_BY',
   'EVENT_TYPE_NAMES',
   'EVENT_TYPES',

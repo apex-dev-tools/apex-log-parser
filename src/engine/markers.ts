@@ -14,6 +14,7 @@ import type { StringTable } from '../store/strings.js';
 import { SETTINGS_LINE } from './header.js';
 import type { Issue, IssueText, IssueType } from './issues.js';
 import { ISSUE, Issues } from './issues.js';
+import { namespaceText } from './namespaces.js';
 import { HOOK_ID } from './tables.js';
 
 /**
@@ -171,9 +172,7 @@ export class LogMarkers {
     const text = eventText(type, fields) ?? '';
     const timestamp = store.timestamp[id]!;
     if (hook === HOOK_ID.limitSnapshot) {
-      const ns = store.namespace[id]!;
-      // The limits rule always states one, so NONE is its 'default'.
-      const namespace = ns === NONE ? 'default' : this.strings.text(ns);
+      const namespace = namespaceText(this.strings, store.namespace[id]!);
       this.snapshots.push({ timestamp, namespace, limits: limitsOfBlock(text) });
     } else if (hook === HOOK_ID.fatal) {
       this.textIssue(timestamp, id, text, 'fatal');

@@ -61,7 +61,7 @@ export interface Columns {
    * can group by it. A leaf's text is rarely repeated, so its id is -1, and `at` reads its text.
    */
   readonly text: TextColumn;
-  /** Each event's `namespace`. `values` is `ApexLog.namespaces`; an id is -1 for none. */
+  /** Each event's `namespace`. `values` is `ApexLog.namespaces`; an id is -1 for the log. */
   readonly namespace: TextColumn;
   /** As `dmlCount`. Null when the log's debug levels do not record DML lines. */
   readonly dmlCount: CountColumn | null;
@@ -224,7 +224,7 @@ function endedByColumn(store: Store): TextColumn<EndedBy> {
   return textColumn(ids, ENDINGS, store.count);
 }
 
-/** Each row's namespace as an index into `namespaces`, from the string ids the store holds. */
+/** Each row's namespace as an index into `namespaces`, from the string ids, or `NONE`, the store holds. */
 function namespaceColumn(
   store: Store,
   namespaceIds: readonly number[],
@@ -232,10 +232,11 @@ function namespaceColumn(
 ): TextColumn {
   const indexOf = new Map(namespaceIds.map((ns, i) => [ns, i]));
   const ids = new Int32Array(store.count).fill(-1);
+  const defaultIndex = indexOf.get(NONE) ?? -1;
   for (let id = 1; id < store.count; id++) {
     // id is a row, so in range
     const ns = store.namespace[id]!;
-    if (ns !== NONE) ids[id] = indexOf.get(ns) ?? -1;
+    ids[id] = ns === NONE ? defaultIndex : (indexOf.get(ns) ?? -1);
   }
   return textColumn(ids, namespaces, store.count);
 }

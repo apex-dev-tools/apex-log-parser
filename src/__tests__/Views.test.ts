@@ -49,8 +49,12 @@ describe('events', () => {
       { self: 0, total: 4 },
       { self: 0, total: 0 },
     ]);
-    // The namespace rules give `ns.MyClass.run()` no namespace of its own, nor the code unit one.
-    expect([run.lineNumber, run.namespace, run.isFrame && run.endedBy]).toEqual([1, null, 'exit']);
+    // The namespace rules give `ns.MyClass.run()` no namespace of its own; the code unit is default.
+    expect([run.lineNumber, run.namespace, run.isFrame && run.endedBy]).toEqual([
+      1,
+      'default',
+      'exit',
+    ]);
     expect([run.kind, run.debugCategory, run.debugLevel]).toEqual(['method', 'apexCode', 'FINE']);
     expect(log.event(1)?.lineNumber).toBe('EXTERNAL');
   });

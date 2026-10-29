@@ -112,7 +112,7 @@ export interface Built {
   readonly unclosedFrames: readonly number[];
   /** Per `COUNTER`, then `HEAP_SLOT`: 1 when the log states a line that gives the figure. */
   readonly seen: Uint8Array;
-  /** The string ids of the namespaces the log states, in first-stated order. */
+  /** The namespaces' string ids, `NONE` for the default, in first-stated order. */
   readonly namespaces: readonly number[];
   /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
   readonly snapshots: readonly LimitSnapshot[];
@@ -392,8 +392,16 @@ export class LogBuilder {
     const store = this.store;
     // frame was added by take, so it has a type
     const type = store.type[frame]!;
-    if (TAKES_EXIT_NAMESPACE[type] && exitNamespace !== UNSTATED) {
-      store.namespace[frame] = exitNamespace === DEFAULT ? NONE : exitNamespace;
+    // A line that unwinds this frame is a lower frame's exit, so its namespace is not this one's.
+    const ownExit = !(store.flags[frame]! & FLAG.unwind);
+    if (TAKES_EXIT_NAMESPACE[type] && exitNamespace !== UNSTATED && ownExit) {
+      const ns = exitNamespace === DEFAULT ? NONE : exitNamespace;
+      // frame was added by take, so every column holds it
+      store.flags[frame]! &= ~FLAG.inherited;
+      if (store.namespace[frame] !== ns) {
+        store.namespace[frame] = ns;
+        this.reinherit(frame);
+      }
     }
     const rowsAt = ROWS_FROM_EXIT[type]!;
     if (rowsAt < 0) return;
@@ -405,6 +413,22 @@ export class LogBuilder {
     const at = store.countsOf(frame) + rowsAt * 2;
     store.counts[at + SELF] = rows;
     store.counts[at + TOTAL] = rows;
+  }
+
+  /**
+   * Each row in `frame`'s subtree that took its parent's namespace takes it again, after the exit
+   * line changed `frame`'s. Only while `frame` is the innermost open frame: every row after it is
+   * in its subtree, and closed or a leaf, so its `subtreeEnd` is set. Ids are in prefix order, so
+   * each parent is set before its children. A row that states its own is skipped with its subtree.
+   */
+  private reinherit(frame: number): void {
+    const { flags, namespace, parent, subtreeEnd } = this.store;
+    const end = this.store.count;
+    for (let id = frame + 1; id < end; ) {
+      // id < count, so every column holds it, and its parent is a row
+      if (flags[id]! & FLAG.inherited) namespace[id] = namespace[parent[id++]!]!;
+      else id = subtreeEnd[id]!;
+    }
   }
 
   /** The log stops inside the innermost frame, or a new execution or the maximum size ends it. */
@@ -484,7 +508,11 @@ export class LogBuilder {
       if (IS_FRAME[type] && type !== ENTERING_MANAGED_PKG && store.exitStamp[previous]) run = NONE;
     }
     let id = NONE;
-    if (top < 0) this.mergedTail = Number.NaN;
+    if (top < 0) {
+      this.mergedTail = Number.NaN;
+      // A top-level event that states none takes the log's: the default namespace.
+      if (this.nextNamespace === UNSTATED) this.namespaces.listDefault();
+    }
     if (this.nextType !== ENTERING_MANAGED_PKG) id = this.take(parent, depth);
     else if (run !== NONE && store.namespace[run] === this.namespaceUnder(parent)) {
       if (top < 0) this.mergedTail = this.nextTimestamp;
@@ -526,7 +554,8 @@ export class LogBuilder {
       depth,
     );
     store.lineNumber[id] = this.nextLine;
-    store.flags[id] = this.nextFlags;
+    store.flags[id] =
+      this.nextNamespace === UNSTATED ? this.nextFlags | FLAG.inherited : this.nextFlags;
     store.namespace[id] = this.namespaceUnder(parent);
     this.seed(id);
     this.lastTimestamp = this.nextTimestamp;

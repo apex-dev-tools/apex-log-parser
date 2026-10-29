@@ -242,7 +242,7 @@ describe('ApexLog', () => {
       { isFrame: 1, isApexCall: 1, lineNumber: 4, endedBy: 'log-end', text: 'ns.MyClass.go()' },
     ]);
     expect([c.isFrame[alloc], c.text.ids[alloc], c.endedBy.ids[alloc]]).toEqual([0, -1, -1]);
-    expect([c.namespace.at(pkg), c.namespace.at(run)]).toEqual(['ns', null]);
+    expect([c.namespace.at(pkg), c.namespace.at(run)]).toEqual(['ns', 'default']);
     // Its event says null: the rows are not stated. The column gives 0.
     expect(log.event(query)?.soqlRowCount).toBeNull();
     expect([c.soqlRowCount?.self[query], c.soqlCount?.total[query]]).toEqual([0, 1]);

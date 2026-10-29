@@ -16,7 +16,7 @@ For coding agents working on the engine. The root [AGENTS.md](../../AGENTS.md) a
 - `rollups.ts` — the passes after the build: the log's times, the rollups, the flow residuals.
 - `header.ts` — the debug levels, `USER_INFO`, the start time.
 - `issues.ts` — the log issues, and the truncation regions they make.
-- `namespaces.ts` — the namespace rules, read from bytes.
+- `namespaces.ts` — the namespace rules, read from bytes, and the default namespace's text.
 - `engine.ts` — the `LogEngine`, which keeps one idle builder alive. `node.ts`, `browser.ts`: each
   build's `LogEngine`.
 - `buffers.ts` — a build to typed arrays and plain values that structured clone carries whole, and

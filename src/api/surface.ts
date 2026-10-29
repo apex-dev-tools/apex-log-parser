@@ -27,6 +27,7 @@ export {
 export type { DebugLevelSetting, LogTimezone, UserInfo } from '../engine/header.js';
 export type { IssueType, TruncationKind } from '../engine/issues.js';
 export { ISSUE_TYPE, TRUNCATION_KIND } from '../engine/issues.js';
+export { DEFAULT_NAMESPACE } from '../engine/namespaces.js';
 export type {
   GovernorLimits,
   LimitMetric,

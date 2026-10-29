@@ -172,9 +172,8 @@ describe('LIMIT_USAGE_FOR_NS namespace', () => {
   );
   const events = [...apexLog.events].filter((e) => e.type === 'LIMIT_USAGE_FOR_NS');
 
-  // `(default)` is no namespace: null on the event, and not in the log's list.
   it('strips the parentheses, with or without them in the log', () => {
-    expect(events.map((e) => e.namespace)).toEqual([null, 'myNS', 'otherNS']);
+    expect(events.map((e) => e.namespace)).toEqual(['default', 'myNS', 'otherNS']);
     expect(apexLog.limits.snapshots.map((s) => s.namespace)).toEqual([
       'default',
       'myNS',
@@ -182,7 +181,7 @@ describe('LIMIT_USAGE_FOR_NS namespace', () => {
     ]);
   });
 
-  it('adds each one but the default to the namespaces of the log', () => {
-    expect(apexLog.namespaces).toEqual(['myNS', 'otherNS']);
+  it('adds each one, the default too, to the namespaces of the log in first-stated order', () => {
+    expect(apexLog.namespaces).toEqual(['default', 'myNS', 'otherNS']);
   });
 });
