@@ -418,14 +418,16 @@ export class LogBuilder {
   /**
    * Each row in `frame`'s subtree that took its parent's namespace takes it again, after the exit
    * line changed `frame`'s. Only while `frame` is the innermost open frame: every row after it is
-   * in its subtree. Ids are in prefix order, so each parent is set before its children.
+   * in its subtree, and closed or a leaf, so its `subtreeEnd` is set. Ids are in prefix order, so
+   * each parent is set before its children. A row that states its own is skipped with its subtree.
    */
   private reinherit(frame: number): void {
-    const { flags, namespace, parent } = this.store;
+    const { flags, namespace, parent, subtreeEnd } = this.store;
     const end = this.store.count;
-    for (let id = frame + 1; id < end; id++) {
+    for (let id = frame + 1; id < end; ) {
       // id < count, so every column holds it, and its parent is a row
-      if (flags[id]! & FLAG.inherited) namespace[id] = namespace[parent[id]!]!;
+      if (flags[id]! & FLAG.inherited) namespace[id] = namespace[parent[id++]!]!;
+      else id = subtreeEnd[id]!;
     }
   }
 
