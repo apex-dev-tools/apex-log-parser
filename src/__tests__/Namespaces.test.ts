@@ -267,4 +267,25 @@ describe('namespaces', () => {
       '      null [nsq]',
     ]);
   });
+
+  // Catches an outer correction overwriting an inner frame its own exit line corrected.
+  it('keeps the namespace a nested first use states when the frame around it is corrected', () => {
+    const log = [
+      '09:00:00.0 (1)|CODE_UNIT_STARTED|[EXTERNAL]|01p000000000AAA|ns.MyClass.run()',
+      // pk1's static init is the first use of pk2: neither entry states its namespace.
+      '09:00:00.0 (2)|METHOD_ENTRY|[1]|01p000000000AAA|pk1.Init.Init()',
+      '09:00:00.0 (3)|METHOD_ENTRY|[2]|01p000000000AAA|pk2.Init.Init()',
+      '09:00:00.0 (4)|SOQL_EXECUTE_BEGIN|[3]|Aggregations:0|SELECT Id FROM Account',
+      '09:00:00.0 (5)|SOQL_EXECUTE_END|[3]|Rows:1',
+      '09:00:00.0 (6)|METHOD_EXIT|[2]|pk2.Init',
+      '09:00:00.0 (7)|METHOD_EXIT|[1]|pk1.Init',
+      '09:00:00.0 (8)|CODE_UNIT_FINISHED|ns.MyClass.run()',
+    ].join('\n');
+    expect(outline(parse(log))).toEqual([
+      'ns.MyClass.run() [ns]',
+      '  pk1.Init.Init() [pk1]',
+      '    pk2.Init.Init() [pk2]',
+      '      SELECT Id FROM Account [pk2]',
+    ]);
+  });
 });
