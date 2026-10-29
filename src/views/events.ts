@@ -8,6 +8,7 @@ import type { EventFields } from '../catalog/fields.js';
 import type { DebugCategory, EventType, EventTypeInfo, Kind, Level } from '../catalog/types.js';
 import { LEVEL } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
+import { namespaceText } from '../engine/namespaces.js';
 import {
   COUNT_AT,
   ENDS_ON_NEXT,
@@ -20,7 +21,7 @@ import {
   ROWS_FROM_EXIT,
 } from '../engine/tables.js';
 import type { Store } from '../store/store.js';
-import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, NONE, SELF, TOTAL } from '../store/store.js';
+import { COUNTER, EXTERNAL_LINE, HEAP, NO_LINE, SELF, TOTAL } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
 import type { AnyDetails, DetailsOf } from './details.js';
 import { EventLines } from './lines.js';
@@ -106,8 +107,8 @@ interface EventBase extends Rollups {
   readonly parent: FrameEvent | null;
   /** The line number the line states, `'EXTERNAL'`, or null when it states none. */
   readonly lineNumber: number | 'EXTERNAL' | null;
-  /** Null when the event is in no namespace. */
-  readonly namespace: string | null;
+  /** `DEFAULT_NAMESPACE` for code in no package, and for an event always in it, as `DML_BEGIN`. */
+  readonly namespace: string;
   /**
    * What the event says, as its type's rule reads its line and continuation lines. Null when it
    * states nothing; a caller that needs a label can use `text ?? type`. Read from the log once.
@@ -430,9 +431,8 @@ class EventView extends RollupView {
     return line === NO_LINE ? null : line === EXTERNAL_LINE ? 'EXTERNAL' : line;
   }
 
-  get namespace(): string | null {
-    const ns = this.store.namespace[this.id]!;
-    return ns === NONE ? null : this.strings.text(ns);
+  get namespace(): string {
+    return namespaceText(this.strings, this.store.namespace[this.id]!);
   }
 
   get endedBy(): EndedBy {

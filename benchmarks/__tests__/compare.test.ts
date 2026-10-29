@@ -151,9 +151,9 @@ describe('currentProjection', () => {
         ].join('\n'),
       ),
     );
-    expect(out.get('0/0')).toMatchObject({ lineNumber: 0, namespace: null });
-    expect(out.get('0/1')).toMatchObject({ lineNumber: null, namespace: null });
-    expect((out.get('log') as unknown as LogRecord).namespaces).toEqual([]);
+    expect(out.get('0/0')).toMatchObject({ lineNumber: 0, namespace: 'default' });
+    expect(out.get('0/1')).toMatchObject({ lineNumber: null, namespace: 'default' });
+    expect((out.get('log') as unknown as LogRecord).namespaces).toEqual(['default']);
   });
 
   it('adds each event its text figures', () => {

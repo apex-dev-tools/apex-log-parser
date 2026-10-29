@@ -112,7 +112,7 @@ export interface Built {
   readonly unclosedFrames: readonly number[];
   /** Per `COUNTER`, then `HEAP_SLOT`: 1 when the log states a line that gives the figure. */
   readonly seen: Uint8Array;
-  /** The string ids of the namespaces the log states, in first-stated order. */
+  /** The namespaces' string ids, `NONE` for the default, in first-stated order. */
   readonly namespaces: readonly number[];
   /** The `LIMIT_USAGE_FOR_NS` blocks, in log order. */
   readonly snapshots: readonly LimitSnapshot[];
@@ -508,7 +508,11 @@ export class LogBuilder {
       if (IS_FRAME[type] && type !== ENTERING_MANAGED_PKG && store.exitStamp[previous]) run = NONE;
     }
     let id = NONE;
-    if (top < 0) this.mergedTail = Number.NaN;
+    if (top < 0) {
+      this.mergedTail = Number.NaN;
+      // A top-level event that states none takes the log's: the default namespace.
+      if (this.nextNamespace === UNSTATED) this.namespaces.listDefault();
+    }
     if (this.nextType !== ENTERING_MANAGED_PKG) id = this.take(parent, depth);
     else if (run !== NONE && store.namespace[run] === this.namespaceUnder(parent)) {
       if (top < 0) this.mergedTail = this.nextTimestamp;

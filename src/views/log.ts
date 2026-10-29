@@ -6,6 +6,7 @@ import type { DebugCategory, EventType, Level } from '../catalog/types.js';
 import type { Built } from '../engine/builder.js';
 import type { DebugLevelSetting, UserInfo } from '../engine/header.js';
 import type { IssueType, TruncationKind } from '../engine/issues.js';
+import { namespaceText } from '../engine/namespaces.js';
 import { isFrameRow } from '../engine/tables.js';
 import type { GovernorLimits } from '../limits.js';
 import { governorLimits } from '../limits.js';
@@ -93,7 +94,10 @@ export interface ApexLog extends Rollups {
   readonly parsingErrors: readonly string[];
   /** The governor limit usage the log's limit blocks state. */
   readonly limits: GovernorLimits;
-  /** Every namespace the log states, in first-stated order. */
+  /**
+   * Every namespace an event is in, `DEFAULT_NAMESPACE` included, in first-stated order. A
+   * top-level event that states none lists the default, though its exit line can name another.
+   */
   readonly namespaces: readonly string[];
   /** Every `EXCEPTION_THROWN` and `FATAL_ERROR`, in id order. */
   readonly exceptions: readonly EventOf<'EXCEPTION_THROWN' | 'FATAL_ERROR'>[];
@@ -303,7 +307,7 @@ class LogView extends RollupView implements ApexLog {
 
   get namespaces(): readonly string[] {
     return (this.memo.namespaces ??= Object.freeze(
-      this.built.namespaces.map((id) => this.built.strings.text(id)),
+      this.built.namespaces.map((id) => namespaceText(this.built.strings, id)),
     ));
   }
 

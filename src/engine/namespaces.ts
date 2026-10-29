@@ -20,14 +20,24 @@ import type { ByteFields } from '../bytes/cursor.js';
 import type { Source } from '../bytes/source.js';
 import { HIGHS, ONES, PIPES } from '../bytes/words.js';
 import type { NamespaceRule } from '../catalog/catalog.js';
+import { NONE } from '../store/store.js';
 import type { StringTable } from '../store/strings.js';
 
 /** The line states no namespace, so the event takes its frame's. */
 export const UNSTATED = -1;
-/**
- * The default namespace, `'default'` before 0.4: the event never takes its frame's.
- */
+/** The default namespace, `DEFAULT_NAMESPACE`: the event never takes its frame's. */
 export const DEFAULT = -2;
+
+/**
+ * `ApexEvent.namespace` for code in no package, and for an event that is always in it, as
+ * `DML_BEGIN`. The log names it so too, as in `LIMIT_USAGE_FOR_NS`.
+ */
+export const DEFAULT_NAMESPACE: 'default' = 'default';
+
+/** A namespace as the store holds it, `NONE` for the default, as text. */
+export function namespaceText(strings: StringTable, ns: number): string {
+  return ns === NONE ? DEFAULT_NAMESPACE : strings.text(ns);
+}
 
 /** A rule's id in `RULE`, so the engine switches on a number. */
 export const RULE: { readonly [R in NamespaceRule]: number } = {
@@ -42,7 +52,6 @@ export const RULE: { readonly [R in NamespaceRule]: number } = {
 
 const TYPE_FOR_NAME = 'System.Type.forName(';
 const APEX_SCHEME = 'apex://';
-const DEFAULT_TEXT = 'default';
 const UNIT_TYPES = [
   'EventService',
   'Validation',
@@ -61,13 +70,14 @@ const DOTS = 0x2e2e2e2e;
  * namespace up asks whether the log stated it before this line.
  */
 export class Namespaces {
-  /** Every namespace stated so far, in the order the log first states them; never `'default'`. */
+  /** Every namespace stated so far, in the order the log first states them; `NONE` is default. */
   readonly order: number[] = [];
   private readonly bytes: Uint8Array;
   private readonly words: DataView;
   private readonly strings: StringTable;
   private seen: Uint8Array = new Uint8Array(64);
   private defaultSeen = false;
+  private defaultListed = false;
   // The last prefix found stated; a length of 0 matches none. A stated namespace stays stated.
   private lastStart = 0;
   private lastLen = 0;
@@ -111,9 +121,17 @@ export class Namespaces {
     return ns;
   }
 
+  /** Lists the default namespace in `order`; it does not count as stated, as `read` does. */
+  listDefault(): void {
+    if (this.defaultListed) return;
+    this.defaultListed = true;
+    this.order.push(NONE);
+  }
+
   private note(ns: number): void {
     if (ns === DEFAULT) {
       this.defaultSeen = true;
+      this.listDefault();
       return;
     }
     if (ns < 0) return;
@@ -138,7 +156,8 @@ export class Namespaces {
       while (k < len && bytes[last + k] === bytes[start + k]) k++;
       if (k === len) return this.lastNamespace;
     }
-    if (spellsAscii(bytes, start, end, DEFAULT_TEXT)) return this.defaultSeen ? DEFAULT : UNSTATED;
+    if (spellsAscii(bytes, start, end, DEFAULT_NAMESPACE))
+      return this.defaultSeen ? DEFAULT : UNSTATED;
     const id = this.strings.lookup(start, end);
     if (id < 0 || this.seen[id] !== 1) return UNSTATED;
     this.lastStart = start;
@@ -150,7 +169,7 @@ export class Namespaces {
   /** The namespace in bytes `start` to `end`: none when empty, and `'default'` as `DEFAULT`. */
   private id(start: number, end: number): number {
     if (start >= end) return UNSTATED;
-    if (spellsAscii(this.bytes, start, end, DEFAULT_TEXT)) return DEFAULT;
+    if (spellsAscii(this.bytes, start, end, DEFAULT_NAMESPACE)) return DEFAULT;
     return this.strings.intern(start, end);
   }
 

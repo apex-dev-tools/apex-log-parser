@@ -55,6 +55,12 @@ describe('state per build', () => {
     const second = facts(parse(logB));
     expect(first).toEqual(facts(fresh(logA)));
     expect(second).toEqual(facts(fresh(logB)));
-    expect(second).toEqual({ snapshots: 1, namespaces: ['myNS'], soql: 3, heapPeak: 0, events: 3 });
+    expect(second).toEqual({
+      snapshots: 1,
+      namespaces: ['default', 'myNS'],
+      soql: 3,
+      heapPeak: 0,
+      events: 3,
+    });
   });
 });

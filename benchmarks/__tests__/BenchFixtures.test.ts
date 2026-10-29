@@ -107,7 +107,7 @@ describe.each(Object.entries(benchLogs))('bench log %s', (name, options) => {
     // The one address is the USER_INFO header's.
     expect(log.split('@').length).toBe(2);
     expect(log).toContain('|user@example.com|');
-    expect([...apexLog.namespaces]).toEqual(['ns']);
+    expect([...apexLog.namespaces]).toEqual(['default', 'ns']);
   });
 
   it.runIf(options.mix.userDebugWrapped)('wraps USER_DEBUG text', () => {
