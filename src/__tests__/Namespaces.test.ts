@@ -218,4 +218,35 @@ describe('namespaces', () => {
       '            SELECT ID FROM MyObject__c [ns]',
     ]);
   });
+
+  // Catches the children keeping the caller's namespace after the exit line corrects the frame's.
+  it('passes a namespace the exit line states down to the rows that took the frame its', () => {
+    const log = [
+      '07:09:40.0 (1)|EXECUTION_STARTED',
+      '07:09:40.0 (2)|CODE_UNIT_STARTED|[EXTERNAL]|01p000000000AAA|ns.MyClass.run()',
+      // A class's first use: the entry states no namespace, the exit states ns2.
+      '07:09:40.0 (3)|METHOD_ENTRY|[1]|01p000000000AAA|ns2.Other.Other()',
+      '07:09:40.0 (4)|SOQL_EXECUTE_BEGIN|[5]|Aggregations:0|SELECT Id FROM Account',
+      '07:09:40.0 (5)|SOQL_EXECUTE_END|[5]|Rows:1',
+      '07:09:40.0 (6)|METHOD_ENTRY|[7]|01p000000000AAA|Outer.Inner.m()',
+      '07:09:40.0 (7)|SOQL_EXECUTE_BEGIN|[8]|Aggregations:0|SELECT Id FROM Contact',
+      '07:09:40.0 (8)|SOQL_EXECUTE_END|[8]|Rows:1',
+      '07:09:40.0 (9)|METHOD_EXIT|[7]|01p000000000AAA|Outer.Inner.m()',
+      '07:09:40.0 (10)|METHOD_ENTRY|[9]|01p000000000AAA|ns.MyClass.helper()',
+      '07:09:40.0 (11)|METHOD_EXIT|[9]|01p000000000AAA|ns.MyClass.helper()',
+      '07:09:40.0 (12)|METHOD_EXIT|[1]|ns2.Other',
+      '07:09:40.0 (13)|CODE_UNIT_FINISHED|ns.MyClass.run()',
+      '07:09:40.0 (14)|EXECUTION_FINISHED',
+    ].join('\n');
+    expect(outline(parse(log))).toEqual([
+      'null [null]',
+      '  ns.MyClass.run() [ns]',
+      '    ns2.Other.Other() [ns2]',
+      '      SELECT Id FROM Account [ns2]',
+      '      Outer.Inner.m() [ns2]',
+      '        SELECT Id FROM Contact [ns2]',
+      // States its own namespace, so the exit leaves it.
+      '      ns.MyClass.helper() [ns]',
+    ]);
+  });
 });

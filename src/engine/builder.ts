@@ -393,7 +393,13 @@ export class LogBuilder {
     // frame was added by take, so it has a type
     const type = store.type[frame]!;
     if (TAKES_EXIT_NAMESPACE[type] && exitNamespace !== UNSTATED) {
-      store.namespace[frame] = exitNamespace === DEFAULT ? NONE : exitNamespace;
+      const ns = exitNamespace === DEFAULT ? NONE : exitNamespace;
+      // frame was added by take, so every column holds it
+      store.flags[frame]! &= ~FLAG.inherited;
+      if (store.namespace[frame] !== ns) {
+        store.namespace[frame] = ns;
+        this.reinherit(frame);
+      }
     }
     const rowsAt = ROWS_FROM_EXIT[type]!;
     if (rowsAt < 0) return;
@@ -405,6 +411,20 @@ export class LogBuilder {
     const at = store.countsOf(frame) + rowsAt * 2;
     store.counts[at + SELF] = rows;
     store.counts[at + TOTAL] = rows;
+  }
+
+  /**
+   * Each row in `frame`'s subtree that took its parent's namespace takes it again, after the exit
+   * line changed `frame`'s. Only while `frame` is the innermost open frame: every row after it is
+   * in its subtree. Ids are in prefix order, so each parent is set before its children.
+   */
+  private reinherit(frame: number): void {
+    const { flags, namespace, parent } = this.store;
+    const end = this.store.count;
+    for (let id = frame + 1; id < end; id++) {
+      // id < count, so every column holds it, and its parent is a row
+      if (flags[id]! & FLAG.inherited) namespace[id] = namespace[parent[id]!]!;
+    }
   }
 
   /** The log stops inside the innermost frame, or a new execution or the maximum size ends it. */
@@ -526,7 +546,8 @@ export class LogBuilder {
       depth,
     );
     store.lineNumber[id] = this.nextLine;
-    store.flags[id] = this.nextFlags;
+    store.flags[id] =
+      this.nextNamespace === UNSTATED ? this.nextFlags | FLAG.inherited : this.nextFlags;
     store.namespace[id] = this.namespaceUnder(parent);
     this.seed(id);
     this.lastTimestamp = this.nextTimestamp;
