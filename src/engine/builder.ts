@@ -392,7 +392,9 @@ export class LogBuilder {
     const store = this.store;
     // frame was added by take, so it has a type
     const type = store.type[frame]!;
-    if (TAKES_EXIT_NAMESPACE[type] && exitNamespace !== UNSTATED) {
+    // A line that unwinds this frame is a lower frame's exit, so its namespace is not this one's.
+    const ownExit = !(store.flags[frame]! & FLAG.unwind);
+    if (TAKES_EXIT_NAMESPACE[type] && exitNamespace !== UNSTATED && ownExit) {
       const ns = exitNamespace === DEFAULT ? NONE : exitNamespace;
       // frame was added by take, so every column holds it
       store.flags[frame]! &= ~FLAG.inherited;

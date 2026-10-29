@@ -249,4 +249,22 @@ describe('namespaces', () => {
       '      ns.MyClass.helper() [ns]',
     ]);
   });
+
+  // Catches an exit that unwinds frames giving its namespace to them and the rows under them.
+  it('gives the namespace an exit line states only to the frame it closes, not the frames it unwinds', () => {
+    const log = [
+      '09:00:00.0 (1)|CODE_UNIT_STARTED|[EXTERNAL]|01p000000000AAA|ns.MyClass.run()',
+      '09:00:00.0 (2)|METHOD_ENTRY|[5]|01p000000000AAA|C.D.p()',
+      '09:00:00.0 (3)|METHOD_ENTRY|[8]|01p000000000AAA|nsq.C.D.q()',
+      '09:00:00.0 (4)|STATEMENT_EXECUTE|[9]',
+      // Closes C.D.p(), and unwinds nsq.C.D.q(), which lost its own exit.
+      '09:00:00.0 (5)|METHOD_EXIT|[5]|other.Thing',
+    ].join('\n');
+    expect(outline(parse(log))).toEqual([
+      'ns.MyClass.run() [ns]',
+      '  C.D.p() [other]',
+      '    nsq.C.D.q() [nsq]',
+      '      null [nsq]',
+    ]);
+  });
 });
