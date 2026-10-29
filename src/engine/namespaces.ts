@@ -25,7 +25,7 @@ import type { StringTable } from '../store/strings.js';
 /** The line states no namespace, so the event takes its frame's. */
 export const UNSTATED = -1;
 /**
- * `'default'` before 0.4: the line states no namespace, and the event takes none from its frame.
+ * The default namespace, `'default'` before 0.4: the event never takes its frame's.
  */
 export const DEFAULT = -2;
 
