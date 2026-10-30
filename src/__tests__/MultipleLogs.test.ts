@@ -158,17 +158,53 @@ describe('a text that holds more than one log', () => {
       "Execute Anonymous: System.debug('');\n".repeat(lines) +
       '09:00:00.1 (1000)|EXECUTION_STARTED\n' +
       '09:00:01.0 (10000)|EXECUTION_FINISHED\n';
-    const log = parse(anonymous(1) + anonymous(1));
+    const log = parse(anonymous(1) + anonymous(3) + anonymous(2));
 
     expect(log.ofType('EXECUTION_STARTED')).toHaveLength(1);
     expect(log.issues.find((issue) => issue.summary === 'Multiple-Logs')?.description).toBe(
+      'The text holds 3 logs. Only the first log was parsed. Open each log on its own.',
+    );
+  });
+
+  it.each([
+    ['a three-digit API version', (s: string) => s.replace('64.0', '100.0')],
+    ['a settings line stated twice', (s: string) => s + s],
+  ])('counts a second anonymous log once, under %s', (_name, header) => {
+    const body =
+      "Execute Anonymous: System.debug('');\n" +
+      '09:00:00.1 (1000)|EXECUTION_STARTED\n' +
+      '09:00:01.0 (10000)|EXECUTION_FINISHED\n';
+    const log = parse(SETTINGS + body + header(SETTINGS) + body);
+
+    expect(log.issues.find((issue) => issue.summary === 'Multiple-Logs')?.description).toBe(
       'The text holds 2 logs. Only the first log was parsed. Open each log on its own.',
     );
-    expect(
-      parse(anonymous(1) + anonymous(3) + anonymous(2)).issues.find(
-        (issue) => issue.summary === 'Multiple-Logs',
-      )?.description,
-    ).toBe('The text holds 3 logs. Only the first log was parsed. Open each log on its own.');
+  });
+
+  it('keeps one log when a debug message ends the text with a quoted settings line', () => {
+    const log = parse(
+      SETTINGS +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[1]|DEBUG|pasted header follows:\n' +
+        SETTINGS +
+        "Execute Anonymous: System.debug('');\n",
+    );
+
+    expect(log.issues.map((issue) => issue.summary)).not.toContain('Multiple-Logs');
+  });
+
+  it('keeps one log when a debug message quotes a settings line and text after it', () => {
+    const log = parse(
+      SETTINGS +
+        '09:18:22.6 (100)|EXECUTION_STARTED\n' +
+        '09:18:22.6 (200)|USER_DEBUG|[1]|DEBUG|pasted header follows:\n' +
+        SETTINGS +
+        "Execute Anonymous: System.debug('');\n" +
+        '09:18:22.6 (300)|EXECUTION_FINISHED\n',
+    );
+
+    expect(log.ofType('USER_DEBUG')[0]?.text).toContain('Execute Anonymous');
+    expect(log.issues).toEqual([]);
   });
 
   it('keeps one log whose every execution states USER_INFO', () => {
