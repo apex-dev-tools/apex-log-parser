@@ -41,11 +41,11 @@ Read, after the parse: a 95 MB real log, 432,000 events, first read / repeat rea
 
 | Work                                       | Event objects | `log.columns` |
 | ------------------------------------------ | ------------- | ------------- |
-| Numbers only: depth, self time, SOQL count | 11 / 10 ms    | 9 / 4 ms      |
-| Flame chart: tree walk, a label per frame  | 108 / 26 ms   | 87 / 16 ms    |
-| Call tree: self time per method            | 117 / 36 ms   | 83 / 5 ms     |
+| Numbers only: depth, self time, SOQL count | 10 / 8 ms     | 3 / <1 ms     |
+| Flame chart: tree walk, a label per frame  | 67 / 20 ms    | 51 / 2 ms     |
+| Call tree: self time per method            | 65 / 17 ms    | 50 / 1 ms     |
 
-The parse holds 25 MB. Reads add 0–2 MB through event objects, 3–6 MB through `columns` (26 MB
+The parse holds 26 MB. Reads add 0–2 MB through event objects, 6–7 MB through `columns` (32 MB
 for every column). v0.3 held 761 MB.
 
 ## Usage
