@@ -135,6 +135,46 @@ describe('StringTable', () => {
     expect([table.text(aa), table.text(bb), table.intern(0, 2)]).toEqual(['Aa', 'BB', aa]);
   });
 
+  it('keeps apart two long values that share a hash, though they differ only inside a word', () => {
+    // Found by search: these 17 bytes share the 4-bytes-a-step hash.
+    const [table] = tableOf('.MyClass.m02190000|MyClass.m02960000');
+    const one = table.intern(1, 18);
+    const other = table.intern(19, 36);
+    expect(one).not.toBe(other);
+    expect([table.text(one), table.text(other), table.intern(1, 18)]).toEqual([
+      'MyClass.m02190000',
+      'MyClass.m02960000',
+      one,
+    ]);
+  });
+
+  it.each([15, 16, 17, 19])(
+    'keeps apart %i-byte values that differ in one byte, at any offset',
+    (length) => {
+      const value = 'MyClass.method()|x'.padEnd(length, 'y').slice(0, length);
+      const lastDiffers = `${value.slice(0, -1)}#`;
+      const middleDiffers = `${value.slice(0, 5)}#${value.slice(6)}`;
+      const unseen = `#${value.slice(1)}`;
+      // The leading byte puts the first value off a 4-byte boundary.
+      const [table] = tableOf(`.${value}|${value}|${lastDiffers}|${middleDiffers}|${unseen}`);
+      const at = (n: number): [number, number] => [
+        1 + n * (length + 1),
+        1 + n * (length + 1) + length,
+      ];
+      const id = table.intern(...at(0));
+      expect(table.intern(...at(1))).toBe(id);
+      const last = table.intern(...at(2));
+      const middle = table.intern(...at(3));
+      expect(new Set([id, last, middle]).size).toBe(3);
+      expect([table.text(id), table.text(last), table.text(middle)]).toEqual([
+        value,
+        lastDiffers,
+        middleDiffers,
+      ]);
+      expect([table.lookup(...at(1)), table.lookup(...at(4))]).toEqual([id, -1]);
+    },
+  );
+
   it('interns the empty string, and decodes non-ASCII bytes', () => {
     const [table] = tableOf('é日本');
     expect(table.text(table.intern(0, 0))).toBe('');
