@@ -7,15 +7,29 @@ import { resized } from './columns.js';
 
 const EMPTY = -1;
 const MIN_SLOTS = 256;
+/** From this length, a value hashes 4 bytes a step: the mixing it needs costs more on a short one. */
+const WORD_HASH_FROM = 16;
 
 /** A 32-bit hash of bytes `start` to `end`, mixed so its low bits suit a power-of-two table. */
-function hashBytes(bytes: Uint8Array, start: number, end: number): number {
+function hashBytes(bytes: Uint8Array, words: DataView, start: number, end: number): number {
   let h = 0;
-  for (let i = start; i < end; i++) {
-    // i < end, which is inside the caller's view
-    h = (Math.imul(h, 31) + bytes[i]!) | 0;
+  let i = start;
+  if (end - start < WORD_HASH_FROM) {
+    for (; i < end; i++) {
+      // i < end, which is inside the caller's view
+      h = (Math.imul(h, 31) + bytes[i]!) | 0;
+    }
+    return h ^ (h >>> 15);
   }
-  return h ^ (h >>> 15);
+  // The rotate moves high bits down, as a product's low bits see only low bits.
+  for (; i + 4 <= end; i += 4)
+    h = Math.imul(((h << 5) | (h >>> 27)) ^ words.getInt32(i, true), 0x9e3779b1);
+  for (; i < end; i++) {
+    // i < end, which is inside the caller's view
+    h = Math.imul(h ^ bytes[i]!, 0x9e3779b1);
+  }
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  return h ^ (h >>> 13);
 }
 
 /** What `StringTable.text` reads: each id's byte range in the source. */
@@ -32,6 +46,7 @@ export interface StringState {
 export class StringTable {
   private readonly source: Source;
   private readonly bytes: Uint8Array;
+  private readonly words: DataView;
   /** Each id's byte range in the source: the first place the value appeared. */
   private starts: Int32Array = new Int32Array(MIN_SLOTS);
   private ends: Int32Array = new Int32Array(MIN_SLOTS);
@@ -44,11 +59,12 @@ export class StringTable {
   constructor(source: Source) {
     this.source = source;
     this.bytes = source.bytes;
+    this.words = source.words;
   }
 
   /** The id of the value in bytes `start` to `end`, added if it is new. */
   intern(start: number, end: number): number {
-    const h = hashBytes(this.bytes, start, end);
+    const h = hashBytes(this.bytes, this.words, start, end);
     const slot = this.probe(start, end, h);
     // probe returns a slot in the table
     const held = this.slots[slot]!;
@@ -68,12 +84,13 @@ export class StringTable {
   /** The id of the value in bytes `start` to `end`, or -1 when the table does not hold it. */
   lookup(start: number, end: number): number {
     // probe returns a slot in the table
-    return this.slots[this.probe(start, end, hashBytes(this.bytes, start, end))]!;
+    return this.slots[this.probe(start, end, hashBytes(this.bytes, this.words, start, end))]!;
   }
 
   /** The slot that holds the value, or the empty slot where it would go. */
   private probe(start: number, end: number, h: number): number {
     const bytes = this.bytes;
+    const words = this.words;
     const mask = this.slots.length - 1;
     const len = end - start;
     for (let slot = h & mask; ; slot = (slot + 1) & mask) {
@@ -84,6 +101,8 @@ export class StringTable {
       if (this.hashes[id] !== h || this.ends[id]! - this.starts[id]! !== len) continue;
       const at = this.starts[id]!;
       let k = 0;
+      while (k + 4 <= len && words.getInt32(at + k, true) === words.getInt32(start + k, true))
+        k += 4;
       while (k < len && bytes[at + k] === bytes[start + k]) k++;
       if (k === len) return slot;
     }
