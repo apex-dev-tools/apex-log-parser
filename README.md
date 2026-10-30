@@ -12,7 +12,7 @@ VS Code.
 
 ## Features
 
-- **Fast.** A 20 MB log parses in 33 ms and holds 11 MB; 100 MB in 131 ms and 37 MB.
+- **Fast.** A 20 MB log parses in 30 ms and holds 11 MB; 100 MB in 125 ms and 37 MB.
 - **Any source.** A string, bytes, `Blob`, `fetch` `Response`, `ReadableStream` or async iterable.
 - **Off the main thread.** Parses in 5 ms slices with `signal` and `onProgress`, or in a worker
   (`@apexdevtools/apex-log-parser/worker`).
@@ -28,10 +28,10 @@ Parse:
 
 | Log size | v0.3           | v0.5          |
 | -------- | -------------- | ------------- |
-| 8 MB     | 86 ms, 77 MB   | 15 ms, 4 MB   |
-| 20 MB    | 221 ms, 190 MB | 33 ms, 11 MB  |
-| 50 MB    | 426 ms, 408 MB | 66 ms, 19 MB  |
-| 100 MB   | 829 ms, 812 MB | 131 ms, 37 MB |
+| 8 MB     | 86 ms, 77 MB   | 13 ms, 4 MB   |
+| 20 MB    | 221 ms, 190 MB | 30 ms, 11 MB  |
+| 50 MB    | 426 ms, 408 MB | 62 ms, 19 MB  |
+| 100 MB   | 829 ms, 812 MB | 125 ms, 37 MB |
 
 Synthetic logs, median of 5 runs, M4 Pro, Node.js 24. The log is in memory before the timer
 starts: bytes for v0.5, a string for v0.3. Memory is what the parsed log holds, without
@@ -41,9 +41,9 @@ Read, after the parse: a 95 MB real log, 432,000 events, first read / repeat rea
 
 | Work                                       | Event objects | `log.columns` |
 | ------------------------------------------ | ------------- | ------------- |
-| Numbers only: depth, self time, SOQL count | 10 / 8 ms     | 3 / <1 ms     |
-| Flame chart: tree walk, a label per frame  | 67 / 20 ms    | 51 / 2 ms     |
-| Call tree: self time per method            | 65 / 17 ms    | 50 / 1 ms     |
+| Numbers only: depth, self time, SOQL count | 8 / 7 ms      | 2 / <1 ms     |
+| Flame chart: tree walk, a label per frame  | 61 / 20 ms    | 45 / 2 ms     |
+| Call tree: self time per method            | 58 / 16 ms    | 45 / <1 ms    |
 
 The parse holds 26 MB. Reads add 0–2 MB through event objects, 6–7 MB through `columns` (32 MB
 for every column). v0.3 held 761 MB.
