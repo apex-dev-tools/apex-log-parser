@@ -50,6 +50,9 @@ applies.
   the same parse in a worker thread, and the reopen of a log moved to another thread. At 100 MB
   it fails on a turn over 10 ms, a total or a worker parse over 10% above the build, an abort
   later than 10 ms, or a reopen over 20 ms. Local only.
+- `scripts/readme.ts` — `pnpm run bench:readme <log>`, the README's read table on one real log, which
+  stays outside the repository: each row through event objects and through `log.columns`, first
+  and repeat read. Local only.
 - `scripts/profiles.ts` — measures a local folder of real logs by size band and prints
   `fixtures/profiles.json`. Local only.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
