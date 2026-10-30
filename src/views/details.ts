@@ -30,6 +30,8 @@ export interface ExplainPlan {
   readonly sObjectCardinality: number | null;
   /** The cost against the selectivity threshold: above 1, the query is not selective. */
   readonly relativeCost: number | null;
+  /** Any text the plan states after the cost's number, as `(with skinny table)`; null when it states none. */
+  readonly relativeCostNote: string | null;
 }
 
 /** What started a flow interviews frame. */
@@ -142,13 +144,35 @@ function int(typeId: number, name: string, prefix = ''): Read<number | null> {
   };
 }
 
+/** `text` as a finite number; null when it is not one. */
+function finite(text: string): number | null {
+  const n = text === '' ? Number.NaN : Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** The text after `label` in `part`, trimmed; empty when the label is missing. */
+function restAfter(part: string | undefined, label: string): string {
+  if (part === undefined) return '';
+  const at = part.indexOf(label);
+  return at < 0 ? '' : part.slice(at + label.length).trim();
+}
+
 /** The number after `label` in `part`; null when the label or a finite number is missing. */
 function numberAfter(part: string | undefined, label: string): number | null {
-  if (part === undefined) return null;
-  const at = part.indexOf(label);
-  const rest = at < 0 ? '' : part.slice(at + label.length).trim();
-  const n = rest === '' ? Number.NaN : Number(rest);
-  return Number.isFinite(n) ? n : null;
+  return finite(restAfter(part, label));
+}
+
+/**
+ * The cost and the text after its number, as `relativeCost 0 (with skinny table)`. Found by its
+ * label, not after a comma, as the note can hold one.
+ */
+function costOf(tail: string): Pick<ExplainPlan, 'relativeCost' | 'relativeCostNote'> {
+  const rest = restAfter(tail, 'relativeCost ');
+  const space = rest.search(/\s/);
+  return {
+    relativeCost: finite(space < 0 ? rest : rest.slice(0, space)),
+    relativeCostNote: space < 0 ? null : rest.slice(space + 1).trim() || null,
+  };
 }
 
 /** A plan as `TableScan on MyObject__c : [Field__c], cardinality: 2, sobjectCardinality: 2, relativeCost 1.3`. */
@@ -157,7 +181,8 @@ export function explainPlan(plan: string | null): ExplainPlan | null {
   const split = plan.indexOf('],');
   if (split < 0) return null;
   const head = plan.slice(0, split);
-  const [cardinality, sObjectCardinality, cost] = plan.slice(split + 2).split(',');
+  const tail = plan.slice(split + 2);
+  const [cardinality, sObjectCardinality] = tail.split(',', 2);
   const on = head.indexOf(' on ');
   const colon = head.indexOf(' :');
   const bracket = head.indexOf('[');
@@ -168,7 +193,7 @@ export function explainPlan(plan: string | null): ExplainPlan | null {
     fields: fields === null ? null : Object.freeze(fields === '' ? [] : fields.split(',')),
     cardinality: numberAfter(cardinality, 'cardinality: '),
     sObjectCardinality: numberAfter(sObjectCardinality, 'sobjectCardinality: '),
-    relativeCost: numberAfter(cost, 'relativeCost '),
+    ...costOf(tail),
   };
 }
 
