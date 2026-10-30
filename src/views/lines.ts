@@ -74,7 +74,7 @@ export class EventLines {
     // id is a row, so in range
     const known = ids[id]!;
     if (known !== UNREAD) return known;
-    const index = isFrameRow(this.store, id) ? this.indexOf(this.frameText(id)) : LEAF;
+    const index = isFrameRow(this.store, id) ? this.frameTextIndex(id) : LEAF;
     ids[id] = index;
     return index;
   }
@@ -109,18 +109,19 @@ export class EventLines {
 
   /**
    * A frame repeats its method, so its text is the same for every frame of its type whose line is
-   * the same bytes from the first field the text reads; the type name is field 1.
+   * the same bytes from the first field the text reads; the type name is field 1. The index, so a
+   * repeated line costs no lookup by text.
    */
-  private frameText(id: number): string | null {
+  private frameTextIndex(id: number): number {
     const type = this.typeOf(id);
     // A flow interviews frame is named by its first interview.
     if (type === INTERVIEWS) {
       const interview = this.firstChildOf(id, INTERVIEW);
-      return interview < 0 ? null : this.text(interview);
+      return this.indexOf(interview < 0 ? null : this.text(interview));
     }
     const f = this.at(id);
     const from = f.startOf(Math.max(1, textFieldStart(type)));
-    if (from < 0) return eventText(type, f);
+    if (from < 0) return this.indexOf(eventText(type, f));
     // id is a row, so every column holds it; type indexes the per-type tables
     const line = (this.frameLines[type] ??= new StringTable(this.source)).intern(
       from,
@@ -130,7 +131,7 @@ export class EventLines {
     // intern numbers new lines in order, so a new one is lines.length
     if (line === lines.length) lines.push(this.indexOf(eventText(type, f)));
     // lines holds an index into texts for every line id
-    return this.texts[lines[line]!]!;
+    return lines[line]!;
   }
 
   /** The row's first line as the log states it, without its line ending. */

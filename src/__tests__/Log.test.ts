@@ -158,6 +158,39 @@ describe('ApexLog', () => {
     expect(ids[1]).toBe(ids[2]);
   });
 
+  // Catches a text id that points at another frame's text, which event.text would not show.
+  it('gives each frame the id of its own text, and states each text once', () => {
+    const log = logOf(
+      `${at(1)}|FLOW_START_INTERVIEWS_BEGIN|1`,
+      `${at(2)}|FLOW_START_INTERVIEW_BEGIN|01I000000000AAA|MyFlow`,
+      `${at(3)}|FLOW_START_INTERVIEW_END|01I000000000AAA|MyFlow`,
+      `${at(4)}|FLOW_START_INTERVIEWS_END|1`,
+      // An interviews frame with no interview, and a method with no signature: no text to share.
+      `${at(5)}|FLOW_START_INTERVIEWS_BEGIN|1`,
+      `${at(6)}|FLOW_START_INTERVIEWS_END|1`,
+      `${at(7)}|METHOD_ENTRY|[1]`,
+      `${at(8)}|METHOD_EXIT|[1]`,
+      `${at(9)}|METHOD_ENTRY|[2]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(10)}|USER_DEBUG|[3]|DEBUG|hello`,
+      `${at(11)}|METHOD_EXIT|[2]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(12)}|METHOD_ENTRY|[4]|01p000000000AAA|ns.MyClass.run()`,
+      `${at(13)}|METHOD_EXIT|[4]|01p000000000AAA|ns.MyClass.run()`,
+    );
+    const { count, isFrame } = log.columns;
+    const { ids, values, at: textAt } = log.columns.text;
+    const frames = Array.from({ length: count }, (_, i) => i + 1).filter((id) => isFrame[id]);
+    expect(frames.map((id) => values[ids[id]!])).toEqual(frames.map(textAt));
+    expect(frames.map(textAt)).toEqual([
+      'MyFlow',
+      'MyFlow',
+      null,
+      null,
+      'ns.MyClass.run()',
+      'ns.MyClass.run()',
+    ]);
+    expect(new Set(values).size).toBe(values.length);
+  });
+
   // Catches a read past the arrays: an id that is no event gives undefined, not null.
   it('gives null from every text column for an id that is no event', () => {
     const { text, namespace, endedBy } = logOf(...method).columns;
