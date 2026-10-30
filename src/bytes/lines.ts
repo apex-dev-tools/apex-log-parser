@@ -198,10 +198,10 @@ export class LineScanner {
   }
 }
 
-/** The start of the first timestamped line, or -1 when there is none. */
-export function firstEventLine(source: Source): number {
+/** The start of the first timestamped line at or after byte `from`, or -1 when there is none. */
+export function firstEventLine(source: Source, from = 0): number {
   const bytes = source.bytes;
-  for (let start = 0; start < bytes.length; ) {
+  for (let start = from; start < bytes.length; ) {
     if (timestampClose(bytes, start) >= 0) return start;
     const eol = source.lineEnd(start);
     if (eol < 0) break;

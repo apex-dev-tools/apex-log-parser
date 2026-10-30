@@ -1,9 +1,15 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { COLON, ZERO } from '../bytes/ascii.js';
+import { COLON, DOT, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
-import { lineText, TRUNCATION_MARKER, timestampClose, timestampIn } from '../bytes/lines.js';
+import {
+  firstEventLine,
+  lineText,
+  TRUNCATION_MARKER,
+  timestampClose,
+  timestampIn,
+} from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
 import { eventText } from '../catalog/catalog.js';
 import type { LimitSnapshot } from '../limits.js';
@@ -19,15 +25,26 @@ import { HOOK_ID } from './tables.js';
 
 /**
  * The line at byte `start` opens a log after one whose last timestamp is `before` (nanoseconds): a
- * settings line whose next line, at byte `next`, restarts the nanosecond counter. A settings line
+ * settings line whose first timestamped line, at byte `next` or after lines with no timestamp, as
+ * anonymous Apex's `Execute Anonymous:` lines, restarts the nanosecond counter. A settings line
  * alone is not enough, as a debug message can quote one. Callers test for a first digit before
  * the call, so most lines make none; the settings test checks it too.
  */
 export function opensLog(source: Source, start: number, next: number, before: number): boolean {
-  const close = timestampClose(source.bytes, next);
-  if (close < 0) return false;
-  if (!(timestampIn(source, next, close + 1) < before)) return false;
-  return SETTINGS_LINE.test(lineText(source, start));
+  const bytes = source.bytes;
+  const close = timestampClose(bytes, next);
+  if (close >= 0) {
+    if (!(timestampIn(source, next, close + 1) < before)) return false;
+    return SETTINGS_LINE.test(lineText(source, start));
+  }
+  // A digit-first next line, as a second settings line, is tested on its own, so it counts once.
+  if (((bytes[next] ?? 0) - ZERO) >>> 0 <= 9) return false;
+  // Skips the regex unless a version's dot is in bytes 1 to 3: most digit-first lines are none.
+  if (bytes[start + 1] !== DOT && bytes[start + 2] !== DOT && bytes[start + 3] !== DOT)
+    return false;
+  if (!SETTINGS_LINE.test(lineText(source, start))) return false;
+  const first = firstEventLine(source, next);
+  return first >= 0 && timestampIn(source, first, timestampClose(bytes, first) + 1) < before;
 }
 
 /**
