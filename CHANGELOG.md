@@ -1,5 +1,19 @@
 # @apexdevtools/apex-log-parser
 
+## 0.5.0
+
+### Minor Changes
+
+- 5697437: Breaking: `ApexEvent.namespace` and `Columns.namespace` give `'default'` for code in no package, not `null` or -1, and `ApexLog.namespaces` lists it. To migrate, compare with the new `DEFAULT_NAMESPACE` in place of `null`.
+- c8aeab3: `ExplainPlan.relativeCost` reads a plan with a note after the cost, as `relativeCost 0 (with skinny table)`; it was `null`. The new `relativeCostNote` gives that note.
+
+### Patch Changes
+
+- 5989e75: `parse` accepts a DOM `fetch` `Response` and a DOM `ReadableStream` with no cast, when the DOM types are in `lib`. `StreamRead`: a done read can now carry a `value`. `parse` ignores it.
+- e5e2b47: A second anonymous Apex log in the same text now raises the Multiple-Logs issue. Before, its `Execute Anonymous:` lines hid it, and its events were read into the first log.
+- 5989e75: `parse` accepts a `SharedArrayBuffer` with no cast. It read one before, but the types did not allow it.
+- 79831c2: On a 100 MB log, the first read of `columns.text` is about 28% faster: 52 ms in place of 73 ms. A read of every event's `text` is about 24% faster: 68 ms in place of 90 ms.
+
 ## 0.4.0
 
 ### Minor Changes
