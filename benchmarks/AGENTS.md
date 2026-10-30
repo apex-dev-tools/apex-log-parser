@@ -50,9 +50,11 @@ applies.
   the same parse in a worker thread, and the reopen of a log moved to another thread. At 100 MB
   it fails on a turn over 10 ms, a total or a worker parse over 10% above the build, an abort
   later than 10 ms, or a reopen over 20 ms. Local only.
-- `scripts/readme.ts` — `pnpm run bench:readme <log>`, the README's read table on one real log, which
-  stays outside the repository: each row through event objects and through `log.columns`, first
-  and repeat read. Local only.
+- `scripts/readme.ts` — `pnpm run bench:readme <log>`, the README's read table on one real log:
+  each row through event objects and `log.columns`, first and repeat read, and the heap the first
+  read adds. Also the heap the parse holds, and what every column adds. Local only. The README's
+  parse table is from `bench:large`, its v0.3 column from `baselines/legacy-v0.3.json`. No script
+  here gives the v0.3 heap of the real log: measure it with a 0.3 release from npm.
 - `scripts/profiles.ts` — measures a local folder of real logs by size band and prints
   `fixtures/profiles.json`. Local only.
 - `scripts/compare/` — `pnpm run compare <dir> --out=<dir>`: runs a folder of logs through each
@@ -84,7 +86,7 @@ The scripts import `scripts/cli.ts` and `scripts/child.ts`, which the scraper sh
 
 ## Rules
 
-- Every benchmark output states the raw figures, then the times and the percent change, from
+- Every benchmark comparison states the raw figures, then the times and the percent change, from
   `scripts/versus.ts`.
 - Real logs never go into the repository or CI. `scripts/profiles.ts` prints numbers, never log
   text. Never commit the output of `compare`; it names the logs.
