@@ -49,6 +49,7 @@ describe('SOQL details', () => {
       cardinality: 2,
       sObjectCardinality: 2,
       relativeCost: 1.3,
+      relativeCostNote: null,
     });
     // ofType gives each type its own details, so this compiles with no narrowing.
     expect(log.ofType('SOQL_EXECUTE_EXPLAIN')[0]?.details?.relativeCost).toBe(1.3);
@@ -101,6 +102,16 @@ describe('explainPlan', () => {
     expect(explainPlan(null)).toBeNull();
   });
 
+  it.each([
+    ['0 (with skinny table)', 0, '(with skinny table)'],
+    ['2 (a note, with a comma)', 2, '(a note, with a comma)'],
+    [' 1.3   (with skinny table) ', 1.3, '(with skinny table)'],
+    ['1.3\t(with skinny table)', 1.3, '(with skinny table)'],
+  ])('keeps the number and the whole note after it: relativeCost %j', (cost, expected, note) => {
+    const plan = `Index on Account : [Id], cardinality: 1, sobjectCardinality: 100, relativeCost ${cost}`;
+    expect(explainPlan(plan)).toMatchObject({ relativeCost: expected, relativeCostNote: note });
+  });
+
   it('states an empty list for brackets with no field inside', () => {
     expect(explainPlan('TableScan on MyObject__c : [], cardinality: 1')?.fields).toEqual([]);
   });
@@ -113,6 +124,7 @@ describe('explainPlan', () => {
       cardinality: null,
       sObjectCardinality: null,
       relativeCost: null,
+      relativeCostNote: null,
     });
   });
 });

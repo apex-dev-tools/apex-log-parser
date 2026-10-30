@@ -1556,7 +1556,7 @@ export interface EventFields {
   SOQL_EXECUTE_EXPLAIN: {
     /** The line number in the Apex source, or [EXTERNAL] when there is none. Format: `[<n>]`. */
     readonly line: string | null;
-    /** The query plan, such as: Index on Account : [Id], cardinality: 1, sobjectCardinality: 2, relativeCost 0.1. Format: `<text>`. */
+    /** The query plan, such as: Index on Account : [Id], cardinality: 1, sobjectCardinality: 2, relativeCost 0.1. A note can follow the cost, as `relativeCost 0 (with skinny table)`. Format: `<text>`. */
     readonly plan: string | null;
   };
   /** Line number and query source */
