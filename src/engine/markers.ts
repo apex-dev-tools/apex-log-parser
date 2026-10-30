@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 Certinia Inc. All rights reserved.
  */
-import { COLON, ZERO } from '../bytes/ascii.js';
+import { COLON, startsWithAscii, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import { lineText, TRUNCATION_MARKER, timestampClose, timestampIn } from '../bytes/lines.js';
 import type { Source } from '../bytes/source.js';
@@ -17,14 +17,24 @@ import { ISSUE, Issues } from './issues.js';
 import { namespaceText } from './namespaces.js';
 import { HOOK_ID } from './tables.js';
 
+const EXECUTE_ANONYMOUS = 'Execute Anonymous:';
+
 /**
  * The line at byte `start` opens a log after one whose last timestamp is `before` (nanoseconds): a
- * settings line whose next line, at byte `next`, restarts the nanosecond counter. A settings line
- * alone is not enough, as a debug message can quote one. Callers test for a first digit before
- * the call, so most lines make none; the settings test checks it too.
+ * settings line whose next line, at byte `next` or after its `Execute Anonymous:` lines, restarts
+ * the nanosecond counter. A settings line alone is not enough, as a debug message can quote one.
+ * Callers test for a first digit before the call, so most lines make none; the settings test
+ * checks it too.
  */
 export function opensLog(source: Source, start: number, next: number, before: number): boolean {
-  const close = timestampClose(source.bytes, next);
+  const bytes = source.bytes;
+  // An anonymous Apex log states its code between the settings line and its first event.
+  while (startsWithAscii(bytes, next, bytes.length, EXECUTE_ANONYMOUS)) {
+    const eol = source.lineEnd(next);
+    if (eol < 0) return false;
+    next = eol + 1;
+  }
+  const close = timestampClose(bytes, next);
   if (close < 0) return false;
   if (!(timestampIn(source, next, close + 1) < before)) return false;
   return SETTINGS_LINE.test(lineText(source, start));

@@ -152,6 +152,25 @@ describe('a text that holds more than one log', () => {
     expect(log.issues.map((issue) => issue.summary)).toContain('Multiple-Logs');
   });
 
+  it('finds a second anonymous log, whose Execute Anonymous lines come before its first event', () => {
+    const anonymous = (lines: number): string =>
+      SETTINGS +
+      "Execute Anonymous: System.debug('');\n".repeat(lines) +
+      '09:00:00.1 (1000)|EXECUTION_STARTED\n' +
+      '09:00:01.0 (10000)|EXECUTION_FINISHED\n';
+    const log = parse(anonymous(1) + anonymous(1));
+
+    expect(log.ofType('EXECUTION_STARTED')).toHaveLength(1);
+    expect(log.issues.find((issue) => issue.summary === 'Multiple-Logs')?.description).toBe(
+      'The text holds 2 logs. Only the first log was parsed. Open each log on its own.',
+    );
+    expect(
+      parse(anonymous(1) + anonymous(3) + anonymous(2)).issues.find(
+        (issue) => issue.summary === 'Multiple-Logs',
+      )?.description,
+    ).toBe('The text holds 3 logs. Only the first log was parsed. Open each log on its own.');
+  });
+
   it('keeps one log whose every execution states USER_INFO', () => {
     const log = parse(
       SETTINGS +
