@@ -71,14 +71,16 @@ jobs:
       - name: Lint, typecheck and test
         id: verify
         continue-on-error: true
-        run: pnpm run ci
+        # bash adds pipefail, so the outcome is that of `pnpm run ci`, not of `tee`
+        shell: bash
+        run: pnpm run ci 2>&1 | tee "$RUNNER_TEMP/ci.log"
 
       - name: Report
         id: report
         env:
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
           VERIFY_OUTCOME: ${{ steps.verify.outcome }}
-        run: pnpm run ci:report -- --report="$RUNNER_TEMP/scrape-run.json" --out="$RUNNER_TEMP/pr-body.md"
+        run: pnpm run ci:report -- --report="$RUNNER_TEMP/scrape-run.json" --out="$RUNNER_TEMP/pr-body.md" --ci-log="$RUNNER_TEMP/ci.log"
 
       - name: Create or update the pull request
         id: pr

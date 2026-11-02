@@ -445,18 +445,24 @@ describe('mergeEvents', () => {
 
 describe('checkNotOlder', () => {
   const at = (release: string): DocVersion => ({ ...s1Metadata.version, release_version: release });
+  // Pinned, as each scrape moves the live database to the newest release.
+  // `!`: the committed database always records S1
+  const recorded67: EventsJson = {
+    ...database,
+    sources: { ...database.sources, S1: { ...database.sources.S1!, api_version: '67.0' } },
+  };
 
   it('allows the recorded release and anything newer', () => {
-    expect(() => checkNotOlder(at('67.0'), database, false)).not.toThrow();
-    expect(() => checkNotOlder(at('68.0'), database, false)).not.toThrow();
+    expect(() => checkNotOlder(at('67.0'), recorded67, false)).not.toThrow();
+    expect(() => checkNotOlder(at('68.0'), recorded67, false)).not.toThrow();
   });
 
   it('refuses an older release, naming what the database records', () => {
-    expect(() => checkNotOlder(at('66.0'), database, false)).toThrow(/records 67.0/);
+    expect(() => checkNotOlder(at('66.0'), recorded67, false)).toThrow(/records 67.0/);
   });
 
   it('yields to an explicit override', () => {
-    expect(() => checkNotOlder(at('66.0'), database, true)).not.toThrow();
+    expect(() => checkNotOlder(at('66.0'), recorded67, true)).not.toThrow();
   });
 });
 

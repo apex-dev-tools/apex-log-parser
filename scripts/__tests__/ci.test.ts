@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { chdir, cwd } from 'node:process';
 import { annotate, appendSummary, setOutput } from '../ci/actions.js';
 import type { Gates } from '../ci/report.js';
-import { renderReport } from '../ci/report.js';
+import { ciFailure, renderReport } from '../ci/report.js';
 import { seed } from '../ci/seed.js';
 import { flag } from '../cli.js';
 import type { ScrapeReport } from '../scrape.js';
@@ -163,10 +163,80 @@ describe('renderReport', () => {
   it('puts a failing gate under the decisions, with what to do', () => {
     const body = renderReport(quiet, { validate: 'success', verify: 'failure' });
     expect(body).toContain('## Needs a decision');
-    expect(body).toContain('needs a catalog entry');
+    expect(body).toContain('`pnpm run ci` is red. The cause is quoted below.');
     expect(body).toContain('Checks — tests: `failure`');
     expect(body).not.toContain('does not match its schema');
     expect(body).not.toContain('Nothing here needs a decision');
+  });
+
+  it('blames a missing catalog entry only when the scrape added an event', () => {
+    // A red run with no new event once claimed one, hiding the real failure
+    const red: Gates = { validate: 'success', verify: 'failure' };
+    expect(renderReport(quiet, red)).not.toContain('needs a catalog entry');
+    expect(renderReport({ ...quiet, added: ['ZZZ_NEW'] }, red)).toContain(
+      'Each new event needs a catalog entry',
+    );
+  });
+
+  it('quotes the failing test from the captured output', () => {
+    const esc = String.fromCharCode(27);
+    const log = [
+      ` ${esc}[32m✓${esc}[39m src/__tests__/Bytes.test.ts (267 tests) 44ms`,
+      `${esc}[31m⎯⎯⎯${esc}[39m${esc}[1m${esc}[41m Failed Tests 1 ${esc}[49m${esc}[22m`,
+      `${esc}[41m${esc}[1m FAIL ${esc}[22m${esc}[49m scripts/a.test.ts > suite > breaks`,
+      'AssertionError: expected 1 to be 2',
+      '      Tests  1 failed | 9 passed (10)',
+      '::error file=scripts/a.test.ts::AssertionError: expected 1 to be 2',
+      ' ELIFECYCLE  Command failed with exit code 1.',
+    ].join('\n');
+    const body = renderReport(quiet, { validate: 'success', verify: 'failure' }, log);
+
+    expect(body).toContain(
+      '## Why `pnpm run ci` failed\n\n```text\n⎯⎯⎯ Failed Tests 1 \n' +
+        ' FAIL  scripts/a.test.ts > suite > breaks\n' +
+        'AssertionError: expected 1 to be 2\n```',
+    );
+    expect(body).not.toContain('Bytes.test.ts');
+    expect(body).not.toContain('ELIFECYCLE');
+    expect(body).not.toContain(esc);
+  });
+
+  it('quotes the tail when the failure is not a test, such as a type error', () => {
+    const log = ['ok line', 'src/a.ts(1,1): error TS2322: nope', ' ELIFECYCLE  failed'].join('\n');
+    expect(ciFailure(log)).toBe(log);
+  });
+
+  it('caps a long quote and says how much the run log keeps', () => {
+    const failures = Array.from({ length: 99 }, (_, i) => `line ${i}`);
+    const quote = ciFailure(['Failed Tests 99', ...failures].join('\n')).split('\n');
+    expect(quote).toHaveLength(61);
+    expect(quote[0]).toBe('Failed Tests 99');
+    expect(quote[59]).toBe('line 58');
+    expect(quote[60]).toBe('… 40 more lines in the run log');
+  });
+
+  it('quotes only the last lines of a long log with no failed test', () => {
+    const log = Array.from({ length: 100 }, (_, i) => `line ${i}`).join('\n');
+    const quote = ciFailure(log).split('\n');
+    expect(quote).toHaveLength(60);
+    expect(quote[0]).toBe('line 40');
+  });
+
+  it('fences the quote so backticks in the output cannot end it', () => {
+    const body = renderReport(quiet, { validate: 'success', verify: 'failure' }, 'a ``` b');
+    expect(body).toContain('````text\na ``` b\n````');
+  });
+
+  it('says the output was not captured, rather than quoting nothing', () => {
+    for (const ciLog of [null, '', '\n']) {
+      const body = renderReport(quiet, { validate: 'success', verify: 'failure' }, ciLog);
+      expect(body).toContain('The output was not captured. See the run log.');
+      expect(body).not.toContain('```text');
+    }
+  });
+
+  it('quotes nothing when the tests pass', () => {
+    expect(renderReport(quiet, pass, 'Failed Tests 1')).not.toContain('Why `pnpm run ci` failed');
   });
 
   it('puts a failing schema check under the decisions', () => {
