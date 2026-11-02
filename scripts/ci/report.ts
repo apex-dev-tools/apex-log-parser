@@ -5,7 +5,10 @@
  * built from data rather than from the scraper's stdout.
  *
  * Usage:
- *   pnpm run ci:report -- --report=run.json --out=pr-body.md
+ *   pnpm run ci:report -- --report=run.json --out=pr-body.md [--ci-log=ci.log]
+ *
+ * `--ci-log` is the captured `pnpm run ci` output. When that gate is red, the body
+ * quotes the failure from it, so the pull request states the cause.
  *
  * The two gate outcomes arrive as VALIDATE_OUTCOME and VERIFY_OUTCOME. A step
  * cannot observe another step's exit code, so the workflow records each gate with
@@ -15,7 +18,7 @@
  * workflow raises the failure itself, after the pull request exists.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { argv, env } from 'node:process';
 import { flag, runIfMain } from '../cli.js';
 import type { ScrapeReport } from '../scrape.js';
@@ -31,13 +34,54 @@ const GATE_ADVICE: Record<keyof Gates, string> = {
   validate:
     '`pnpm run validate:data` is red, so `data/` does not match its schema. ' +
     'Fix the scraper or `data/salesforce-debug-log-events.schema.json`.',
-  verify:
-    '`pnpm run ci` is red. A newly documented event needs a catalog entry — ' +
-    'see "Adding an event type" in `src/AGENTS.md`. Fix that on this branch.',
+  verify: '`pnpm run ci` is red. The cause is quoted below. Fix it on this branch.',
 };
+
+const CATALOG_ADVICE =
+  'Each new event needs a catalog entry — see "Adding an event type" in `src/AGENTS.md`.';
 
 function failed(gates: Gates): (keyof Gates)[] {
   return (Object.keys(gates) as (keyof Gates)[]).filter((k) => gates[k] !== 'success');
+}
+
+/** The most lines of `pnpm run ci` output the body quotes; the run log keeps all of it. */
+const CI_QUOTE_LINES = 60;
+
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+// Vitest's run summary, and the workflow commands its GitHub reporter repeats each error in
+const NOISE = /^\s*(Test Files|Tests|Start at|Duration)\s|^::|ELIFECYCLE/;
+
+/**
+ * The part of the `pnpm run ci` output that names the failure.
+ *
+ * Vitest prints each failed test after its "Failed Tests" banner. Its summary can
+ * interleave with them, as it goes to stdout and the errors to stderr, so the quote
+ * runs to the end with the summary filtered out. Biome and tsc end on their errors,
+ * so without the banner the tail is the cause.
+ */
+export function ciFailure(log: string): string {
+  const lines = log.replace(ANSI, '').trimEnd().split('\n');
+  const banner = lines.findIndex((l) => l.includes('Failed Tests'));
+  const picked =
+    banner === -1
+      ? lines.slice(-CI_QUOTE_LINES)
+      : lines.slice(banner).filter((l) => !NOISE.test(l));
+
+  const kept = picked.slice(0, CI_QUOTE_LINES);
+  const more = picked.length - kept.length;
+  if (more > 0) kept.push(`… ${more} more lines in the run log`);
+  return kept.join('\n');
+}
+
+function quoteCiFailure(ciLog: string | null): string[] {
+  if (ciLog === null || ciLog.trim() === '') {
+    return ['## Why `pnpm run ci` failed', '', 'The output was not captured. See the run log.', ''];
+  }
+  const quote = ciFailure(ciLog);
+  // Longer than any backtick run in the quote, so the output cannot end the block
+  const longest = Math.max(0, ...(quote.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return ['## Why `pnpm run ci` failed', '', `${fence}text`, quote, fence, ''];
 }
 
 const SOURCE_NAME = { S1: 'the developer docs', S2: 'the Help article' } as const;
@@ -55,6 +99,7 @@ function sourceName(id: string): string {
  */
 function decisions(report: ScrapeReport, gates: Gates): string[] {
   const items = failed(gates).map((gate) => GATE_ADVICE[gate]);
+  if (gates.verify !== 'success' && report.added.length > 0) items.push(CATALOG_ADVICE);
 
   for (const event of report.notInS1) {
     items.push(
@@ -154,8 +199,16 @@ function differences(report: ScrapeReport): string[] {
   ];
 }
 
-/** Pure, so the body a run would open can be asserted offline. */
-export function renderReport(report: ScrapeReport, gates: Gates): string {
+/**
+ * Pure, so the body a run would open can be asserted offline.
+ *
+ * `ciLog` is the captured `pnpm run ci` output, or null when none was captured.
+ */
+export function renderReport(
+  report: ScrapeReport,
+  gates: Gates,
+  ciLog: string | null = null,
+): string {
   const needed = decisions(report, gates);
 
   const lines = [
@@ -169,6 +222,8 @@ export function renderReport(report: ScrapeReport, gates: Gates): string {
   } else {
     lines.push('## Needs a decision', '', ...needed.map((item) => `- ${item}`), '');
   }
+
+  if (gates.verify !== 'success') lines.push(...quoteCiFailure(ciLog));
 
   lines.push(...changes(report));
   lines.push(...sources(report));
@@ -192,7 +247,11 @@ function main(): void {
   if (reportPath === null) throw new Error('--report=<path> is required');
 
   const report = JSON.parse(readFileSync(reportPath, 'utf-8')) as ScrapeReport;
-  const body = renderReport(report, gates);
+  // Absent when the verify step never ran
+  const ciLogPath = flag(args, '--ci-log');
+  const ciLog =
+    ciLogPath !== null && existsSync(ciLogPath) ? readFileSync(ciLogPath, 'utf-8') : null;
+  const body = renderReport(report, gates, ciLog);
 
   const out = flag(args, '--out');
   if (out !== null) writeFileSync(out, body);
