@@ -115,6 +115,7 @@ lines keep their reading on the event, in `details`. Two folds are deliberate: `
 - A log can be truncated in two unrelated ways: the platform dropped a block
   (`*** Skipped N bytes of detailed log`), or the log hit the maximum size. `ApexLog.truncation`
   reports both. Only the whole marker line counts: a line that only looks like one is text, or an
-  invalid line after an event that takes no text.
+  invalid line after an event that takes no text. One exception: an event line or invalid line that
+  ends in the maximum-size marker is a line the platform cut, so it counts.
 - `ApexLog.isTruncated`: the platform dropped content. A frame's `endedBy`: what ended it, its own
   exit line or not. So `unclosedFrames` can be non-empty while `isTruncated` is `false`.

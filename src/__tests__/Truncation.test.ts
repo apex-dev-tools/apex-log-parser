@@ -301,6 +301,27 @@ describe('truncation', () => {
     ]);
   });
 
+  // Catches a cut line with no known type: once only a parsing error, with no truncation.
+  it.each([
+    `${at(2)}|STATEMENT_EXECUT*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`,
+    `${at(2)}*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`,
+    '11:13:41.8*********** MAXIMUM DEBUG LOG SIZE REACHED ***********',
+  ])('reads the maximum size from a line it cut before the event name ended: %s', (cut) => {
+    const log = logOf(
+      `${at(1)}|VARIABLE_ASSIGNMENT|[34]|targetObj|{}|0x4f644d8e`,
+      cut,
+      `${at(9)}|STATEMENT_EXECUTE|[3]`,
+    );
+    expect(log.parsingErrors).toEqual([`Invalid log line: ${cut}`]);
+    expect(log.issues.map((i) => [i.summary, i.event?.id, i.startTimestamp])).toEqual([
+      ['Max-Size-reached', 1, 1],
+    ]);
+    expect(log.truncation.regions.map((r) => [r.kind, r.startTimestamp, r.endTimestamp])).toEqual([
+      ['max-size', 1, 9],
+    ]);
+    expect(log.isTruncated).toBe(true);
+  });
+
   it('reads the maximum size from an event line it cut, at a log cut after its CR', () => {
     const cut = `${at(2)}|STATEMENT_EXECUTE|[2*********** MAXIMUM DEBUG LOG SIZE REACHED ***********`;
     const log = logOf(`${at(1)}|STATEMENT_EXECUTE|[1]`, `${cut}\r`);
