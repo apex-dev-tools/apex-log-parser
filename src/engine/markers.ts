@@ -4,6 +4,7 @@
 import { COLON, DOT, ZERO } from '../bytes/ascii.js';
 import { ByteFields } from '../bytes/cursor.js';
 import {
+  CUT_BY_MAX_SIZE,
   firstEventLine,
   lineText,
   TRUNCATION_MARKER,
@@ -120,6 +121,11 @@ export class LogMarkers {
       return true;
     }
     if (!SETTINGS_LINE.test(text)) this.parsingErrors.push(`Invalid log line: ${text}`);
+    // The platform cut this line before its event name ended, so it is no event.
+    if (id !== NONE && CUT_BY_MAX_SIZE.test(text)) {
+      this.maxSize(at, id, exitType);
+      return true;
+    }
     return false;
   }
 
